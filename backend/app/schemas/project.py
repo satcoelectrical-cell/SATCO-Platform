@@ -6,6 +6,10 @@ class ProjectCreate(BaseModel):
     name: str
     customer: str | None = None
 
+class ProjectUpdate(BaseModel):
+    name: str | None = None
+    customer: str | None = None
+    status: str | None = None
 
 class ProjectResponse(BaseModel):
     id: int

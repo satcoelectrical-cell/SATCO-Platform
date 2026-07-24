@@ -3,6 +3,7 @@ from sqlalchemy.sql import func
 
 from app.core.database import Base
 
+from sqlalchemy.orm import relationship
 
 class Customer(Base):
     __tablename__ = "customers"
@@ -32,6 +33,12 @@ class Customer(Base):
         String,
         nullable=True
     )
+
+    contacts = relationship(
+    "Contact",
+    back_populates="customer",
+    cascade="all, delete-orphan",
+)
 
     created_at = Column(
         DateTime(timezone=True),

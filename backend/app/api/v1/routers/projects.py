@@ -3,7 +3,12 @@ from sqlalchemy.orm import Session
 
 from ....core.database import SessionLocal
 from .... import schemas
-from ....services.project_service import create_project, get_projects
+from ....services.project_service import (
+    create_project,
+    get_projects,
+    update_project,
+    delete_project
+)
 
 
 router = APIRouter(
@@ -33,3 +38,20 @@ def get_projects_api(
     db: Session = Depends(get_db)
 ):
     return get_projects(db)
+
+
+@router.put("/{project_id}", response_model=schemas.ProjectResponse)
+def update_project_api(
+    project_id: int,
+    project: schemas.ProjectUpdate,
+    db: Session = Depends(get_db)
+):
+    return update_project(db, project_id, project)
+
+
+@router.delete("/{project_id}", response_model=schemas.ProjectResponse)
+def delete_project_api(
+    project_id: int,
+    db: Session = Depends(get_db)
+):
+    return delete_project(db, project_id)

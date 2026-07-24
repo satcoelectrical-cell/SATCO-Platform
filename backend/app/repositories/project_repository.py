@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.models.project import Project
-from app.schemas.project import ProjectCreate
+from app.schemas.project import ProjectCreate, ProjectUpdate
 
 
 def get_projects(db: Session):
@@ -21,5 +21,38 @@ def create_project(db: Session, project: ProjectCreate):
     db.add(db_project)
     db.commit()
     db.refresh(db_project)
+
+    return db_project
+
+
+def update_project(db: Session, project_id: int, project_data: ProjectUpdate):
+    db_project = db.query(Project).filter(Project.id == project_id).first()
+
+    if not db_project:
+        return None
+
+    if project_data.name is not None:
+        db_project.name = project_data.name
+
+    if project_data.customer is not None:
+        db_project.customer = project_data.customer
+
+    if project_data.status is not None:
+        db_project.status = project_data.status
+
+    db.commit()
+    db.refresh(db_project)
+
+    return db_project
+
+
+def delete_project(db: Session, project_id: int):
+    db_project = db.query(Project).filter(Project.id == project_id).first()
+
+    if not db_project:
+        return None
+
+    db.delete(db_project)
+    db.commit()
 
     return db_project
