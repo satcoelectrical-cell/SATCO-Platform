@@ -36,3 +36,6 @@ services:
       DATABASE_USER: satco
       DATABASE_PASSWORD: satco_password
       DATABASE_NAME: satco_platform
+
+    volumes:
+      - ./backend:/app
