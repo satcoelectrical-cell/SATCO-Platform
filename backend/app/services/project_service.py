@@ -16,9 +16,23 @@ def create_project(db: Session, project: ProjectCreate):
     return project_repository.create_project(db, project)
 
 
-def update_project(db: Session, project_id: int, project_data: ProjectUpdate):
-    return project_repository.update_project(db, project_id, project_data)
+def update_project(
+    db: Session,
+    project_id: int,
+    project_data: ProjectUpdate
+):
+    return project_repository.update_project(
+        db,
+        project_id,
+        project_data
+    )
 
 
-def delete_project(db: Session, project_id: int):
-    return project_repository.delete_project(db, project_id)
+def delete_project(
+    db: Session,
+    project_id: int
+):
+    return project_repository.delete_project(
+        db,
+        project_id
+    )

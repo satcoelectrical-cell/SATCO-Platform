@@ -38,7 +38,13 @@ class Customer(Base):
     "Contact",
     back_populates="customer",
     cascade="all, delete-orphan",
-)
+    )
+    
+    projects = relationship(
+    "Project",
+    back_populates="customer",
+    cascade="all, delete-orphan",
+    )
 
     created_at = Column(
         DateTime(timezone=True),

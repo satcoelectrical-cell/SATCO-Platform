@@ -15,7 +15,7 @@ def get_project(db: Session, project_id: int):
 def create_project(db: Session, project: ProjectCreate):
     db_project = Project(
         name=project.name,
-        customer=project.customer
+        customer_id=project.customer_id,
     )
 
     db.add(db_project)
@@ -34,11 +34,11 @@ def update_project(db: Session, project_id: int, project_data: ProjectUpdate):
     if project_data.name is not None:
         db_project.name = project_data.name
 
-    if project_data.customer is not None:
-        db_project.customer = project_data.customer
+    if project_data.customer_id is not None:
+        db_project.customer_id = project_data.customer_id
 
     if project_data.status is not None:
-        db_project.status = project_data.status
+        db_project.status = project_data.status.value
 
     db.commit()
     db.refresh(db_project)
