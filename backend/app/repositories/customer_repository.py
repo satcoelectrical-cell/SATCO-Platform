@@ -65,3 +65,39 @@ class CustomerRepository:
         self.db.refresh(db_customer)
 
         return db_customer
+
+    def update(
+        self,
+        customer,
+        customer_data,
+    ):
+
+        if customer_data.name is not None:
+            customer.name = customer_data.name
+
+        if customer_data.company is not None:
+            customer.company = customer_data.company
+
+        if customer_data.phone is not None:
+            customer.phone = customer_data.phone
+
+        if customer_data.email is not None:
+            customer.email = customer_data.email
+
+
+        self.db.commit()
+        self.db.refresh(customer)
+
+        return customer
+
+
+
+    def delete(
+        self,
+        customer,
+    ):
+
+        self.db.delete(customer)
+        self.db.commit()
+
+        return True

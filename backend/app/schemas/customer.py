@@ -10,6 +10,13 @@ class CustomerCreate(BaseModel):
     email: Optional[str] = None
 
 
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    company: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
 class CustomerResponse(BaseModel):
     id: int
     name: str

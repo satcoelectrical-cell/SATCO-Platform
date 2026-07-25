@@ -11,6 +11,7 @@ from app import schemas
 
 from app.schemas.customer import (
     CustomerCreate,
+    CustomerUpdate,
     CustomerResponse,
 )
 
@@ -67,4 +68,51 @@ def create_customer(
 
     service = CustomerService(db)
 
-    return service.create(customer)
+    return service.create(
+        customer,
+        current_user.id,
+    )
+
+@router.put(
+    "/{customer_id}",
+    response_model=CustomerResponse,
+)
+def update_customer(
+    customer_id: int,
+    customer: CustomerUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+
+    service = CustomerService(db)
+
+    result = service.update(
+        customer_id,
+        customer,
+        current_user.id,
+    )
+
+    return result
+
+
+
+@router.delete(
+    "/{customer_id}",
+)
+def delete_customer(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+
+    service = CustomerService(db)
+
+    service.delete(
+        customer_id,
+        current_user.id,
+    )
+
+    return {
+        "message": "Customer deleted successfully",
+        "customer_id": customer_id,
+    }
