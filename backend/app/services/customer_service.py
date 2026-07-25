@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.repositories.customer_repository import CustomerRepository
+from app.models.contact import Contact
 from app.schemas.customer import CustomerCreate
 from app.services.audit_service import create_audit_log
 
@@ -130,3 +131,25 @@ class CustomerService:
 
 
         return True
+
+
+    def get_detail(self, customer_id: int):
+
+        customer = self.db.query(Customer).filter(
+            Customer.id == customer_id
+        ).first()
+
+        if customer is None:
+            return None
+
+        contacts = (
+            self.db.query(Contact)
+            .filter(Contact.customer_id == customer.id)
+            .all()
+        )
+
+        return {
+            "customer": customer,
+            "contacts": contacts,
+            "contact_count": len(contacts),
+        }
