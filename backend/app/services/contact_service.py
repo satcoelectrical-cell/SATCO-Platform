@@ -9,11 +9,21 @@ class ContactService:
     def __init__(self):
         self.repository = ContactRepository()
 
+
     def get_all(
         self,
-        db: Session
+        db: Session,
+        page: int = 1,
+        size: int = 20,
+        customer_id: int | None = None,
     ):
-        return self.repository.get_all(db)
+        return self.repository.get_all(
+            db,
+            page,
+            size,
+            customer_id,
+        )
+
 
     def get_by_id(
         self,
@@ -25,6 +35,7 @@ class ContactService:
             contact_id
         )
 
+
     def create(
         self,
         db: Session,
@@ -34,6 +45,7 @@ class ContactService:
             db,
             contact
         )
+
 
     def update(
         self,
@@ -54,6 +66,7 @@ class ContactService:
             db_contact,
             contact
         )
+
 
     def delete(
         self,

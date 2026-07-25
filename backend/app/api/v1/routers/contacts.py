@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app import schemas
 
 from app.schemas.contact import (
     ContactCreate,
@@ -17,17 +18,38 @@ router = APIRouter(
     tags=["Contacts"],
 )
 
+
 service = ContactService()
 
 
 @router.get(
     "/",
-    response_model=list[ContactResponse],
+    response_model=schemas.PaginatedResponse[
+        ContactResponse
+    ],
 )
 def get_contacts(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    customer_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    return service.get_all(db)
+
+    items, total = service.get_all(
+        db,
+        page,
+        size,
+        customer_id,
+    )
+
+    return schemas.PaginatedResponse[
+        ContactResponse
+    ](
+        items=items,
+        total=total,
+        page=page,
+        size=size,
+    )
 
 
 @router.get(
@@ -38,6 +60,7 @@ def get_contact(
     contact_id: int,
     db: Session = Depends(get_db),
 ):
+
     contact = service.get_by_id(
         db,
         contact_id,
@@ -60,6 +83,7 @@ def create_contact(
     contact: ContactCreate,
     db: Session = Depends(get_db),
 ):
+
     return service.create(
         db,
         contact,
@@ -75,6 +99,7 @@ def update_contact(
     contact: ContactUpdate,
     db: Session = Depends(get_db),
 ):
+
     updated = service.update(
         db,
         contact_id,
@@ -97,6 +122,7 @@ def delete_contact(
     contact_id: int,
     db: Session = Depends(get_db),
 ):
+
     deleted = service.delete(
         db,
         contact_id,

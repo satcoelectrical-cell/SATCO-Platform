@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.models.customer import Customer
 from app.schemas.customer import CustomerCreate
@@ -9,8 +10,38 @@ class CustomerRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_all(self):
-        return self.db.query(Customer).all()
+
+    def get_all(
+        self,
+        page: int = 1,
+        size: int = 20,
+        search: str | None = None,
+    ):
+
+        query = self.db.query(Customer)
+
+        if search:
+            query = query.filter(
+                or_(
+                    Customer.name.ilike(f"%{search}%"),
+                    Customer.company.ilike(f"%{search}%"),
+                    Customer.email.ilike(f"%{search}%"),
+                    Customer.phone.ilike(f"%{search}%"),
+                )
+            )
+
+
+        total = query.count()
+
+        items = (
+            query
+            .offset((page - 1) * size)
+            .limit(size)
+            .all()
+        )
+
+        return items, total
+
 
     def get_by_id(self, customer_id: int):
         return (
@@ -18,6 +49,7 @@ class CustomerRepository:
             .filter(Customer.id == customer_id)
             .first()
         )
+
 
     def create(self, customer: CustomerCreate):
 
