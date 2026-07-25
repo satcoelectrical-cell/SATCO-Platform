@@ -4,8 +4,6 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.dependencies.auth import get_current_user
 from app.models.user import User
-from app.dependencies.auth import get_current_user
-from app.models.user import User
 from app import schemas
 
 from app.schemas.contact import (
@@ -23,9 +21,6 @@ router = APIRouter(
 )
 
 
-service = ContactService()
-
-
 @router.get(
     "/",
     response_model=schemas.PaginatedResponse[
@@ -40,8 +35,9 @@ def get_contacts(
     current_user: User = Depends(get_current_user),
 ):
 
+    service = ContactService(db)
+
     items, total = service.get_all(
-        db,
         page,
         size,
         customer_id,
@@ -67,9 +63,10 @@ def get_contact(
     current_user: User = Depends(get_current_user),
 ):
 
+    service = ContactService(db)
+
     contact = service.get_by_id(
-        db,
-        contact_id,
+        contact_id
     )
 
     if contact is None:
@@ -91,9 +88,11 @@ def create_contact(
     current_user: User = Depends(get_current_user),
 ):
 
+    service = ContactService(db)
+
     return service.create(
-        db,
         contact,
+        current_user.id,
     )
 
 
@@ -108,10 +107,12 @@ def update_contact(
     current_user: User = Depends(get_current_user),
 ):
 
+    service = ContactService(db)
+
     updated = service.update(
-        db,
         contact_id,
         contact,
+        current_user.id,
     )
 
     if updated is None:
@@ -132,9 +133,11 @@ def delete_contact(
     current_user: User = Depends(get_current_user),
 ):
 
+    service = ContactService(db)
+
     deleted = service.delete(
-        db,
         contact_id,
+        current_user.id,
     )
 
     if not deleted:
@@ -145,4 +148,5 @@ def delete_contact(
 
     return {
         "message": "Contact deleted successfully",
+        "contact_id": contact_id,
     }

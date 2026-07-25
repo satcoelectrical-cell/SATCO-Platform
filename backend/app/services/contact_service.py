@@ -2,23 +2,23 @@ from sqlalchemy.orm import Session
 
 from app.repositories.contact_repository import ContactRepository
 from app.schemas.contact import ContactCreate, ContactUpdate
+from app.services.audit_service import create_audit_log
 
 
 class ContactService:
 
-    def __init__(self):
-        self.repository = ContactRepository()
+    def __init__(self, db: Session):
+        self.db = db
+        self.repository = ContactRepository(db)
 
 
     def get_all(
         self,
-        db: Session,
         page: int = 1,
         size: int = 20,
         customer_id: int | None = None,
     ):
         return self.repository.get_all(
-            db,
             page,
             size,
             customer_id,
@@ -27,63 +27,105 @@ class ContactService:
 
     def get_by_id(
         self,
-        db: Session,
         contact_id: int
     ):
         return self.repository.get_by_id(
-            db,
             contact_id
         )
 
 
     def create(
         self,
-        db: Session,
-        contact: ContactCreate
+        contact: ContactCreate,
+        user_id: int,
     ):
-        return self.repository.create(
-            db,
+
+        result = self.repository.create(
             contact
         )
+
+        create_audit_log(
+            db=self.db,
+            user_id=user_id,
+            action="CREATE",
+            entity="CONTACT",
+            entity_id=result.id,
+            details={
+                "contact_name": f"{result.first_name} {result.last_name}"
+            },
+        )
+
+        return result
 
 
     def update(
         self,
-        db: Session,
         contact_id: int,
-        contact: ContactUpdate
+        contact_data: ContactUpdate,
+        user_id: int,
     ):
-        db_contact = self.repository.get_by_id(
-            db,
+
+        contact = self.repository.get_by_id(
             contact_id
         )
 
-        if not db_contact:
+        if not contact:
             return None
 
-        return self.repository.update(
-            db,
-            db_contact,
-            contact
+
+        result = self.repository.update(
+            contact,
+            contact_data,
         )
+
+
+        create_audit_log(
+            db=self.db,
+            user_id=user_id,
+            action="UPDATE",
+            entity="CONTACT",
+            entity_id=result.id,
+            details={
+                "contact_name": f"{result.first_name} {result.last_name}"
+            },
+        )
+
+
+        return result
 
 
     def delete(
         self,
-        db: Session,
-        contact_id: int
+        contact_id: int,
+        user_id: int,
     ):
-        db_contact = self.repository.get_by_id(
-            db,
+
+        contact = self.repository.get_by_id(
             contact_id
         )
 
-        if not db_contact:
+        if not contact:
             return False
 
+
+        contact_name = f"{contact.first_name} {contact.last_name}"
+
+
         self.repository.delete(
-            db,
-            db_contact
+            contact
         )
+
+
+        create_audit_log(
+            db=self.db,
+            user_id=user_id,
+            action="DELETE",
+            entity="CONTACT",
+            entity_id=contact_id,
+            details={
+                "contact_name": contact_name
+            },
+        )
+
 
         return True

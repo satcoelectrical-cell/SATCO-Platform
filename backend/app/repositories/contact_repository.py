@@ -6,26 +6,25 @@ from app.schemas.contact import ContactCreate, ContactUpdate
 
 class ContactRepository:
 
+    def __init__(self, db: Session):
+        self.db = db
+
 
     def get_all(
         self,
-        db: Session,
         page: int = 1,
         size: int = 20,
         customer_id: int | None = None,
     ):
 
-        query = db.query(Contact)
-
+        query = self.db.query(Contact)
 
         if customer_id:
             query = query.filter(
                 Contact.customer_id == customer_id
             )
 
-
         total = query.count()
-
 
         items = (
             query
@@ -34,27 +33,23 @@ class ContactRepository:
             .all()
         )
 
-
         return items, total
-
 
 
     def get_by_id(
         self,
-        db: Session,
         contact_id: int
     ):
+
         return (
-            db.query(Contact)
+            self.db.query(Contact)
             .filter(Contact.id == contact_id)
             .first()
         )
 
 
-
     def create(
         self,
-        db: Session,
         contact: ContactCreate
     ):
 
@@ -62,17 +57,15 @@ class ContactRepository:
             **contact.model_dump()
         )
 
-        db.add(db_contact)
-        db.commit()
-        db.refresh(db_contact)
+        self.db.add(db_contact)
+        self.db.commit()
+        self.db.refresh(db_contact)
 
         return db_contact
 
 
-
     def update(
         self,
-        db: Session,
         db_contact: Contact,
         contact: ContactUpdate
     ):
@@ -88,18 +81,16 @@ class ContactRepository:
                 value
             )
 
-        db.commit()
-        db.refresh(db_contact)
+        self.db.commit()
+        self.db.refresh(db_contact)
 
         return db_contact
 
 
-
     def delete(
         self,
-        db: Session,
         db_contact: Contact
     ):
 
-        db.delete(db_contact)
-        db.commit()
+        self.db.delete(db_contact)
+        self.db.commit()
