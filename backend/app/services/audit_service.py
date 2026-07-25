@@ -1,5 +1,5 @@
-
 from app.models.audit_log import AuditLog
+from app.repositories import audit_repository
 
 
 def create_audit_log(
@@ -8,7 +8,7 @@ def create_audit_log(
     action,
     entity,
     entity_id=None,
-    details=None
+    details=None,
 ):
 
     log = AuditLog(
@@ -21,5 +21,20 @@ def create_audit_log(
 
     db.add(log)
     db.commit()
+    db.refresh(log)
 
     return log
+
+
+
+def get_audit_logs(
+    db,
+    page=1,
+    size=20,
+):
+
+    return audit_repository.get_audit_logs(
+        db,
+        page,
+        size,
+    )
