@@ -9,14 +9,12 @@ class ContactRepository:
     def __init__(self, db: Session):
         self.db = db
 
-
     def get_all(
         self,
         page: int = 1,
         size: int = 20,
         customer_id: int | None = None,
     ):
-
         query = self.db.query(Contact)
 
         if customer_id:
@@ -35,24 +33,20 @@ class ContactRepository:
 
         return items, total
 
-
     def get_by_id(
         self,
-        contact_id: int
+        contact_id: int,
     ):
-
         return (
             self.db.query(Contact)
             .filter(Contact.id == contact_id)
             .first()
         )
 
-
     def create(
         self,
-        contact: ContactCreate
+        contact: ContactCreate,
     ):
-
         db_contact = Contact(
             **contact.model_dump()
         )
@@ -63,34 +57,26 @@ class ContactRepository:
 
         return db_contact
 
-
     def update(
         self,
         db_contact: Contact,
-        contact: ContactUpdate
+        contact: ContactUpdate,
     ):
-
         update_data = contact.model_dump(
             exclude_unset=True
         )
 
         for key, value in update_data.items():
-            setattr(
-                db_contact,
-                key,
-                value
-            )
+            setattr(db_contact, key, value)
 
         self.db.commit()
         self.db.refresh(db_contact)
 
         return db_contact
 
-
     def delete(
         self,
-        db_contact: Contact
+        db_contact: Contact,
     ):
-
         self.db.delete(db_contact)
         self.db.commit()
