@@ -1,6 +1,10 @@
 from sqlalchemy.orm import Session
 
-from app.core.security import hash_password
+from app.core.security import (
+    hash_password,
+    verify_password,
+)
+
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserCreate
 
@@ -8,7 +12,6 @@ from app.schemas.user import UserCreate
 class UserService:
 
     def __init__(self):
-
         self.repository = UserRepository()
 
 
@@ -46,3 +49,34 @@ class UserService:
             user,
             hashed,
         )
+
+
+    def authenticate(
+        self,
+        db: Session,
+        username: str,
+        password: str,
+    ):
+
+        user = self.repository.get_by_username(
+            db,
+            username,
+        )
+
+
+        if not user:
+            return None
+
+
+        if not verify_password(
+            password,
+            user.hashed_password,
+        ):
+            return None
+
+
+        if not user.is_active:
+            return None
+
+
+        return user

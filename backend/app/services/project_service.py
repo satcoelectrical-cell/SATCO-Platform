@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 
 from app.repositories import project_repository
 from app.schemas.project import ProjectCreate, ProjectUpdate
+from app.services.audit_service import create_audit_log
 
 
 def get_projects(
@@ -63,9 +64,28 @@ def update_project(
 def delete_project(
     db: Session,
     project_id: int,
+    user_id: int,
 ):
 
-    return project_repository.delete_project(
+    project = project_repository.get_project(
         db,
         project_id,
     )
+
+    result = project_repository.delete_project(
+        db,
+        project_id,
+    )
+
+    create_audit_log(
+        db=db,
+        user_id=user_id,
+        action="DELETE",
+        entity="PROJECT",
+        entity_id=project_id,
+        details={
+            "project_name": project.name
+        },
+    )
+
+    return result

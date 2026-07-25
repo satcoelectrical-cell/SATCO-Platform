@@ -2,6 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.dependencies.auth import get_current_user
+from app.models.user import User
+from app.dependencies.auth import get_current_user
+from app.models.user import User
 from app import schemas
 
 from app.schemas.contact import (
@@ -33,6 +37,7 @@ def get_contacts(
     size: int = Query(20, ge=1, le=100),
     customer_id: int | None = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
 
     items, total = service.get_all(
@@ -59,6 +64,7 @@ def get_contacts(
 def get_contact(
     contact_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
 
     contact = service.get_by_id(
@@ -82,6 +88,7 @@ def get_contact(
 def create_contact(
     contact: ContactCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
 
     return service.create(
@@ -98,6 +105,7 @@ def update_contact(
     contact_id: int,
     contact: ContactUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
 
     updated = service.update(
@@ -121,6 +129,7 @@ def update_contact(
 def delete_contact(
     contact_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
 
     deleted = service.delete(

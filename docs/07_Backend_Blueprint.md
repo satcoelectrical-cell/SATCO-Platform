@@ -130,7 +130,7 @@ Document retrieval.
 
 ---
 
-## Auth
+# Auth
 
 Authentication.
 
@@ -140,9 +140,139 @@ JWT.
 
 ---
 
-## Rule
+# Authentication Architecture
+
+SATCO Platform uses JWT-based authentication as the foundation of user identity management.
+
+Authentication is implemented as an independent security layer and is separated from API routes.
+
+---
+
+# Authentication Flow
+
+Client
+
+↓
+
+API Router
+
+↓
+
+Service Layer
+
+↓
+
+Repository Layer
+
+↓
+
+Database
+
+---
+
+# Password Security
+
+Rules:
+
+- Raw passwords are never stored.
+- Passwords are hashed before database persistence.
+- Password verification is performed through secure hash comparison.
+
+Implementation:
+
+pwdlib[argon2]
+
+---
+
+# Token Strategy
+
+SATCO Platform uses two JWT token types.
+
+## Access Token
+
+Purpose:
+
+- API request authorization.
+- Short-term identity validation.
+- Protecting API endpoints.
+
+Usage:
+
+Authorization: Bearer <access_token>
+
+---
+
+## Refresh Token
+
+Purpose:
+
+- Session renewal.
+- Generating new access tokens.
+- Maintaining user sessions.
+
+---
+
+# Authentication Dependency
+
+JWT validation is handled by:
+
+app/dependencies/auth.py
+
+Responsibilities:
+
+- Extract Bearer token.
+- Validate JWT signature.
+- Validate token type.
+- Extract user identity.
+- Protect API endpoints.
+
+---
+
+# Authorization Foundation
+
+Authentication provides the foundation for future Role-Based Access Control (RBAC).
+
+Future structure:
+
+User
+
+↓
+
+Role
+
+↓
+
+Permissions
+
+---
+
+Planned roles:
+
+- admin
+- engineer
+- project_manager
+- customer
+
+---
+
+# Architectural Rules
 
 Business logic belongs ONLY inside Services.
 
 Database logic belongs ONLY inside Repositories.
 
+Authentication logic must remain separated from business logic.
+
+---
+
+# Patch-016 Implementation Status
+
+Completed:
+
+- User registration
+- Password hashing
+- Password verification
+- JWT access token generation
+- JWT refresh token generation
+- JWT validation dependency
+- Protected endpoint support
