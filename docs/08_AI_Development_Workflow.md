@@ -13,7 +13,6 @@ The purpose is to create a controlled, repeatable and production-ready developme
 Every SATCO development patch must follow this workflow.
 
 ---
-
 # 2. Core Principle: Docs First Architecture
 
 The /docs directory is the official Source of Truth.
@@ -42,7 +41,6 @@ Git Commit
 If an implementation decision changes architecture, the documentation must be updated before finalizing the patch.
 
 ---
-
 # 3. SATCO Platform Development Philosophy
 
 SATCO Platform follows:
@@ -63,7 +61,6 @@ Every patch must be:
 - Committed
 
 ---
-
 # 4. AI Responsibilities
 
 ## ChatGPT Responsibilities
