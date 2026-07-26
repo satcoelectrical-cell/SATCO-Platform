@@ -22,6 +22,7 @@ class ProjectCodeSequence(Base):
     year = Column(
         Integer,
         primary_key=True,
+        autoincrement=False,
     )
     last_value = Column(
         Integer,

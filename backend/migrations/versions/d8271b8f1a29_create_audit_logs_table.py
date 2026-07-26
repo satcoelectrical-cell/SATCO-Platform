@@ -22,14 +22,23 @@ def upgrade() -> None:
     op.create_table(
         "audit_logs",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=True),
         sa.Column("action", sa.String(), nullable=False),
         sa.Column("entity", sa.String(), nullable=False),
         sa.Column("entity_id", sa.Integer(), nullable=True),
         sa.Column("details", postgresql.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=True),
     )
+    op.create_index(
+        "ix_audit_logs_id",
+        "audit_logs",
+        ["id"],
+    )
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "ix_audit_logs_id",
+        table_name="audit_logs",
+    )
     op.drop_table("audit_logs")

@@ -17,6 +17,117 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _prepare_project_code_sequences() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+
+    if "project_code_sequences" not in inspector.get_table_names():
+        op.create_table(
+            "project_code_sequences",
+            sa.Column(
+                "year",
+                sa.Integer(),
+                autoincrement=False,
+                nullable=False,
+            ),
+            sa.Column("last_value", sa.Integer(), nullable=False),
+            sa.PrimaryKeyConstraint(
+                "year",
+                name="pk_project_code_sequences",
+            ),
+            sa.CheckConstraint(
+                "last_value >= 1",
+                name="ck_project_code_sequences_last_value",
+            ),
+        )
+        return
+
+    columns = {
+        column["name"]: column
+        for column in inspector.get_columns("project_code_sequences")
+    }
+    if set(columns) != {"year", "last_value"}:
+        raise RuntimeError(
+            "PATCH-019: incompatible project_code_sequences columns"
+        )
+    for column_name in ("year", "last_value"):
+        column = columns[column_name]
+        if not isinstance(column["type"], sa.Integer):
+            raise RuntimeError(
+                "PATCH-019: project_code_sequences columns must be integers"
+            )
+        if column["nullable"]:
+            raise RuntimeError(
+                "PATCH-019: project_code_sequences columns must be non-null"
+            )
+
+    primary_key = inspector.get_pk_constraint(
+        "project_code_sequences"
+    )
+    if primary_key.get("constrained_columns") != ["year"]:
+        raise RuntimeError(
+            "PATCH-019: project_code_sequences requires year primary key"
+        )
+
+    invalid_counter = bind.execute(
+        sa.text(
+            "SELECT 1 FROM project_code_sequences "
+            "WHERE last_value < 1 LIMIT 1"
+        )
+    ).first()
+    if invalid_counter:
+        raise RuntimeError(
+            "PATCH-019: project_code_sequences has invalid counters"
+        )
+
+    op.alter_column(
+        "project_code_sequences",
+        "year",
+        existing_type=sa.Integer(),
+        existing_nullable=False,
+        server_default=None,
+    )
+
+    primary_key_name = primary_key.get("name")
+    if not primary_key_name:
+        raise RuntimeError(
+            "PATCH-019: project_code_sequences primary key must be named"
+        )
+    if primary_key_name != "pk_project_code_sequences":
+        op.execute(
+            sa.text(
+                "ALTER TABLE project_code_sequences "
+                f"RENAME CONSTRAINT "
+                f'"{primary_key_name}" TO "pk_project_code_sequences"'
+            )
+        )
+
+    check_constraints = {
+        constraint["name"]: constraint
+        for constraint in inspector.get_check_constraints(
+            "project_code_sequences"
+        )
+    }
+    counter_check = check_constraints.get(
+        "ck_project_code_sequences_last_value"
+    )
+    if counter_check is None:
+        op.create_check_constraint(
+            "ck_project_code_sequences_last_value",
+            "project_code_sequences",
+            "last_value >= 1",
+        )
+    elif "last_value >= 1" not in (
+        counter_check.get("sqltext", "")
+        .replace("(", "")
+        .replace(")", "")
+        .strip()
+    ):
+        raise RuntimeError(
+            "PATCH-019: incompatible Project Code counter constraint"
+        )
+
+
 def upgrade() -> None:
     op.execute(
         """
@@ -47,19 +158,7 @@ def upgrade() -> None:
         """
     )
 
-    op.create_table(
-        "project_code_sequences",
-        sa.Column("year", sa.Integer(), nullable=False),
-        sa.Column("last_value", sa.Integer(), nullable=False),
-        sa.PrimaryKeyConstraint(
-            "year",
-            name="pk_project_code_sequences",
-        ),
-        sa.CheckConstraint(
-            "last_value >= 1",
-            name="ck_project_code_sequences_last_value",
-        ),
-    )
+    _prepare_project_code_sequences()
 
     op.add_column(
         "projects",
@@ -118,12 +217,17 @@ def upgrade() -> None:
 
     op.execute(
         """
-        INSERT INTO project_code_sequences (year, last_value)
+        INSERT INTO project_code_sequences AS existing (year, last_value)
         SELECT
             SUBSTRING(project_code FROM 9 FOR 4)::integer,
             MAX(SUBSTRING(project_code FROM 14)::integer)
         FROM projects
-        GROUP BY SUBSTRING(project_code FROM 9 FOR 4)::integer;
+        GROUP BY SUBSTRING(project_code FROM 9 FOR 4)::integer
+        ON CONFLICT (year) DO UPDATE
+        SET last_value = GREATEST(
+            existing.last_value,
+            EXCLUDED.last_value
+        );
         """
     )
 
@@ -167,12 +271,20 @@ def upgrade() -> None:
         type_=sa.String(length=200),
         existing_nullable=False,
     )
+    op.execute(
+        """
+        UPDATE projects
+        SET created_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+        WHERE created_at IS NULL;
+        """
+    )
     op.alter_column(
         "projects",
         "created_at",
         existing_type=sa.DateTime(),
         type_=sa.DateTime(timezone=True),
         existing_nullable=True,
+        nullable=False,
         postgresql_using="created_at AT TIME ZONE 'UTC'",
     )
     op.alter_column(
@@ -457,7 +569,8 @@ def downgrade() -> None:
         "created_at",
         existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(),
-        existing_nullable=True,
+        existing_nullable=False,
+        nullable=True,
         postgresql_using="created_at AT TIME ZONE 'UTC'",
     )
     op.alter_column(

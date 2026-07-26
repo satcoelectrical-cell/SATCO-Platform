@@ -1,13 +1,5 @@
 from fastapi import FastAPI
 
-from app.core.database import Base
-from app.core.database import engine
-
-from app.models import contact
-from app.models import customer
-from app.models import project
-from app.models import user
-
 from app.api.v1.routers.contacts import router as contact_router
 from app.api.v1.routers.customers import router as customer_router
 from app.api.v1.routers.projects import router as project_router
@@ -16,9 +8,6 @@ from app.api.v1.routers.auth import router as auth_router
 from app.api.v1.routers.audit_logs import router as audit_router
 
 from app.exceptions.handlers import register_exception_handlers
-
-
-Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI(

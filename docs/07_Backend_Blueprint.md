@@ -410,3 +410,67 @@ A future Milestone/Task patch may derive the existing `progress` field from chil
 ## Project API Documentation
 
 All Project endpoints include focused OpenAPI examples for successful and applicable validation, authentication, authorization, and missing-resource responses.
+
+---
+
+# PATCH-019 Production Infrastructure Hardening
+
+Status:
+
+Completed
+
+## Schema Ownership
+
+Alembic is the exclusive schema creation and evolution authority.
+
+The backend must not call:
+
+```python
+Base.metadata.create_all()
+```
+
+Application import and startup are schema read-only. Missing or outdated schema is a deployment error and is not repaired by the API process.
+
+## Deployment Order
+
+The supported deployment sequence is:
+
+```text
+Database backup and preflight
+    -> alembic upgrade head
+        -> schema verification
+            -> backend startup
+                -> API health validation
+```
+
+Alembic does not run automatically during normal backend startup.
+
+## Migration Configuration
+
+Migration commands require either:
+
+- `ALEMBIC_DATABASE_URL`, or
+- the complete `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_USER`, `DATABASE_PASSWORD`, and `DATABASE_NAME` settings.
+
+Test execution retains an exact dedicated-database name guard and requires the database to be migrated to the expected head before test collection.
+
+## Reproducibility
+
+The repaired migration chain creates:
+
+- Users
+- Customers
+- Contacts
+- Legacy Projects and Customer relationship
+- Audit Logs
+- PATCH-018.1 Project Core schema
+
+from an empty PostgreSQL database without model-driven schema creation.
+
+Existing databases already stamped past repaired historical revisions do not replay those revisions. The first pending migration validates and reconciles known compatible objects created by the former startup behavior.
+
+Architecture and compatibility policy are defined by:
+
+```text
+ADR-012 — Alembic Schema Ownership and Historical Repair
+```

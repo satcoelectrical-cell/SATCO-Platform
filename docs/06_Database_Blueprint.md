@@ -128,12 +128,48 @@ Progress is manually maintained in PATCH-018.1 and may become system-derived in 
 # Database Principles
 
 - PostgreSQL is the Single Source of Truth.
+- Alembic is the exclusive authority for schema creation and evolution.
+- Application and test imports must not create or alter schema objects.
+- Database migrations run explicitly before the matching application version starts.
 - Soft Delete whenever possible.
 - UUID for public identifiers.
 - Timestamps on every table.
 - Relationships must use Foreign Keys.
 - No duplicated business data.
 - Every AI result must be traceable.
+
+---
+
+# Schema Management
+
+## PATCH-019 Production Infrastructure Hardening
+
+Status:
+
+Completed
+
+The complete PostgreSQL schema must be reproducible through:
+
+```text
+alembic upgrade head
+```
+
+Rules:
+
+- `Base.metadata.create_all()` is not an application or test schema-management mechanism.
+- SQLAlchemy metadata defines ORM mappings and supplies Alembic comparison metadata.
+- Fresh PostgreSQL databases upgrade from the first committed revision to head.
+- Existing databases retain their revision identity and use validated compatibility paths.
+- Deployments apply migrations before starting the corresponding backend version.
+- Normal backend startup never runs Alembic automatically.
+- Migration and regression mutation tests require explicitly named dedicated PostgreSQL databases.
+- Tests must never silently fall back to the development database.
+
+Historical revision repair is governed by:
+
+```text
+ADR-012 — Alembic Schema Ownership and Historical Repair
+```
 
 ---
 

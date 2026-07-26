@@ -1,13 +1,59 @@
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy.engine import URL
 
 from alembic import context
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+
+def get_database_url() -> str:
+    explicit_url = os.getenv("ALEMBIC_DATABASE_URL")
+    if explicit_url:
+        return explicit_url
+
+    setting_names = (
+        "DATABASE_HOST",
+        "DATABASE_PORT",
+        "DATABASE_USER",
+        "DATABASE_PASSWORD",
+        "DATABASE_NAME",
+    )
+    settings = {
+        name: os.getenv(name)
+        for name in setting_names
+    }
+    missing_settings = [
+        name
+        for name, value in settings.items()
+        if not value
+    ]
+    if missing_settings:
+        raise RuntimeError(
+            "Alembic requires ALEMBIC_DATABASE_URL or all DATABASE_* "
+            "connection settings; missing: "
+            + ", ".join(missing_settings)
+        )
+
+    return URL.create(
+        drivername="postgresql",
+        username=settings["DATABASE_USER"],
+        password=settings["DATABASE_PASSWORD"],
+        host=settings["DATABASE_HOST"],
+        port=int(settings["DATABASE_PORT"]),
+        database=settings["DATABASE_NAME"],
+    ).render_as_string(hide_password=False)
+
+
+config.set_main_option(
+    "sqlalchemy.url",
+    get_database_url().replace("%", "%%"),
+)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -19,7 +65,11 @@ if config.config_file_name is not None:
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 from app.core.database import Base
-from app import models
+from app.models import audit_log  # noqa: F401
+from app.models import contact  # noqa: F401
+from app.models import customer  # noqa: F401
+from app.models import project  # noqa: F401
+from app.models import user  # noqa: F401
 
 target_metadata = Base.metadata
 
