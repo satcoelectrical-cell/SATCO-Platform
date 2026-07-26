@@ -44,6 +44,7 @@ def test_project_rejects_missing_customer(
 def test_project_crud_filters_sorting_pagination_and_audits(
     client,
     db_session,
+    engineer_user,
     engineer_headers,
     admin_headers,
 ):
@@ -78,6 +79,7 @@ def test_project_crud_filters_sorting_pagination_and_audits(
             "size": 1,
             "sort_by": "name",
             "order": "asc",
+            "owner_id": engineer_user.id,
         },
         headers=engineer_headers,
     )
@@ -90,6 +92,7 @@ def test_project_crud_filters_sorting_pagination_and_audits(
         params={
             "sort_by": "name",
             "order": "desc",
+            "owner_id": engineer_user.id,
         },
         headers=engineer_headers,
     )
@@ -125,6 +128,7 @@ def test_project_crud_filters_sorting_pagination_and_audits(
             "status": "in_progress",
             "sort_by": "status",
             "order": "asc",
+            "owner_id": engineer_user.id,
         },
         headers=engineer_headers,
     )
@@ -137,6 +141,7 @@ def test_project_crud_filters_sorting_pagination_and_audits(
         params={
             "sort_by": "created_at",
             "order": "asc",
+            "owner_id": engineer_user.id,
         },
         headers=engineer_headers,
     )

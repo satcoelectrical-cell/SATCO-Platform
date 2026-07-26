@@ -175,6 +175,13 @@ def upgrade() -> None:
         existing_nullable=True,
         postgresql_using="created_at AT TIME ZONE 'UTC'",
     )
+    op.alter_column(
+        "projects",
+        "status",
+        existing_type=sa.String(),
+        existing_nullable=True,
+        nullable=False,
+    )
 
     op.add_column(
         "projects",
@@ -280,7 +287,7 @@ def upgrade() -> None:
         "ck_projects_status",
         "projects",
         (
-            "status IN "
+            "status IS NOT NULL AND status IN "
             "('new', 'in_progress', 'on_hold', 'completed', 'cancelled')"
         ),
     )
@@ -438,6 +445,13 @@ def downgrade() -> None:
         type_="unique",
     )
 
+    op.alter_column(
+        "projects",
+        "status",
+        existing_type=sa.String(),
+        existing_nullable=False,
+        nullable=True,
+    )
     op.alter_column(
         "projects",
         "created_at",

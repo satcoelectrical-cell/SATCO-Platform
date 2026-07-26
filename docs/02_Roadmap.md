@@ -36,7 +36,7 @@ PATCH-018.1 — Project Core Enhancement
 
 Status:
 
-Implementation In Progress
+Completed
 
 ---
 
@@ -115,7 +115,7 @@ Tasks
 # Phase 4 — Project Management
 
 - [x] Projects CRUD foundation
-- [ ] PATCH-018.1 Project Core Enhancement
+- [x] PATCH-018.1 Project Core Enhancement
 
 - Files
 

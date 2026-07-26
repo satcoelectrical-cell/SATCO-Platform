@@ -2,6 +2,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import engine
@@ -169,6 +170,13 @@ def test_project_validation_and_openapi_examples(
     )
     assert invalid_dates.status_code == 400
 
+    null_status = client.put(
+        "/projects/999999",
+        json={"status": None},
+        headers=engineer_headers,
+    )
+    assert null_status.status_code == 422
+
     invalid_enum = client.get(
         "/projects/",
         params={"priority": "urgent"},
@@ -190,16 +198,27 @@ def test_project_validation_and_openapi_examples(
         assert "401" in responses
 
 
-def test_yearly_sequence_and_concurrent_project_creation(
-    db_session,
-):
-    customer_id = db_session.execute(
-        __import__("sqlalchemy").text(
-            "INSERT INTO customers (name) "
-            "VALUES ('Concurrency Customer') RETURNING id"
-        )
-    ).scalar_one()
-    db_session.commit()
+def test_yearly_sequence_and_concurrent_project_creation():
+    with engine.begin() as connection:
+        customer_id = connection.execute(
+            text(
+                "INSERT INTO customers (name) "
+                "VALUES ('Concurrency Customer') RETURNING id"
+            )
+        ).scalar_one()
+        starting_2027 = connection.execute(
+            text(
+                "SELECT COALESCE(last_value, 0) "
+                "FROM project_code_sequences WHERE year = 2027"
+            )
+        ).scalar_one_or_none() or 0
+        starting_2028 = connection.execute(
+            text(
+                "SELECT COALESCE(last_value, 0) "
+                "FROM project_code_sequences WHERE year = 2028"
+            )
+        ).scalar_one_or_none() or 0
+
     session_factory = sessionmaker(bind=engine)
 
     def create_one(index):
@@ -225,19 +244,32 @@ def test_yearly_sequence_and_concurrent_project_creation(
     assert sorted(
         int(code.rsplit("-", 1)[1])
         for code in codes
-    ) == list(range(1, 9))
+    ) == list(range(starting_2027 + 1, starting_2027 + 9))
 
-    next_year = ProjectRepository(db_session).create(
-        ProjectCreate(
-            name="New Year Project",
-            customer_id=customer_id,
-        ),
-        owner_id=None,
-        creation_time=datetime(
-            2028,
-            1,
-            1,
-            tzinfo=timezone.utc,
-        ),
-    )
-    assert next_year.project_code == "SAT-PRJ-2028-0001"
+    with session_factory() as session:
+        next_year = ProjectRepository(session).create(
+            ProjectCreate(
+                name="New Year Project",
+                customer_id=customer_id,
+            ),
+            owner_id=None,
+            creation_time=datetime(
+                2028,
+                1,
+                1,
+                tzinfo=timezone.utc,
+            ),
+        )
+        assert next_year.project_code == (
+            f"SAT-PRJ-2028-{starting_2028 + 1:04d}"
+        )
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM projects WHERE customer_id = :customer_id"),
+            {"customer_id": customer_id},
+        )
+        connection.execute(
+            text("DELETE FROM customers WHERE id = :customer_id"),
+            {"customer_id": customer_id},
+        )

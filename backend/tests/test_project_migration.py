@@ -23,6 +23,7 @@ def test_project_core_database_contract():
     }
     assert expected_columns <= columns.keys()
     assert columns["project_code"]["nullable"] is False
+    assert columns["status"]["nullable"] is False
 
     unique_constraints = inspector.get_unique_constraints(
         "projects"

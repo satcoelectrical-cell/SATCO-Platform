@@ -41,7 +41,7 @@ class Project(Base):
             name="ck_projects_project_code_format",
         ),
         CheckConstraint(
-            "status IN "
+            "status IS NOT NULL AND status IN "
             "('new', 'in_progress', 'on_hold', 'completed', 'cancelled')",
             name="ck_projects_status",
         ),

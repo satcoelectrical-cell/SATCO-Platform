@@ -137,6 +137,16 @@ class ProjectUpdate(BaseModel):
             raise ValueError("Project name must not be empty")
         return value
 
+    @field_validator("status")
+    @classmethod
+    def validate_status(
+        cls,
+        value: ProjectStatus | None,
+    ) -> ProjectStatus:
+        if value is None:
+            raise ValueError("Project status must not be null")
+        return value
+
     @field_validator("description")
     @classmethod
     def normalize_description(

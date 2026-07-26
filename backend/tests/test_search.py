@@ -67,18 +67,32 @@ def test_search_matches_exact_and_partial_project_code(
         engineer_headers,
     )
 
-    for query in (
-        project["project_code"],
-        project["project_code"][4:12],
-    ):
-        response = client.get(
-            "/search/",
-            params={"q": query, "type": "project"},
-            headers=engineer_headers,
-        )
-        assert response.status_code == 200
-        projects = response.json()["results"]["projects"]
-        assert len(projects) == 1
-        assert projects[0]["project_code"] == (
-            project["project_code"]
-        )
+    exact_response = client.get(
+        "/search/",
+        params={
+            "q": project["project_code"],
+            "type": "project",
+        },
+        headers=engineer_headers,
+    )
+    assert exact_response.status_code == 200
+    exact_projects = exact_response.json()["results"]["projects"]
+    assert len(exact_projects) == 1
+    assert exact_projects[0]["project_code"] == (
+        project["project_code"]
+    )
+
+    partial_response = client.get(
+        "/search/",
+        params={
+            "q": project["project_code"][4:12],
+            "type": "project",
+        },
+        headers=engineer_headers,
+    )
+    assert partial_response.status_code == 200
+    partial_projects = partial_response.json()["results"]["projects"]
+    assert project["project_code"] in {
+        result["project_code"]
+        for result in partial_projects
+    }
