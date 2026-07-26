@@ -90,10 +90,16 @@ def create_contact(
 
     service = ContactService(db)
 
-    return service.create(
-        contact,
-        current_user.id,
-    )
+    try:
+        return service.create(
+            contact,
+            current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
 
 
 @router.put(

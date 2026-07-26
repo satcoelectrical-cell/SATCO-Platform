@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 
 from app.repositories.customer_repository import CustomerRepository
-from app.models.contact import Contact
 from app.schemas.customer import CustomerCreate
 from app.services.audit_service import create_audit_log
 
@@ -134,19 +133,15 @@ class CustomerService:
 
 
     def get_detail(self, customer_id: int):
+        """Deprecated internal helper retained for future customer detail API."""
+        detail = self.repository.get_detail(
+            customer_id
+        )
 
-        customer = self.db.query(Customer).filter(
-            Customer.id == customer_id
-        ).first()
-
-        if customer is None:
+        if detail is None:
             return None
 
-        contacts = (
-            self.db.query(Contact)
-            .filter(Contact.customer_id == customer.id)
-            .all()
-        )
+        customer, contacts = detail
 
         return {
             "customer": customer,

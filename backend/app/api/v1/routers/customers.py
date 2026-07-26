@@ -1,9 +1,7 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.dependencies.auth import get_current_user
-from app.models.user import User
 from app.dependencies.auth import get_current_user
 from app.models.user import User
 
@@ -92,6 +90,12 @@ def update_customer(
         current_user.id,
     )
 
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Customer not found",
+        )
+
     return result
 
 
@@ -107,10 +111,16 @@ def delete_customer(
 
     service = CustomerService(db)
 
-    service.delete(
+    deleted = service.delete(
         customer_id,
         current_user.id,
     )
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="Customer not found",
+        )
 
     return {
         "message": "Customer deleted successfully",

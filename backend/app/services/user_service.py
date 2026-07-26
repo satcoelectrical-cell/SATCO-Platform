@@ -5,8 +5,9 @@ from app.core.security import (
     verify_password,
 )
 
+from app.permissions.roles import Role
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import UserCreate
+from app.schemas.user import UserRegistration
 
 
 class UserService:
@@ -18,7 +19,7 @@ class UserService:
     def register(
         self,
         db: Session,
-        user: UserCreate,
+        user: UserRegistration,
     ):
 
         if self.repository.get_by_email(
@@ -48,6 +49,7 @@ class UserService:
             db,
             user,
             hashed,
+            Role.ENGINEER,
         )
 
 

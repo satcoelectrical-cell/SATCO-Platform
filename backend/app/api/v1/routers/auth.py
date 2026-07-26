@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -7,7 +8,7 @@ from app.core.security import (
     create_refresh_token,
 )
 
-from app.schemas.user import UserCreate, UserResponse
+from app.schemas.user import UserRegistration, UserResponse
 from app.schemas.token import TokenResponse
 
 from app.services.user_service import UserService
@@ -28,7 +29,7 @@ service = UserService()
     response_model=UserResponse,
 )
 def register(
-    user: UserCreate,
+    user: UserRegistration,
     db: Session = Depends(get_db),
 ):
     try:
@@ -49,15 +50,14 @@ def register(
     response_model=TokenResponse,
 )
 def login(
-    username: str,
-    password: str,
+    form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
 
     user = service.authenticate(
         db,
-        username,
-        password,
+        form_data.username,
+        form_data.password,
     )
 
 

@@ -1,7 +1,8 @@
 from sqlalchemy.orm import Session
 
 from app.models.user import User
-from app.schemas.user import UserCreate
+from app.permissions.roles import Role
+from app.schemas.user import UserRegistration
 
 
 class UserRepository:
@@ -34,15 +35,17 @@ class UserRepository:
     def create(
         self,
         db: Session,
-        user: UserCreate,
+        user: UserRegistration,
         hashed_password: str,
+        role: Role,
     ):
+        validated_role = Role.from_value(role)
 
         db_user = User(
             email=user.email,
             username=user.username,
             full_name=user.full_name,
-            role=user.role,
+            role=validated_role.value,
             hashed_password=hashed_password,
         )
 

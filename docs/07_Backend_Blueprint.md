@@ -276,3 +276,62 @@ Completed:
 - JWT refresh token generation
 - JWT validation dependency
 - Protected endpoint support
+
+---
+
+# PATCH-017.3 Security and Stabilization Contract
+
+Status:
+
+Completed
+
+## Public Registration
+
+Public registration accepts user identity and password fields only.
+
+Rules:
+
+- Public clients cannot select a role.
+- Public registrations receive the `engineer` role server-side.
+- Supported persisted roles are validated through the central Role enum.
+- Administrative role assignment requires a future protected administration workflow and is not part of PATCH-017.3.
+
+## Login Request
+
+`POST /auth/login` uses the OAuth2 password form contract:
+
+```text
+Content-Type: application/x-www-form-urlencoded
+```
+
+Credentials must not be accepted through URL query parameters.
+
+## Protected Search
+
+`GET /search/` requires a valid JWT access token because search results contain protected CRM and Project information.
+
+## Project Service
+
+Project business logic uses the session-bound `ProjectRepository`.
+
+Supported Project list behavior:
+
+- Pagination
+- Customer filtering
+- Status filtering
+- Sorting by name, created time, or status
+- Ascending or descending order
+
+Project CREATE, UPDATE, and DELETE operations must:
+
+- Validate referenced Customers.
+- Return controlled missing-resource responses.
+- Record audit events after successful operations.
+
+## PATCH-017.3 Testing
+
+Regression tests use the existing Docker PostgreSQL service and a dedicated PATCH-017.3 test database.
+
+SQLite or another database backend must not be introduced.
+
+The application dependency structure remains unchanged; test tools are installed ephemerally during validation.

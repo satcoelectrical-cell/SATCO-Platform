@@ -50,6 +50,16 @@ class CustomerRepository:
             .first()
         )
 
+    def get_detail(self, customer_id: int):
+        customer = self.get_by_id(customer_id)
+
+        if customer is None:
+            return None
+
+        contacts = list(customer.contacts)
+
+        return customer, contacts
+
 
     def create(self, customer: CustomerCreate):
 

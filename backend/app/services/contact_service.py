@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.repositories.contact_repository import ContactRepository
+from app.repositories.customer_repository import CustomerRepository
 from app.schemas.contact import ContactCreate, ContactUpdate
 from app.services.audit_service import create_audit_log
 
@@ -10,6 +11,7 @@ class ContactService:
     def __init__(self, db: Session):
         self.db = db
         self.repository = ContactRepository(db)
+        self.customer_repository = CustomerRepository(db)
 
 
     def get_all(
@@ -39,6 +41,12 @@ class ContactService:
         contact: ContactCreate,
         user_id: int,
     ):
+        customer = self.customer_repository.get_by_id(
+            contact.customer_id
+        )
+
+        if customer is None:
+            raise ValueError("Customer not found")
 
         result = self.repository.create(
             contact

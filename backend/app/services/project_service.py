@@ -1,91 +1,140 @@
 from sqlalchemy.orm import Session
 
-from app.repositories import project_repository
+from app.enums import ProjectStatus
+from app.repositories.customer_repository import CustomerRepository
+from app.repositories.project_repository import ProjectRepository
 from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.services.audit_service import create_audit_log
 
 
-def get_projects(
-    db: Session,
-    page: int = 1,
-    size: int = 20,
-    customer_id: int | None = None,
-    status: str | None = None,
-    sort_by: str = "created_at",
-    order: str = "desc",
-):
+class ProjectService:
 
-    return project_repository.get_projects(
-        db,
-        page,
-        size,
-        customer_id,
-        status,
-        sort_by,
-        order,
-    )
+    def __init__(self, db: Session):
+        self.db = db
+        self.repository = ProjectRepository(db)
+        self.customer_repository = CustomerRepository(db)
 
+    def get_all(
+        self,
+        page: int = 1,
+        size: int = 20,
+        customer_id: int | None = None,
+        status: str | None = None,
+        sort_by: str = "created_at",
+        order: str = "desc",
+    ):
+        return self.repository.get_all(
+            page,
+            size,
+            customer_id,
+            status,
+            sort_by,
+            order,
+        )
 
-def get_project(
-    db: Session,
-    project_id: int,
-):
+    def get_by_id(self, project_id: int):
+        return self.repository.get_by_id(project_id)
 
-    return project_repository.get_project(
-        db,
-        project_id,
-    )
+    def create(
+        self,
+        project: ProjectCreate,
+        user_id: int,
+    ):
+        self._validate_customer(project.customer_id)
 
+        result = self.repository.create(project)
 
-def create_project(
-    db: Session,
-    project: ProjectCreate,
-):
+        create_audit_log(
+            db=self.db,
+            user_id=user_id,
+            action="CREATE",
+            entity="PROJECT",
+            entity_id=result.id,
+            details=self._audit_details(result),
+        )
 
-    return project_repository.create_project(
-        db,
-        project,
-    )
+        return result
 
+    def update(
+        self,
+        project_id: int,
+        project_data: ProjectUpdate,
+        user_id: int,
+    ):
+        project = self.repository.get_by_id(project_id)
 
-def update_project(
-    db: Session,
-    project_id: int,
-    project_data: ProjectUpdate,
-):
+        if project is None:
+            return None
 
-    return project_repository.update_project(
-        db,
-        project_id,
-        project_data,
-    )
+        if project_data.customer_id is not None:
+            self._validate_customer(project_data.customer_id)
 
+        changed_fields = list(
+            project_data.model_dump(
+                exclude_unset=True
+            )
+        )
+        result = self.repository.update(
+            project,
+            project_data,
+        )
 
-def delete_project(
-    db: Session,
-    project_id: int,
-    user_id: int,
-):
+        details = self._audit_details(result)
+        details["changed_fields"] = changed_fields
 
-    project = project_repository.get_project(
-        db,
-        project_id,
-    )
+        create_audit_log(
+            db=self.db,
+            user_id=user_id,
+            action="UPDATE",
+            entity="PROJECT",
+            entity_id=result.id,
+            details=details,
+        )
 
-    result = project_repository.delete_project(
-        db,
-        project_id,
-    )
+        return result
 
-    create_audit_log(
-        db=db,
-        user_id=user_id,
-        action="DELETE",
-        entity="PROJECT",
-        entity_id=project_id,
-        details={
-            "project_name": project.name
-        },
-    )
+    def delete(
+        self,
+        project_id: int,
+        user_id: int,
+    ) -> bool:
+        project = self.repository.get_by_id(project_id)
 
-    return result
+        if project is None:
+            return False
+
+        details = self._audit_details(project)
+
+        self.repository.delete(project)
+
+        create_audit_log(
+            db=self.db,
+            user_id=user_id,
+            action="DELETE",
+            entity="PROJECT",
+            entity_id=project_id,
+            details=details,
+        )
+
+        return True
+
+    def _validate_customer(self, customer_id: int) -> None:
+        customer = self.customer_repository.get_by_id(
+            customer_id
+        )
+
+        if customer is None:
+            raise ValueError("Customer not found")
+
+    @staticmethod
+    def _audit_details(project) -> dict:
+        status = project.status
+
+        if isinstance(status, ProjectStatus):
+            status = status.value
+
+        return {
+            "project_name": project.name,
+            "customer_id": project.customer_id,
+            "status": status,
+        }

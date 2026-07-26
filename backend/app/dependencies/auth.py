@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.models.user import User
+from app.permissions.roles import Role
 
 
 oauth2_scheme = OAuth2PasswordBearer(
@@ -68,13 +69,17 @@ def get_current_user_id(
     return str(current_user.id)
 
 
-def require_role(*roles: str):
+def require_role(*roles: str | Role):
+    validated_roles = {
+        Role.from_value(role).value
+        for role in roles
+    }
 
     def role_checker(
         current_user: User = Depends(get_current_user),
     ):
 
-        if current_user.role not in roles:
+        if current_user.role not in validated_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Permission denied",

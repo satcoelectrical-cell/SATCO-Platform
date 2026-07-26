@@ -44,6 +44,20 @@ Initial entities:
 - Customers
 - Contacts
 
+## PATCH-017.3 Required Coverage
+
+The initial entities must record all three supported actions:
+
+| Entity | CREATE | UPDATE | DELETE |
+|---|---:|---:|---:|
+| Project | Required | Required | Required |
+| Customer | Required | Required | Required |
+| Contact | Required | Required | Required |
+
+Project audit details must preserve useful entity information, including the Project name, customer identifier, and status where available. UPDATE events should identify changed fields.
+
+Business services trigger audit events only after the corresponding operation succeeds.
+
 ## Architecture
 
 Request
