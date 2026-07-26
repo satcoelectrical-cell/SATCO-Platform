@@ -31,7 +31,7 @@ SATCO assists engineers through contextual analysis, recommendations, validation
 ## Definitions
 
 - **Engineering Copilot:** AI assistance operating within governed engineering context and under permanent human responsibility.
-- **Engineering Workspace:** The discipline-oriented environment where engineering objects, evidence, work, risks, reviews, decisions, and insights are understood together.
+- **Engineering Workspace:** Defined canonically in the Engineering Workspace section.
 - **Engineering Execution Plan:** A dynamic, AI-suggested engineering roadmap based on project context, scope, standards, requirements, and reviewed history. It is not a project schedule.
 - **Engineering Intelligence:** Explainable Engineering Reasoning over connected Engineering Context.
 - **Engineering Knowledge Graph:** The governed network of engineering objects, relationships, evidence, and history.
@@ -139,6 +139,17 @@ It evolves as scope, context, reviews, risks, and decisions change. Changes to t
 The plan is not a contractual schedule, an automatic commitment, or a replacement for engineering management.
 
 ## Engineering Workspace
+
+Engineering Workspace is the digital operational environment where engineering
+work is understood, planned, reviewed, explained, and continuously improved.
+
+It is not a document repository.
+
+It is not a task board.
+
+It is not a project folder.
+
+It is the engineer's operational home inside SATCO.
 
 Projects are composed of discipline-oriented Engineering Workspaces, including Electrical, Instrumentation, Control, Mechanical, Civil, and other justified engineering domains.
 

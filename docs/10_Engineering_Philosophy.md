@@ -96,8 +96,18 @@ recommendations. Manual changes are preserved as Project decisions.
 
 ## 7. Engineering Workspace
 
-Engineering work occurs inside discipline-based and context-aware Engineering
-Workspaces such as:
+Engineering Workspace is the digital operational environment where engineering
+work is understood, planned, reviewed, explained, and continuously improved.
+
+It is not a document repository.
+
+It is not a task board.
+
+It is not a project folder.
+
+It is the engineer's operational home inside SATCO.
+
+Engineering Workspaces may be discipline-based and context-aware, such as:
 
 - Electrical
 - Instrumentation
@@ -105,7 +115,7 @@ Workspaces such as:
 - Mechanical
 - Civil
 
-Each Workspace contains engineering data, relationships, issues, reviews,
+Each Workspace may contain engineering data, relationships, issues, reviews,
 decisions, and AI insights. A Workspace is not an AI conversation container.
 
 ## 8. Engineering Knowledge Graph
