@@ -15,26 +15,72 @@ ChatGPT remains:
 
 - Solution Architect
 - Technical Reviewer
-- Final Approver
+- Final Software Review Authority
 
 The developer remains Product Owner.
+
+Neither Codex nor ChatGPT may approve an engineering decision, engineering
+deliverable, calculation, design, safety conclusion, or standards
+interpretation. Those responsibilities remain with the authorized engineer
+through Human Review.
 
 ---
 
 ## 2. Docs First
 
-Before every patch always read:
+Before every PATCH, read the governing documents in this order:
 
-- `docs/00_Constitution.md`
-- `docs/01_Architecture.md`
-- `docs/02_Roadmap.md`
-- `docs/05_Coding_Standards.md`
-- `docs/06_Database_Blueprint.md`
-- `docs/07_Backend_Blueprint.md`
-- `docs/08_AI_Development_Workflow.md`
-- `docs/09_Codex_Guidelines.md`
+```text
+Product Bible v1.0
+(begin with docs/README.md and docs/17_SATCO_Product_Blueprint.md)
 
-Read all relevant ADR documents.
+↓
+
+docs/00_Constitution.md
+
+↓
+
+docs/10_Engineering_Philosophy.md
+
+↓
+
+Relevant ADRs
+
+↓
+
+docs/01_Architecture.md
+
+↓
+
+docs/09_Codex_Guidelines.md
+
+↓
+
+docs/02_Roadmap.md
+
+↓
+
+Requested PATCH
+```
+
+This is the mandatory architectural reading order. Reading order does not
+change document authority: the Constitution remains the highest governing
+authority.
+
+Then read every additional document relevant to the requested scope, including:
+
+- `docs/03_AI_Brain.md` for AI behavior or AI architecture;
+- `docs/04_Project_Workflow.md` for project workflow;
+- `docs/05_Coding_Standards.md` for implementation;
+- `docs/06_Database_Blueprint.md` for data or migration work;
+- `docs/07_Backend_Blueprint.md` for backend work;
+- `docs/08_AI_Development_Workflow.md` for AI-assisted development;
+- the remaining Product Bible documents for product, AI, knowledge, or
+  experience decisions.
+
+If documents appear to conflict, stop implementation and resolve the conflict
+according to the documentation hierarchy in `docs/README.md`. Never silently
+choose the less authoritative instruction.
 
 ---
 
