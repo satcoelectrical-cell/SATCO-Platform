@@ -6,13 +6,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 
-TEST_DATABASE_NAME = "satco_platform_patch0173_test"
+TEST_DATABASE_NAME = "satco_platform_patch0181_test"
 test_database_url = os.getenv("TEST_DATABASE_URL", "")
 parsed_database_url = urlparse(test_database_url)
 
 if parsed_database_url.path.lstrip("/") != TEST_DATABASE_NAME:
     raise RuntimeError(
-        "PATCH-017.3 tests require TEST_DATABASE_URL to target "
+        "PATCH-018.1 tests require TEST_DATABASE_URL to target "
         f"{TEST_DATABASE_NAME}"
     )
 
@@ -30,7 +30,10 @@ from app.main import app  # noqa: E402
 from app.models.audit_log import AuditLog  # noqa: E402,F401
 from app.models.contact import Contact  # noqa: E402,F401
 from app.models.customer import Customer  # noqa: E402,F401
-from app.models.project import Project  # noqa: E402,F401
+from app.models.project import (  # noqa: E402,F401
+    Project,
+    ProjectCodeSequence,
+)
 from app.models.user import User  # noqa: E402
 from app.permissions.roles import Role  # noqa: E402
 

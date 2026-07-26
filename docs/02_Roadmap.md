@@ -32,11 +32,11 @@ Overall Progress:
 
 Current Backend Patch:
 
-PATCH-017.3 — Final Recovery and Stabilization
+PATCH-018.1 — Project Core Enhancement
 
 Status:
 
-Completed
+Implementation In Progress
 
 ---
 
@@ -115,6 +115,7 @@ Tasks
 # Phase 4 — Project Management
 
 - [x] Projects CRUD foundation
+- [ ] PATCH-018.1 Project Core Enhancement
 
 - Files
 

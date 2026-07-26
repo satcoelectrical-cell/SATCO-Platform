@@ -52,6 +52,7 @@ def search_projects(
         .filter(
             or_(
                 Project.name.ilike(keyword),
+                Project.project_code.ilike(keyword),
                 Project.status.ilike(keyword),
             )
         )

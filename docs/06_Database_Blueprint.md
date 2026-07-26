@@ -40,6 +40,39 @@ The database is designed to support an AI-assisted Engineering Platform.
 - Project Status
 - Project Files
 
+### PATCH-018.1 Project Core
+
+Project remains internally identified by integer `id`.
+
+The human-facing Project reference is:
+
+```text
+SAT-PRJ-YYYY-NNNN
+```
+
+`project_code` is required, unique, indexed, immutable, and generated server-side with a concurrency-safe PostgreSQL yearly sequence.
+
+Project core fields include:
+
+- Customer
+- Description
+- Status
+- Priority
+- Owner
+- Primary assignee
+- Start date
+- Target completion date
+- Completion timestamp
+- Progress
+- Created and updated timestamps
+
+The approved primary assignment names are:
+
+- `primary_assignee_id`
+- `primary_assignee`
+
+Progress is manually maintained in PATCH-018.1 and may become system-derived in a future Milestone/Task patch without renaming the field.
+
 ---
 
 ## Engineering

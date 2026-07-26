@@ -335,3 +335,78 @@ Regression tests use the existing Docker PostgreSQL service and a dedicated PATC
 SQLite or another database backend must not be introduced.
 
 The application dependency structure remains unchanged; test tools are installed ephemerally during validation.
+
+---
+
+# PATCH-018.1 Project Core Contract
+
+Status:
+
+Implementation In Progress
+
+## Project Reference
+
+Projects use:
+
+```text
+SAT-PRJ-YYYY-NNNN
+```
+
+as their immutable human-facing reference. Integer `id` remains the internal primary key and route identifier.
+
+Project Codes are allocated with a PostgreSQL atomic yearly counter and protected by a unique database constraint.
+
+## Project Layers
+
+Router:
+
+- Typed query and request validation
+- Authentication
+- OpenAPI examples
+- Controlled HTTP responses
+
+Service:
+
+- Lifecycle rules
+- Ownership and primary-assignment permissions
+- Relationship validation
+- Date/progress validation
+- Project Code orchestration
+- Audit snapshots and structured logs
+
+Repository:
+
+- PostgreSQL Project Code allocation
+- Persistence
+- Filtering and allow-listed sorting
+- Eager loading
+- Exact Project Code retrieval
+
+## Project Relationships
+
+- Required Customer
+- Owner
+- Optional primary assignee
+
+The only primary-assignment API names are:
+
+- `primary_assignee_id`
+- `primary_assignee`
+
+## Project Search
+
+Authenticated Project search supports:
+
+- Existing Project name matching
+- Exact Project Code matching
+- Partial Project Code matching
+
+## Project Progress
+
+Progress is manually maintained from 0 through 100 in PATCH-018.1. Completed Projects have progress 100; non-completed Projects cannot have progress 100.
+
+A future Milestone/Task patch may derive the existing `progress` field from child entities.
+
+## Project API Documentation
+
+All Project endpoints include focused OpenAPI examples for successful and applicable validation, authentication, authorization, and missing-resource responses.

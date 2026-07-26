@@ -7,6 +7,7 @@ class SearchItem(BaseModel):
     type: str
     title: str
     description: Optional[str] = None
+    project_code: Optional[str] = None
 
 
 class SearchResponse(BaseModel):
