@@ -17,6 +17,10 @@ from app.models.engineering_workspace import EngineeringWorkspace
 from app.models.project import Project
 from app.models.user import User
 
+from app.services.engineering_context_relationship_service import (
+    EngineeringContextRelationshipService,
+)
+
 
 SEED = 202022
 RELATIONSHIP_COUNT = 10_000
@@ -235,6 +239,7 @@ def _seed_corpus(db_session):
 
 def test_approved_performance_conditions(db_session):
     owner, projects, workspaces, relationship_ids = _seed_corpus(db_session)
+    service = EngineeringContextRelationshipService(db_session)
     target_relationship = relationship_ids[5]
     target_commitment = db_session.scalar(
         select(InterfaceCommitment.id).order_by(InterfaceCommitment.id).limit(1)
@@ -265,52 +270,52 @@ def test_approved_performance_conditions(db_session):
         nested.rollback()
 
     def relationship_detail():
-        db_session.execute(
-            select(EngineeringContextRelationship).where(
-                EngineeringContextRelationship.id == target_relationship
-            )
-        ).scalar_one()
+        service.get_relationship(
+            relationship_id=target_relationship,
+            current_user=owner,
+        )
 
     def relationship_traversal():
-        db_session.execute(
-            select(EngineeringContextRelationship.id)
-            .where(
-                (EngineeringContextRelationship.source_workspace_id == workspaces[0].id)
-                | (EngineeringContextRelationship.target_workspace_id == workspaces[0].id)
-            )
-            .limit(50)
-        ).all()
+        service.list_relationships(
+            project_id=projects[0].id,
+            workspace_id=workspaces[0].id,
+            current_user=owner,
+            page=1,
+            size=50,
+        )
 
     def relationship_project_list():
-        db_session.execute(
-            select(EngineeringContextRelationship.id)
-            .where(EngineeringContextRelationship.project_id == projects[0].id)
-            .limit(50)
-        ).all()
+        service.list_relationships(
+            project_id=projects[0].id,
+            workspace_id=None,
+            current_user=owner,
+            page=1,
+            size=50,
+        )
 
     def relationship_workspace_list():
-        db_session.execute(
-            select(EngineeringContextRelationship.id)
-            .where(
-                EngineeringContextRelationship.source_workspace_id
-                == workspaces[0].id
-            )
-            .limit(50)
-        ).all()
+        service.list_relationships(
+            project_id=projects[0].id,
+            workspace_id=workspaces[0].id,
+            current_user=owner,
+            page=1,
+            size=50,
+        )
 
     def commitment_detail():
-        db_session.execute(
-            select(InterfaceCommitment).where(
-                InterfaceCommitment.id == target_commitment
-            )
-        ).scalar_one()
+        service.get_commitment(
+            commitment_id=target_commitment,
+            current_user=owner,
+        )
 
     def commitment_scoped_list():
-        db_session.execute(
-            select(InterfaceCommitment.id)
-            .where(InterfaceCommitment.project_id == projects[0].id)
-            .limit(50)
-        ).all()
+        service.list_commitments(
+            project_id=projects[0].id,
+            workspace_id=None,
+            current_user=owner,
+            page=1,
+            size=50,
+        )
 
     def relationship_update():
         nested = db_session.begin_nested()
