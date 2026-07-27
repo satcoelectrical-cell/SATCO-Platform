@@ -8,13 +8,13 @@ from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 
-TEST_DATABASE_NAME = "satco_platform_patch019_test"
+TEST_DATABASE_NAME = "satco_platform_patch02021_test"
 test_database_url = os.getenv("TEST_DATABASE_URL", "")
 parsed_database_url = urlparse(test_database_url)
 
 if parsed_database_url.path.lstrip("/") != TEST_DATABASE_NAME:
     raise RuntimeError(
-        "PATCH-019 tests require TEST_DATABASE_URL to target "
+        "PATCH-020.2.1 tests require TEST_DATABASE_URL to target "
         f"{TEST_DATABASE_NAME}"
     )
 
@@ -37,10 +37,10 @@ if inspect(engine).has_table("alembic_version"):
 else:
     migrated_revision = None
 
-if migrated_revision != "a20c1e0201f0":
+if migrated_revision != "c2021f0c0a01":
     raise RuntimeError(
-        "PATCH-020.1 tests require an Alembic-migrated database at "
-        "revision a20c1e0201f0"
+        "PATCH-020.2.1 tests require an Alembic-migrated database at "
+        "revision c2021f0c0a01"
     )
 
 
@@ -52,6 +52,14 @@ from app.models.customer import Customer  # noqa: E402,F401
 from app.models.engineering_workspace import (  # noqa: E402,F401
     EngineeringWorkspace,
     EngineeringWorkspaceMember,
+)
+from app.models.engineering_context import (  # noqa: E402,F401
+    EngineeringContext,
+    EngineeringContextAssumption,
+    EngineeringContextFact,
+    EngineeringContextSourceReference,
+    EngineeringContextSubjectReference,
+    EngineeringContextValue,
 )
 from app.models.project import (  # noqa: E402,F401
     Project,

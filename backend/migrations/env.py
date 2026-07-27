@@ -68,6 +68,7 @@ from app.core.database import Base
 from app.models import audit_log  # noqa: F401
 from app.models import contact  # noqa: F401
 from app.models import customer  # noqa: F401
+from app.models import engineering_context  # noqa: F401
 from app.models import project  # noqa: F401
 from app.models import user  # noqa: F401
 
