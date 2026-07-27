@@ -1,5 +1,6 @@
 import os
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,13 +9,13 @@ from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 
-TEST_DATABASE_NAME = "satco_platform_patch02021_test"
+TEST_DATABASE_NAME = "satco_platform_patch02022_test"
 test_database_url = os.getenv("TEST_DATABASE_URL", "")
 parsed_database_url = urlparse(test_database_url)
 
 if parsed_database_url.path.lstrip("/") != TEST_DATABASE_NAME:
     raise RuntimeError(
-        "PATCH-020.2.1 tests require TEST_DATABASE_URL to target "
+        "PATCH-020.2.2 tests require TEST_DATABASE_URL to target "
         f"{TEST_DATABASE_NAME}"
     )
 
@@ -29,6 +30,16 @@ os.environ["DATABASE_NAME"] = TEST_DATABASE_NAME
 from app.core.database import engine, get_db  # noqa: E402
 
 
+with engine.connect() as identity_connection:
+    actual_database_name = identity_connection.execute(
+        text("SELECT current_database()")
+    ).scalar_one()
+if actual_database_name != TEST_DATABASE_NAME:
+    raise RuntimeError(
+        "PATCH-020.2.2 database guard rejected "
+        f"{actual_database_name}"
+    )
+
 if inspect(engine).has_table("alembic_version"):
     with engine.connect() as schema_connection:
         migrated_revision = schema_connection.execute(
@@ -37,10 +48,10 @@ if inspect(engine).has_table("alembic_version"):
 else:
     migrated_revision = None
 
-if migrated_revision != "c2021f0c0a01":
+if migrated_revision != "b2022c0202f2":
     raise RuntimeError(
-        "PATCH-020.2.1 tests require an Alembic-migrated database at "
-        "revision c2021f0c0a01"
+        "PATCH-020.2.2 tests require an Alembic-migrated database at "
+        "revision b2022c0202f2"
     )
 
 
@@ -61,12 +72,19 @@ from app.models.engineering_context import (  # noqa: E402,F401
     EngineeringContextSubjectReference,
     EngineeringContextValue,
 )
+from app.models.engineering_context_relationship import (  # noqa: E402,F401
+    EngineeringContextRelationship,
+    InterfaceCommitment,
+)
 from app.models.project import (  # noqa: E402,F401
     Project,
     ProjectCodeSequence,
 )
 from app.models.user import User  # noqa: E402
 from app.permissions.roles import Role  # noqa: E402
+from app.services.engineering_context_relationship_service import (  # noqa: E402
+    EngineeringContextRelationshipService,
+)
 
 
 @pytest.fixture
@@ -166,3 +184,100 @@ def engineer_headers(client, engineer_user):
 @pytest.fixture
 def admin_headers(client, admin_user):
     return login_headers(client, admin_user.username)
+
+
+@pytest.fixture
+def relationship_domain(db_session):
+    suffix = uuid4().hex[:8]
+
+    def user(label, role=Role.ENGINEER, active=True):
+        record = User(
+            email=f"{label}-{suffix}@example.com",
+            username=f"{label}-{suffix}",
+            hashed_password="not-used",
+            role=role.value,
+            is_active=active,
+        )
+        db_session.add(record)
+        db_session.flush()
+        return record
+
+    actors = {
+        "admin": user("admin", Role.ADMIN),
+        "project_owner": user("project-owner"),
+        "provider": user("provider"),
+        "consumer": user("consumer"),
+        "steward": user("steward"),
+        "unrelated": user("unrelated"),
+        "inactive": user("inactive", active=False),
+    }
+    customer = Customer(name=f"Relationship Customer {suffix}")
+    other_customer = Customer(name=f"Other Customer {suffix}")
+    db_session.add_all([customer, other_customer])
+    db_session.flush()
+    project = Project(
+        project_code=f"SAT-PRJ-2097-{customer.id + 1000:04d}",
+        name="Relationship Project",
+        customer_id=customer.id,
+        owner_id=actors["project_owner"].id,
+    )
+    other_project = Project(
+        project_code=f"SAT-PRJ-2096-{other_customer.id + 2000:04d}",
+        name="Other Project",
+        customer_id=other_customer.id,
+        owner_id=actors["unrelated"].id,
+    )
+    db_session.add_all([project, other_project])
+    db_session.flush()
+    provider_workspace = EngineeringWorkspace(
+        project_id=project.id,
+        discipline="mechanical",
+        status="active",
+        owner_id=actors["provider"].id,
+        created_by_id=actors["project_owner"].id,
+        version=1,
+    )
+    consumer_workspace = EngineeringWorkspace(
+        project_id=project.id,
+        discipline="electrical",
+        status="active",
+        owner_id=actors["consumer"].id,
+        created_by_id=actors["project_owner"].id,
+        version=1,
+    )
+    unrelated_workspace = EngineeringWorkspace(
+        project_id=project.id,
+        discipline="civil",
+        status="active",
+        owner_id=actors["unrelated"].id,
+        created_by_id=actors["project_owner"].id,
+        version=1,
+    )
+    other_workspace = EngineeringWorkspace(
+        project_id=other_project.id,
+        discipline="instrumentation",
+        status="active",
+        owner_id=actors["unrelated"].id,
+        created_by_id=actors["unrelated"].id,
+        version=1,
+    )
+    db_session.add_all(
+        [
+            provider_workspace,
+            consumer_workspace,
+            unrelated_workspace,
+            other_workspace,
+        ]
+    )
+    db_session.flush()
+    service = EngineeringContextRelationshipService(db_session)
+    return {
+        "actors": actors,
+        "project": project,
+        "other_project": other_project,
+        "provider_workspace": provider_workspace,
+        "consumer_workspace": consumer_workspace,
+        "unrelated_workspace": unrelated_workspace,
+        "other_workspace": other_workspace,
+        "service": service,
+    }

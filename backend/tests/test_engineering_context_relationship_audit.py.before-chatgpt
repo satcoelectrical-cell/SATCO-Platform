@@ -1,0 +1,126 @@
+import pytest
+
+from app.models.audit_log import AuditLog
+from app.models.engineering_context_relationship import (
+    EngineeringContextRelationship,
+)
+from app.services import engineering_context_relationship_service as module
+
+
+def _data(domain, purpose="Audited relationship"):
+    return {
+        "project_id": domain["project"].id,
+        "meaning": "requires",
+        "purpose": purpose,
+        "source_role": "provider",
+        "target_role": "consumer",
+        "source": {
+            "kind": "workspace",
+            "workspace_id": domain["provider_workspace"].id,
+        },
+        "target": {
+            "kind": "workspace",
+            "workspace_id": domain["consumer_workspace"].id,
+        },
+        "steward_id": domain["actors"]["steward"].id,
+    }
+
+
+def test_relationship_creation_and_audit_commit_together(
+    relationship_domain,
+):
+    domain = relationship_domain
+    created = domain["service"].create_relationship(
+        data=_data(domain),
+        current_user=domain["actors"]["project_owner"],
+    )
+    event = (
+        domain["service"].db.query(AuditLog)
+        .filter(
+            AuditLog.entity == "CONTEXT_RELATIONSHIP",
+            AuditLog.entity_id == created["id"],
+        )
+        .one()
+    )
+    assert event.action == "CONTEXT_RELATIONSHIP_CREATED"
+    assert event.details["project_id"] == domain["project"].id
+    assert event.details["version"] == 1
+
+
+def test_forced_audit_failure_rolls_back_relationship_creation(
+    relationship_domain,
+    monkeypatch,
+):
+    domain = relationship_domain
+    before_rows = domain["service"].db.query(
+        EngineeringContextRelationship
+    ).count()
+    before_audits = domain["service"].db.query(AuditLog).count()
+
+    def fail_audit(**_kwargs):
+        raise RuntimeError("forced audit failure")
+
+    monkeypatch.setattr(module, "create_audit_log", fail_audit)
+    with pytest.raises(RuntimeError, match="forced audit failure"):
+        domain["service"].create_relationship(
+            data=_data(domain, "Rolled back creation"),
+            current_user=domain["actors"]["project_owner"],
+        )
+    assert (
+        domain["service"].db.query(EngineeringContextRelationship).count()
+        == before_rows
+    )
+    assert domain["service"].db.query(AuditLog).count() == before_audits
+
+
+def test_forced_audit_failure_rolls_back_versioned_mutation(
+    relationship_domain,
+    monkeypatch,
+):
+    domain = relationship_domain
+    created = domain["service"].create_relationship(
+        data=_data(domain),
+        current_user=domain["actors"]["project_owner"],
+    )
+    before_audits = domain["service"].db.query(AuditLog).count()
+
+    def fail_audit(**_kwargs):
+        raise RuntimeError("forced audit failure")
+
+    monkeypatch.setattr(module, "create_audit_log", fail_audit)
+    with pytest.raises(RuntimeError, match="forced audit failure"):
+        domain["service"].update_relationship_metadata(
+            relationship_id=created["id"],
+            expected_version=created["version"],
+            purpose="Must roll back",
+            applicability=None,
+            reason="Forced failure",
+            current_user=domain["actors"]["steward"],
+        )
+    unchanged = domain["service"].repository.get_relationship(created["id"])
+    assert unchanged.purpose == created["purpose"]
+    assert unchanged.version == created["version"]
+    assert domain["service"].db.query(AuditLog).count() == before_audits
+
+
+def test_forced_persistence_failure_creates_no_audit(
+    relationship_domain,
+    monkeypatch,
+):
+    domain = relationship_domain
+    before_audits = domain["service"].db.query(AuditLog).count()
+
+    def fail_persistence(_values):
+        raise RuntimeError("forced persistence failure")
+
+    monkeypatch.setattr(
+        domain["service"].repository,
+        "create_relationship",
+        fail_persistence,
+    )
+    with pytest.raises(RuntimeError, match="forced persistence failure"):
+        domain["service"].create_relationship(
+            data=_data(domain),
+            current_user=domain["actors"]["project_owner"],
+        )
+    assert domain["service"].db.query(AuditLog).count() == before_audits

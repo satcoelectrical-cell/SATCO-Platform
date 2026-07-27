@@ -1,0 +1,167 @@
+from pathlib import Path
+
+import pytest
+from sqlalchemy import inspect
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
+
+from app.core.database import engine
+from app.models.engineering_context_relationship import (
+    EngineeringContextRelationship,
+)
+from app.models.engineering_context_relationship import InterfaceCommitment
+
+
+MIGRATION = (
+    Path(__file__).parents[1]
+    / "migrations"
+    / "versions"
+    / "b2022c0202f2_create_context_relationships_and_commitments.py"
+)
+
+
+def test_migration_is_single_additive_revision_from_approved_base():
+    text = MIGRATION.read_text()
+    assert 'revision: str = "b2022c0202f2"' in text
+    assert 'down_revision: str | None = "c2021f0c0a01"' in text
+    assert "op.create_table(" in text
+    assert "op.alter_column(" not in text
+    assert "UPDATE engineering_context" not in text
+
+
+def test_models_register_only_patch_owned_tables():
+    assert (
+        EngineeringContextRelationship.__tablename__
+        == "engineering_context_relationships"
+    )
+    assert InterfaceCommitment.__tablename__ == "interface_commitments"
+
+
+def test_native_references_are_restrictive():
+    text = MIGRATION.read_text()
+    assert text.count('ondelete="RESTRICT"') >= 10
+    assert "backfill" not in text.lower()
+
+
+def test_database_contract_includes_scope_and_fulfilment_protection():
+    inspector = inspect(engine)
+    relationship_checks = {
+        item["name"]
+        for item in inspector.get_check_constraints(
+            "engineering_context_relationships"
+        )
+    }
+    commitment_checks = {
+        item["name"]
+        for item in inspector.get_check_constraints(
+            "interface_commitments"
+        )
+    }
+    assert "ck_context_relationships_no_self_reference" in relationship_checks
+    assert {
+        "ck_interface_commitments_fulfilment",
+        "ck_interface_commitments_review_evidence",
+        "ck_interface_commitments_required_contract",
+        "ck_interface_commitments_distinct_workspaces",
+    } <= commitment_checks
+    with engine.connect() as connection:
+        triggers = {
+            row[0]
+            for row in connection.execute(
+                text(
+                    "SELECT tgname FROM pg_trigger "
+                    "WHERE NOT tgisinternal AND tgrelid IN "
+                    "('engineering_context_relationships'::regclass, "
+                    "'interface_commitments'::regclass)"
+                )
+            )
+        }
+    assert {
+        "trg_context_relationship_scope",
+        "trg_interface_commitment_scope",
+    } <= triggers
+
+
+def test_direct_postgresql_rejects_cross_project_scope(
+    relationship_domain,
+):
+    domain = relationship_domain
+    values = {
+        "relationship_key": "direct-cross-project",
+        "project_id": domain["project"].id,
+        "meaning": "requires",
+        "purpose": "Invalid direct scope",
+        "source_role": "provider",
+        "target_role": "consumer",
+        "source_kind": "workspace",
+        "source_workspace_id": domain["provider_workspace"].id,
+        "target_kind": "workspace",
+        "target_workspace_id": domain["other_workspace"].id,
+        "steward_id": domain["actors"]["steward"].id,
+        "created_by_id": domain["actors"]["project_owner"].id,
+        "lifecycle": "current",
+        "version": 1,
+    }
+    with pytest.raises(IntegrityError):
+        with domain["service"].db.begin_nested():
+            domain["service"].db.add(
+                EngineeringContextRelationship(**values)
+            )
+            domain["service"].db.flush()
+
+
+def test_direct_postgresql_rejects_required_review_without_evidence(
+    relationship_domain,
+):
+    domain = relationship_domain
+    relationship_record = domain["service"].create_relationship(
+        data={
+            "project_id": domain["project"].id,
+            "meaning": "requires",
+            "purpose": "Direct review constraint",
+            "source_role": "provider",
+            "target_role": "consumer",
+            "source": {
+                "kind": "workspace",
+                "workspace_id": domain["provider_workspace"].id,
+            },
+            "target": {
+                "kind": "workspace",
+                "workspace_id": domain["consumer_workspace"].id,
+            },
+            "steward_id": domain["actors"]["steward"].id,
+        },
+        current_user=domain["actors"]["project_owner"],
+    )
+    with pytest.raises(IntegrityError):
+        with domain["service"].db.begin_nested():
+            domain["service"].db.add(
+                InterfaceCommitment(
+                    commitment_key="direct-review-required",
+                    relationship_id=relationship_record["id"],
+                    project_id=domain["project"].id,
+                    provider_kind="workspace",
+                    provider_workspace_id=domain["provider_workspace"].id,
+                    consumer_workspace_id=domain["consumer_workspace"].id,
+                    required_information="Reviewed information",
+                    intended_use="Design",
+                    completeness_expectation="Complete",
+                    expected_source_basis="Calculation",
+                    stage_or_due_condition="Before use",
+                    criticality="critical",
+                    confidentiality="project",
+                    steward_id=domain["actors"]["steward"].id,
+                    consumer_reviewer_id=domain["actors"]["consumer"].id,
+                    state="fulfilled_for_stated_use",
+                    supplied_source_key="SRC",
+                    supplied_revision="A",
+                    fulfilment_use="Design",
+                    external_review_required=True,
+                    external_review_evidence=None,
+                    current_use=True,
+                    reassessment_needed=False,
+                    version=1,
+                    created_by_id=domain["actors"]["project_owner"].id,
+                )
+            )
+            domain["service"].db.flush()

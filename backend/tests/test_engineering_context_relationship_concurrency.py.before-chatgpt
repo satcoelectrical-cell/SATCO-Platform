@@ -1,0 +1,155 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from uuid import uuid4
+
+from sqlalchemy.orm import sessionmaker
+
+from app.core.database import engine
+from app.exceptions.engineering_context_relationship import (
+    RelationshipVersionConflict,
+)
+from app.models.audit_log import AuditLog
+from app.models.customer import Customer
+from app.models.engineering_context_relationship import (
+    EngineeringContextRelationship,
+)
+from app.models.engineering_workspace import EngineeringWorkspace
+from app.models.project import Project
+from app.models.user import User
+from app.services.engineering_context_relationship_service import (
+    EngineeringContextRelationshipService,
+)
+
+
+def test_synchronized_relationship_metadata_has_one_winner():
+    suffix = uuid4().hex[:8]
+    setup_session = sessionmaker(bind=engine, expire_on_commit=False)()
+    owner = User(
+        email=f"race-{suffix}@example.com",
+        username=f"race-{suffix}",
+        hashed_password="unused",
+        role="engineer",
+        is_active=True,
+    )
+    customer = Customer(name=f"Race Customer {suffix}")
+    setup_session.add_all([owner, customer])
+    setup_session.flush()
+    project = Project(
+        project_code=f"SAT-PRJ-2095-{customer.id + 3000:04d}",
+        name="Race Project",
+        customer_id=customer.id,
+        owner_id=owner.id,
+    )
+    setup_session.add(project)
+    setup_session.flush()
+    source = EngineeringWorkspace(
+        project_id=project.id,
+        discipline="mechanical",
+        status="active",
+        owner_id=owner.id,
+        created_by_id=owner.id,
+        version=1,
+    )
+    target = EngineeringWorkspace(
+        project_id=project.id,
+        discipline="electrical",
+        status="active",
+        owner_id=owner.id,
+        created_by_id=owner.id,
+        version=1,
+    )
+    setup_session.add_all([source, target])
+    setup_session.commit()
+    service = EngineeringContextRelationshipService(setup_session)
+    created = service.create_relationship(
+        data={
+            "project_id": project.id,
+            "meaning": "requires",
+            "purpose": "Concurrent relationship",
+            "source_role": "provider",
+            "target_role": "consumer",
+            "source": {"kind": "workspace", "workspace_id": source.id},
+            "target": {"kind": "workspace", "workspace_id": target.id},
+            "steward_id": owner.id,
+        },
+        current_user=owner,
+    )
+    relationship_id = created["id"]
+    owner_id = owner.id
+    barrier = Barrier(2)
+
+    def writer(purpose):
+        session = sessionmaker(bind=engine, expire_on_commit=False)()
+        try:
+            actor = session.get(User, owner_id)
+            local_service = EngineeringContextRelationshipService(session)
+            barrier.wait()
+            try:
+                result = local_service.update_relationship_metadata(
+                    relationship_id=relationship_id,
+                    expected_version=1,
+                    purpose=purpose,
+                    applicability=None,
+                    reason="Synchronized writer",
+                    current_user=actor,
+                )
+                return ("success", result["version"])
+            except RelationshipVersionConflict:
+                session.rollback()
+                return ("conflict", None)
+        finally:
+            session.close()
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(
+                pool.map(writer, ("Writer A", "Writer B"))
+            )
+        assert sorted(item[0] for item in results) == [
+            "conflict",
+            "success",
+        ]
+        verification = sessionmaker(bind=engine, expire_on_commit=False)()
+        try:
+            relationship_record = verification.get(
+                EngineeringContextRelationship,
+                relationship_id,
+            )
+            assert relationship_record.version == 2
+            assert relationship_record.project_id == project.id
+            assert relationship_record.source_workspace_id == source.id
+            assert relationship_record.target_workspace_id == target.id
+            events = (
+                verification.query(AuditLog)
+                .filter(
+                    AuditLog.entity == "CONTEXT_RELATIONSHIP",
+                    AuditLog.entity_id == relationship_id,
+                )
+                .all()
+            )
+            assert len(events) == 2
+            assert sum(
+                event.action
+                == "CONTEXT_RELATIONSHIP_METADATA_CHANGED"
+                for event in events
+            ) == 1
+        finally:
+            verification.close()
+    finally:
+        cleanup = sessionmaker(bind=engine)()
+        cleanup.query(AuditLog).filter(
+            AuditLog.entity_id == relationship_id,
+            AuditLog.entity == "CONTEXT_RELATIONSHIP",
+        ).delete(synchronize_session=False)
+        cleanup.query(EngineeringContextRelationship).filter(
+            EngineeringContextRelationship.id == relationship_id
+        ).delete(synchronize_session=False)
+        cleanup.query(EngineeringWorkspace).filter(
+            EngineeringWorkspace.id.in_([source.id, target.id])
+        ).delete(synchronize_session=False)
+        cleanup.query(Project).filter(Project.id == project.id).delete()
+        cleanup.query(Customer).filter(Customer.id == customer.id).delete()
+        cleanup.query(User).filter(User.id == owner.id).delete()
+        cleanup.commit()
+        cleanup.close()
+        setup_session.close()

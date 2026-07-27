@@ -1,3 +1,7 @@
+from .user import User
+from .customer import Customer
+from .contact import Contact
+from .project import Project
 from .engineering_workspace import EngineeringWorkspace
 from .engineering_workspace import EngineeringWorkspaceMember
 from .engineering_context import EngineeringContext
@@ -6,7 +10,6 @@ from .engineering_context import EngineeringContextFact
 from .engineering_context import EngineeringContextSourceReference
 from .engineering_context import EngineeringContextSubjectReference
 from .engineering_context import EngineeringContextValue
-from .project import Project
-from .customer import Customer
-from .contact import Contact
+from .engineering_context_relationship import EngineeringContextRelationship
+from .engineering_context_relationship import InterfaceCommitment
 from .audit_log import AuditLog

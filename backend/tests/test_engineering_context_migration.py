@@ -1,5 +1,6 @@
 import os
 import subprocess
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import pytest
@@ -23,6 +24,32 @@ CONTEXT_TABLES = {
     "engineering_context_subject_references",
     "engineering_context_source_references",
 }
+
+
+def _active_validation_database_name() -> str:
+    database_name = urlparse(
+        os.environ["TEST_DATABASE_URL"]
+    ).path.lstrip("/")
+    assert database_name
+    return database_name
+
+
+def _repository_head() -> str:
+    result = subprocess.run(
+        ["alembic", "heads"],
+        cwd="/app",
+        env=os.environ,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    heads = [
+        line.split()[0]
+        for line in result.stdout.splitlines()
+        if line.strip()
+    ]
+    assert len(heads) == 1
+    return heads[0]
 
 
 def test_engineering_context_database_contract():
@@ -131,8 +158,8 @@ def test_engineering_context_database_contract():
                 "(SELECT version_num FROM alembic_version)"
             )
         ).one()
-    assert database_name == "satco_platform_patch02021_test"
-    assert revision == "c2021f0c0a01"
+    assert database_name == _active_validation_database_name()
+    assert revision == _repository_head()
 
 
 def _base_context(project, user, **overrides):
@@ -313,15 +340,13 @@ def test_postgresql_rejects_invalid_source_and_value_constraints(
 
 def test_migration_fresh_chain_rollback_and_reapplication():
     test_database_url = os.environ["TEST_DATABASE_URL"]
-    assert test_database_url.rsplit("/", 1)[-1] == (
-        "satco_platform_patch02021_test"
-    )
+    expected_database_name = _active_validation_database_name()
     schema = f"context_migration_{uuid4().hex}"
     with engine.begin() as connection:
         actual = connection.execute(
             text("SELECT current_database()")
         ).scalar_one()
-        assert actual == "satco_platform_patch02021_test"
+        assert actual == expected_database_name
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
 
     environment = {
