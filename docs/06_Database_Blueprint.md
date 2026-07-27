@@ -78,11 +78,41 @@ Progress is manually maintained in PATCH-018.1 and may become system-derived in 
 ## Engineering
 
 - Disciplines
+- Engineering Workspaces
+- Engineering Workspace Members
 - Engineering Documents
 - Document Types
 - Engineering Notes
 - Engineering Reviews
 - Engineering Standards
+
+### PATCH-020.1 Engineering Workspace Core
+
+Status:
+
+Implemented. Migration and complete EDS regression validation pass in an
+isolated PostgreSQL schema; final review approval remains open.
+
+Engineering Workspace persistence establishes:
+
+- one permanent Workspace identity per Project and governed Discipline;
+- six governed Discipline values;
+- required owner and creator relationships;
+- optional primary assignment;
+- minimal collaborator membership;
+- explicit lifecycle and archival state;
+- integer optimistic concurrency;
+- restrictive foreign keys;
+- non-destructive history preservation.
+
+No existing Project row is backfilled or modified. Project deletion is blocked
+only after Workspace history exists.
+
+Alembic revision:
+
+```text
+a20c1e0201f0
+```
 
 ---
 

@@ -37,10 +37,10 @@ if inspect(engine).has_table("alembic_version"):
 else:
     migrated_revision = None
 
-if migrated_revision != "f18a1c0e2026":
+if migrated_revision != "a20c1e0201f0":
     raise RuntimeError(
-        "PATCH-019 tests require an Alembic-migrated database at "
-        "revision f18a1c0e2026"
+        "PATCH-020.1 tests require an Alembic-migrated database at "
+        "revision a20c1e0201f0"
     )
 
 
@@ -49,6 +49,10 @@ from app.main import app  # noqa: E402
 from app.models.audit_log import AuditLog  # noqa: E402,F401
 from app.models.contact import Contact  # noqa: E402,F401
 from app.models.customer import Customer  # noqa: E402,F401
+from app.models.engineering_workspace import (  # noqa: E402,F401
+    EngineeringWorkspace,
+    EngineeringWorkspaceMember,
+)
 from app.models.project import (  # noqa: E402,F401
     Project,
     ProjectCodeSequence,

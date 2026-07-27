@@ -6,6 +6,9 @@ from app.api.v1.routers.projects import router as project_router
 from app.api.v1.routers.search import router as search_router
 from app.api.v1.routers.auth import router as auth_router
 from app.api.v1.routers.audit_logs import router as audit_router
+from app.api.v1.routers.engineering_workspaces import (
+    router as engineering_workspace_router,
+)
 
 from app.exceptions.handlers import register_exception_handlers
 
@@ -25,6 +28,7 @@ app.include_router(customer_router)
 app.include_router(search_router)
 app.include_router(auth_router)
 app.include_router(audit_router)
+app.include_router(engineering_workspace_router)
 
 
 @app.get("/")

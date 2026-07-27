@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — Awaiting Architecture Approval
+Accepted
 
 ## Date
 

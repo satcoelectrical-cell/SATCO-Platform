@@ -15,8 +15,71 @@ router = APIRouter(
 
 service = SearchService()
 
+SEARCH_WORKSPACE_EXAMPLE = {
+    "query": "electrical",
+    "type": "workspace",
+    "page": 1,
+    "size": 20,
+    "total": 1,
+    "results": {
+        "customers": [],
+        "projects": [],
+        "contacts": [],
+        "workspaces": [
+            {
+                "id": 17,
+                "type": "workspace",
+                "title": "Electrical Engineering Workspace",
+                "description": (
+                    "SAT-PRJ-2026-0001 — PLC Modernization"
+                ),
+                "project_id": 42,
+                "project_code": "SAT-PRJ-2026-0001",
+                "discipline": "electrical",
+                "status": "active",
+            }
+        ],
+    },
+}
 
-@router.get("/")
+
+@router.get(
+    "/",
+    responses={
+        200: {
+            "description": "Authorization-filtered Universal Search",
+            "content": {
+                "application/json": {
+                    "example": SEARCH_WORKSPACE_EXAMPLE
+                }
+            },
+        },
+        401: {
+            "description": "Authentication required",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Not authenticated"}
+                }
+            },
+        },
+        422: {
+            "description": "Search request validation failed",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "loc": ["query", "q"],
+                                "msg": "Field required",
+                                "type": "missing",
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    },
+)
 def search(
     q: str = Query(..., min_length=1),
     search_type: str = Query(
@@ -42,4 +105,5 @@ def search(
         search_type,
         page,
         size,
+        current_user,
     )

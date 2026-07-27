@@ -8,6 +8,9 @@ class SearchItem(BaseModel):
     title: str
     description: Optional[str] = None
     project_code: Optional[str] = None
+    project_id: Optional[int] = None
+    discipline: Optional[str] = None
+    status: Optional[str] = None
 
 
 class SearchResponse(BaseModel):

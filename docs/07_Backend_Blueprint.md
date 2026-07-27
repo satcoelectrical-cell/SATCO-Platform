@@ -474,3 +474,65 @@ Architecture and compatibility policy are defined by:
 ```text
 ADR-012 — Alembic Schema Ownership and Historical Repair
 ```
+
+---
+
+# PATCH-020.1 Engineering Workspace Core
+
+Status:
+
+Implemented. Migration and complete EDS regression validation pass in an
+isolated PostgreSQL schema; final review approval remains open.
+
+## Workspace Contract
+
+Engineering Workspace Core provides:
+
+- explicit Project-scoped Workspace creation;
+- one permanent Workspace identity per Project and governed Discipline;
+- six governed Discipline values;
+- derived display names with no editable Workspace name;
+- required owner and optional primary assignee;
+- minimal collaborator membership;
+- Draft, Active, On Hold, Under Review, Completed, and Archived lifecycle
+  states;
+- explicit archive and restore behavior;
+- integer optimistic concurrency on every mutation;
+- no physical Workspace deletion.
+
+## Workspace Layers
+
+Router:
+
+- authenticated HTTP contracts;
+- typed validation;
+- pagination and filters;
+- OpenAPI examples for success and material failure responses.
+
+Service:
+
+- Project and User relationship validation;
+- current-role authorization;
+- lifecycle and archival rules;
+- assignment and membership semantics;
+- optimistic concurrency;
+- centralized audit orchestration.
+
+Repository:
+
+- authorization-filtered retrieval;
+- Project-scoped listing;
+- uniqueness and membership persistence;
+- version-checked updates;
+- Project history checks.
+
+## Compatibility
+
+- Current `admin` and `engineer` roles remain unchanged.
+- Universal Search remains centralized and adds authorization-filtered
+  Workspace results.
+- Project deletion remains unchanged until Workspace history exists.
+- Existing Project, Customer, Contact, Search, Audit, and Auth behavior remains
+  regression-tested.
+- Alembic revision `a20c1e0201f0` adds the Workspace schema without Project
+  backfill.

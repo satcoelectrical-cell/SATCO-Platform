@@ -12,6 +12,9 @@ from app.exceptions.project import (
     ProjectRelatedEntityNotFoundException,
     ProjectValidationException,
 )
+from app.exceptions.engineering_workspace import (
+    ProjectHasWorkspaceHistory,
+)
 from app.models.project import Project
 from app.models.user import User
 from app.permissions.roles import Role
@@ -212,6 +215,8 @@ class ProjectService:
             raise ProjectForbiddenException(
                 "Only administrators may delete Projects"
             )
+        if self.repository.has_workspace_history(project_id):
+            raise ProjectHasWorkspaceHistory()
         snapshot = self._snapshot(project)
         project_code = project.project_code
 

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.enums import ProjectPriority, ProjectStatus
 from app.models.project import Project, ProjectCodeSequence
+from app.models.engineering_workspace import EngineeringWorkspace
 from app.models.user import User
 from app.schemas.project import ProjectCreate
 
@@ -178,6 +179,16 @@ class ProjectRepository:
     def delete(self, db_project: Project):
         self.db.delete(db_project)
         self.db.commit()
+
+    def has_workspace_history(self, project_id: int) -> bool:
+        return (
+            self.db.query(EngineeringWorkspace.id)
+            .filter(
+                EngineeringWorkspace.project_id == project_id
+            )
+            .first()
+            is not None
+        )
 
     def allocate_project_code(self, year: int) -> str:
         statement = (
