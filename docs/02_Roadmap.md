@@ -296,38 +296,42 @@ PATCH-020.3 is complete only after:
 
 ---
 
+---
+
 ## PATCH-021 Engineering Knowledge Graph Foundation
 
 ### Status
 
-In Progress
+Architecture Accepted
 
-### Approved Direction
+### Completed Design Stages
 
-SATCO shall use an Engineering Object-Centric Knowledge Graph.
+- PATCH-021.1 Engineering Object Model;
+- PATCH-021.2 Engineering Relationship Vocabulary;
+- PATCH-021.3 Engineering Context Model;
+- PATCH-021.4 Engineering Knowledge Graph Rules;
+- PATCH-021.5 Physical Data Model.
 
-Version 1 is limited to:
+### Approved Implementation Direction
 
-- Instrumentation;
-- Electrical Engineering;
-- Industrial Automation;
-- shared Engineering Objects required by those disciplines.
+- PostgreSQL remains the Version-1 System of Record.
+- Engineering Objects, Relationships, and Contexts are separate aggregates.
+- Primary identities use immutable UUID values.
+- Engineering identifiers remain governed external identifiers.
+- Relationships remain directional.
+- Context membership remains explicit.
+- Optimistic concurrency is mandatory.
+- Mutation and Audit remain atomic.
+- Ordinary deletion of authoritative engineering history is prohibited.
+- Repository boundaries remain persistence-only.
+- Application services enforce engineering rules.
+- Database changes require Alembic migrations.
+- Graph traversal remains bounded, scoped, and authorization-aware.
 
-### Current Design Stage
+### Next Stage
 
-PATCH-021.1 Engineering Object Model is accepted for detailed design.
+Proceed to the bounded backend implementation lifecycle for the Engineering
+Knowledge Graph foundation.
 
-### Deferred Domains
-
-Maintenance, Methods and Systems, HSE, Mechanical, Process, Reliability,
-Asset Integrity, and other domains remain deferred.
-
-Future domains shall extend the stable EKG Core without redesigning or
-forking it.
-
-### Next Gate
-
-PATCH-021.2 shall define the governed Engineering Relationship Vocabulary.
-
-No production model, migration, API, AI reasoning, Digital Twin behavior, or
-frontend implementation is authorized yet.
+Graph databases, vector databases, Engineering Digital Twin behavior, and
+autonomous AI reasoning remain deferred.
