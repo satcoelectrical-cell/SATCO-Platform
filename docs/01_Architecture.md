@@ -140,4 +140,16 @@ Future Providers:
 
 ---
 
+## Dual-Use Platform Operating Model
+
+SATCO Platform supports both SATCO Engineering as an internal service-delivery
+operator and external engineering organizations as independent platform
+operators. The platform shall remain operator-neutral and shall not require
+separate internal and commercial codebases.
+
+The governing decision is defined in
+`docs/adr/ADR-016-Dual-Use-Platform-Operating-Model.md`.
+
+---
+
 END OF ARCHITECTURE
