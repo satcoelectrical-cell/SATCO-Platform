@@ -152,4 +152,59 @@ The governing decision is defined in
 
 ---
 
+---
+
+## Product Governance and Modular Capability Strategy
+
+SATCO Platform is developed first for the real operational needs of SATCO
+Engineering.
+
+Version 1 remains focused on:
+
+- Electrical Engineering;
+- Instrumentation Engineering;
+- Industrial Automation;
+- Technical Procurement;
+- Vendor Technical Proposal Review;
+- Engineering Context;
+- approved Engineering Intelligence capabilities.
+
+SATCO is an Engineering Intelligence Platform that works beside engineers.
+
+SATCO does not replace accountable engineering judgment, and it is not
+intended to replace existing ERP, CMMS, Primavera, SAP, EDMS, or enterprise
+project-management systems.
+
+The engineer remains responsible for final engineering decisions.
+
+The platform shall preserve architectural readiness for future optional
+modules without implementing those modules before Product Owner approval.
+
+Future commercial customers may activate only the modules they purchase or
+are authorized to evaluate.
+
+Commercial modularity shall use Organization-scoped Module Entitlements
+rather than:
+
+- customer-specific source-code forks;
+- separate product architectures;
+- duplicated domain models;
+- manually altered customer builds;
+- deployment-specific business rules.
+
+SATCO Engineering may use the complete capability set required for its own
+operations.
+
+Every future capability requires explicit Product Owner approval before it
+enters the Roadmap or implementation lifecycle.
+
+Related governing decisions:
+
+- ADR-016 Dual-Use Platform Operating Model;
+- ADR-017 Modular Product Licensing Architecture;
+- ADR-018 Engineering Intelligence Product Vision;
+- ADR-019 Version-1 Product Scope Policy.
+
+---
+
 END OF ARCHITECTURE

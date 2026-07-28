@@ -220,3 +220,76 @@ Tasks
 Every completed task must update this roadmap.
 
 No feature may be implemented without appearing in this roadmap.
+
+---
+
+## PATCH-020.3 Product Governance Update
+
+### Status
+
+Accepted
+
+### Purpose
+
+Establish the product-governance rules that control all future Engineering
+Intelligence and module development.
+
+### Approved Version-1 Direction
+
+Version 1 is built first for SATCO Engineering and remains focused on:
+
+- Electrical Engineering;
+- Instrumentation Engineering;
+- Industrial Automation;
+- Technical Procurement;
+- Vendor Technical Proposal Review;
+- Engineering Context;
+- approved Engineering Intelligence capabilities.
+
+### Governance Deliverables
+
+- ADR-017 Modular Product Licensing Architecture;
+- ADR-018 Engineering Intelligence Product Vision;
+- ADR-019 Version-1 Product Scope Policy;
+- Constitution product-governance principles;
+- Architecture product-governance section;
+- Roadmap scope and approval gates.
+
+### Product Rules
+
+- Engineering judgment remains with the engineer.
+- AI assists and does not replace accountable engineers.
+- SATCO complements existing enterprise systems.
+- Version 1 is completed before broader organizational expansion.
+- Architectural readiness does not authorize implementation.
+- Every new capability requires explicit Product Owner approval.
+- Every capability must solve a real daily engineering problem.
+- Build depth before breadth.
+
+### Deferred Areas
+
+The following areas remain deferred unless separately approved:
+
+- Maintenance;
+- Methods and Systems;
+- HSE;
+- Operations;
+- Reliability;
+- Asset Integrity;
+- Human Resources;
+- Finance;
+- generic enterprise workflow;
+- enterprise project-management replacement;
+- engineering disciplines outside Version 1.
+
+### Completion Gate
+
+PATCH-020.3 is complete only after:
+
+- all three ADRs are validated;
+- Constitution changes are validated;
+- Architecture changes are validated;
+- Roadmap changes are validated;
+- `git diff --check` passes;
+- the Product Owner approves the final document set;
+- a documentation-only commit is created and pushed.
