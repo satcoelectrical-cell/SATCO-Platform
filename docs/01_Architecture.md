@@ -207,4 +207,33 @@ Related governing decisions:
 
 ---
 
+---
+
+## Engineering Intelligence Readiness Gate
+
+Before any Engineering Intelligence capability enters implementation, its
+design shall identify:
+
+- the Engineering Objects it uses or creates;
+- the governed relationships it depends on;
+- the evidence supporting its findings;
+- its Project, Workspace, and discipline scope;
+- its responsibility and Human Review boundary;
+- its authorization and confidentiality rules;
+- its extension boundary with EKG Core;
+- its Product Owner approval.
+
+A capability is not ready for implementation when any of these items remains
+undefined.
+
+Future domains shall connect to SATCO through governed EKG extensions.
+
+They shall not redesign or fork the EKG Core.
+
+The governing decision is defined in:
+
+`docs/adr/ADR-020-EKG-Open-Extension-Principle.md`
+
+---
+
 END OF ARCHITECTURE

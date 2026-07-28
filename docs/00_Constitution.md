@@ -224,5 +224,39 @@ Every major capability shall first be reflected in:
 
 before implementation begins.
 
+---
+
+## Product Doctrine — Build for SATCO, Scale for Industry
+
+SATCO Platform shall first solve the real engineering problems encountered by
+SATCO Engineering.
+
+SATCO Engineering is the first operational customer of the platform.
+
+A capability shall prove practical value in real SATCO engineering workflows
+before it is generalized into an optional commercial module.
+
+The platform shall remain architecturally capable of scaling to industrial
+organizations without requiring customer-specific code forks or fundamental
+redesign.
+
+## EKG Open Extension Principle
+
+The Engineering Knowledge Graph Core shall remain stable.
+
+Future domains shall extend the EKG through governed Engineering Objects,
+relationships, evidence, rules, and module entitlements.
+
+No future domain may alter the EKG Core without an explicitly accepted
+architectural decision.
+
+## North Star
+
+SATCO is an Engineering Knowledge Platform that augments Human engineers
+through governed engineering knowledge.
+
+SATCO shall not replace accountable engineering judgment.
+
+---
 
 END OF CONSTITUTION

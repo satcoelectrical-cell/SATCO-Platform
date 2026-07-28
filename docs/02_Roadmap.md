@@ -293,3 +293,41 @@ PATCH-020.3 is complete only after:
 - `git diff --check` passes;
 - the Product Owner approves the final document set;
 - a documentation-only commit is created and pushed.
+
+---
+
+## PATCH-021 Engineering Knowledge Graph Foundation
+
+### Status
+
+In Progress
+
+### Approved Direction
+
+SATCO shall use an Engineering Object-Centric Knowledge Graph.
+
+Version 1 is limited to:
+
+- Instrumentation;
+- Electrical Engineering;
+- Industrial Automation;
+- shared Engineering Objects required by those disciplines.
+
+### Current Design Stage
+
+PATCH-021.1 Engineering Object Model is accepted for detailed design.
+
+### Deferred Domains
+
+Maintenance, Methods and Systems, HSE, Mechanical, Process, Reliability,
+Asset Integrity, and other domains remain deferred.
+
+Future domains shall extend the stable EKG Core without redesigning or
+forking it.
+
+### Next Gate
+
+PATCH-021.2 shall define the governed Engineering Relationship Vocabulary.
+
+No production model, migration, API, AI reasoning, Digital Twin behavior, or
+frontend implementation is authorized yet.
