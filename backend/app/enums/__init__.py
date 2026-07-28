@@ -15,3 +15,13 @@ from .engineering_context_relationship import RelationshipLifecycle
 from .project_priority import ProjectPriority
 from .project_status import ProjectStatus
 from .workspace_status import WorkspaceStatus
+from app.enums.engineering_knowledge import (
+    EngineeringAuthorityStanding,
+    EngineeringConfidentiality,
+    EngineeringDiscipline,
+    EngineeringIdentifierKind,
+    EngineeringLifecycle,
+    EngineeringObjectFamily,
+    EngineeringRelationshipFamily,
+    EngineeringResponsibilityRole,
+)
