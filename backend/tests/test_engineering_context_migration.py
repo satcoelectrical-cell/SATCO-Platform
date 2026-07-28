@@ -349,9 +349,14 @@ def test_migration_fresh_chain_rollback_and_reapplication():
         assert actual == expected_database_name
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
 
+    alembic_database_url = test_database_url.replace(
+        "postgresql+psycopg://",
+        "postgresql+psycopg2://",
+        1,
+    )
     environment = {
         **os.environ,
-        "ALEMBIC_DATABASE_URL": test_database_url,
+        "ALEMBIC_DATABASE_URL": alembic_database_url,
         "PGOPTIONS": f"-csearch_path={schema}",
     }
     try:

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import perf_counter
 from uuid import NAMESPACE_URL, uuid5
@@ -5,9 +6,11 @@ from uuid import NAMESPACE_URL, uuid5
 from sqlalchemy import insert
 from sqlalchemy import event
 from sqlalchemy import select
-from sqlalchemy import update
 
 from app.core.database import engine
+from app.exceptions.engineering_context_relationship import (
+    RelationshipVersionConflict,
+)
 from app.models.customer import Customer
 from app.models.engineering_context_relationship import (
     EngineeringContextRelationship,
@@ -27,6 +30,16 @@ RELATIONSHIP_COUNT = 10_000
 COMMITMENT_COUNT = 2_500
 WARMUPS = 5
 SAMPLES = 30
+
+@dataclass(slots=True)
+class PerformanceCase:
+    name: str
+    operation: callable
+    limit_ms: int
+    expected_queries: int | None = None
+    page_size: int | None = None
+
+
 LIMITS_MS = {
     "relationship_create": 150,
     "relationship_detail": 100,
@@ -88,6 +101,21 @@ def _measure(name, operation, *, query_count: int, page_size=None):
     )
     assert result["p95_ms"] <= LIMITS_MS[name]
     return result
+
+
+
+def _run_cases(cases: list[PerformanceCase]):
+    results = {}
+
+    for case in cases:
+        results[case.name] = _measure(
+            case.name,
+            case.operation,
+            query_count=case.expected_queries or 0,
+            page_size=case.page_size,
+        )
+
+    return results
 
 
 def _seed_corpus(db_session):
@@ -240,170 +268,271 @@ def _seed_corpus(db_session):
 def test_approved_performance_conditions(db_session):
     owner, projects, workspaces, relationship_ids = _seed_corpus(db_session)
     service = EngineeringContextRelationshipService(db_session)
-    target_relationship = relationship_ids[5]
-    target_commitment = db_session.scalar(
-        select(InterfaceCommitment.id).order_by(InterfaceCommitment.id).limit(1)
+
+    total_runs = WARMUPS + SAMPLES
+
+    commitment_ids = list(
+        db_session.scalars(
+            select(InterfaceCommitment.id)
+            .order_by(InterfaceCommitment.id)
+            .limit(total_runs + 1)
+        )
     )
+    assert len(commitment_ids) >= total_runs + 1
+
+    target_relationship = relationship_ids[5]
+    target_commitment = commitment_ids[0]
+
+    relationship_update_ids = iter(
+        relationship_ids[3000:3000 + total_runs]
+    )
+    conflict_relationship_ids = iter(
+        relationship_ids[4000:4000 + total_runs]
+    )
+    commitment_update_ids = iter(
+        commitment_ids[1:1 + total_runs]
+    )
+
+    assert len(relationship_ids[3000:3000 + total_runs]) == total_runs
+    assert len(relationship_ids[4000:4000 + total_runs]) == total_runs
+    assert len(commitment_ids[1:1 + total_runs]) == total_runs
+
     nonce = {"value": 0}
 
     def create_relationship():
         nonce["value"] += 1
-        nested = db_session.begin_nested()
-        db_session.execute(
-            insert(EngineeringContextRelationship).values(
-                relationship_key=_key("measured", nonce["value"]),
-                project_id=projects[0].id,
-                meaning="requires",
-                purpose=f"Measured creation {nonce['value']}",
-                source_role="provider",
-                target_role="consumer",
-                source_kind="workspace",
-                source_workspace_id=workspaces[0].id,
-                target_kind="workspace",
-                target_workspace_id=workspaces[1].id,
-                steward_id=owner.id,
-                created_by_id=owner.id,
-                lifecycle="current",
-                version=1,
-            )
+        result = service.create_relationship(
+            data={
+                "project_id": projects[0].id,
+                "meaning": "requires",
+                "purpose": (
+                    "Measured authorized creation "
+                    f"{nonce['value']}"
+                ),
+                "applicability": "Performance validation",
+                "source_role": "provider",
+                "target_role": "consumer",
+                "source": {
+                    "kind": "workspace",
+                    "workspace_id": workspaces[0].id,
+                },
+                "target": {
+                    "kind": "workspace",
+                    "workspace_id": workspaces[1].id,
+                },
+                "steward_id": owner.id,
+            },
+            current_user=owner,
         )
-        nested.rollback()
+        assert result["version"] == 1
+        assert result["project_id"] == projects[0].id
 
     def relationship_detail():
-        service.get_relationship(
+        result = service.get_relationship(
             relationship_id=target_relationship,
             current_user=owner,
         )
+        assert result["id"] == target_relationship
 
     def relationship_traversal():
-        service.list_relationships(
+        result = service.list_relationships(
             project_id=projects[0].id,
             workspace_id=workspaces[0].id,
             current_user=owner,
             page=1,
             size=50,
         )
+        assert result["page"] == 1
+        assert result["size"] == 50
+        assert len(result["items"]) <= 50
 
     def relationship_project_list():
-        service.list_relationships(
+        result = service.list_relationships(
             project_id=projects[0].id,
             workspace_id=None,
             current_user=owner,
             page=1,
             size=50,
         )
+        assert result["page"] == 1
+        assert result["size"] == 50
+        assert len(result["items"]) <= 50
 
     def relationship_workspace_list():
-        service.list_relationships(
+        result = service.list_relationships(
             project_id=projects[0].id,
             workspace_id=workspaces[0].id,
             current_user=owner,
             page=1,
             size=50,
         )
+        assert result["page"] == 1
+        assert result["size"] == 50
+        assert len(result["items"]) <= 50
 
     def commitment_detail():
-        service.get_commitment(
+        result = service.get_commitment(
             commitment_id=target_commitment,
             current_user=owner,
         )
+        assert result["id"] == target_commitment
 
     def commitment_scoped_list():
-        service.list_commitments(
+        result = service.list_commitments(
             project_id=projects[0].id,
             workspace_id=None,
             current_user=owner,
             page=1,
             size=50,
         )
+        assert result["page"] == 1
+        assert result["size"] == 50
+        assert len(result["items"]) <= 50
 
     def relationship_update():
-        nested = db_session.begin_nested()
-        db_session.execute(
-            update(EngineeringContextRelationship)
-            .where(EngineeringContextRelationship.id == target_relationship)
-            .values(purpose="Measured update")
+        relationship_id = next(relationship_update_ids)
+        before = service.get_relationship(
+            relationship_id=relationship_id,
+            current_user=owner,
         )
-        nested.rollback()
+        assert before["version"] == 1
+
+        result = service.update_relationship_metadata(
+            relationship_id=relationship_id,
+            expected_version=before["version"],
+            purpose=(
+                "Measured authorized relationship update "
+                f"{relationship_id}"
+            ),
+            applicability="Performance validation",
+            reason="Measure authorized relationship mutation",
+            current_user=owner,
+        )
+        assert result["version"] == 2
 
     def commitment_update():
-        nested = db_session.begin_nested()
-        db_session.execute(
-            update(InterfaceCommitment)
-            .where(InterfaceCommitment.id == target_commitment)
-            .values(stage_or_due_condition="Measured condition")
+        commitment_id = next(commitment_update_ids)
+        before = service.get_commitment(
+            commitment_id=commitment_id,
+            current_user=owner,
         )
-        nested.rollback()
+        assert before["version"] == 1
+
+        needed = not before["reassessment_needed"]
+
+        result = service.set_reassessment(
+            commitment_id=commitment_id,
+            needed=needed,
+            expected_version=before["version"],
+            trigger=(
+                f"performance:{commitment_id}"
+                if needed
+                else None
+            ),
+            reason="Measure authorized commitment mutation",
+            current_user=owner,
+        )
+        assert result["version"] == 2
+        assert result["reassessment_needed"] is needed
 
     def conflict_pair():
-        nested = db_session.begin_nested()
-        first = db_session.execute(
-            update(EngineeringContextRelationship)
-            .where(
-                EngineeringContextRelationship.id == target_relationship,
-                EngineeringContextRelationship.version == 1,
-            )
-            .values(version=2)
+        relationship_id = next(conflict_relationship_ids)
+
+        before = service.get_relationship(
+            relationship_id=relationship_id,
+            current_user=owner,
         )
-        second = db_session.execute(
-            update(EngineeringContextRelationship)
-            .where(
-                EngineeringContextRelationship.id == target_relationship,
-                EngineeringContextRelationship.version == 1,
-            )
-            .values(version=2)
+        assert before["version"] == 1
+
+        winner = service.update_relationship_metadata(
+            relationship_id=relationship_id,
+            expected_version=before["version"],
+            purpose=f"Measured winner {relationship_id}",
+            applicability="Performance validation",
+            reason="Measure optimistic-concurrency winner",
+            current_user=owner,
         )
-        assert first.rowcount == 1
-        assert second.rowcount == 0
-        nested.rollback()
+        assert winner["version"] == 2
+
+        conflict_detected = False
+        try:
+            service.update_relationship_metadata(
+                relationship_id=relationship_id,
+                expected_version=before["version"],
+                purpose=f"Measured stale writer {relationship_id}",
+                applicability="Performance validation",
+                reason="Measure optimistic-concurrency conflict",
+                current_user=owner,
+            )
+        except RelationshipVersionConflict:
+            conflict_detected = True
+            db_session.rollback()
+
+        assert conflict_detected
 
     results = {
         "relationship_create": _measure(
-            "relationship_create", create_relationship, query_count=1
+            "relationship_create",
+            create_relationship,
+            query_count=0,
         ),
         "relationship_detail": _measure(
-            "relationship_detail", relationship_detail, query_count=1
+            "relationship_detail",
+            relationship_detail,
+            query_count=0,
         ),
         "relationship_traversal": _measure(
             "relationship_traversal",
             relationship_traversal,
-            query_count=1,
+            query_count=0,
             page_size=50,
         ),
         "relationship_project_list": _measure(
             "relationship_project_list",
             relationship_project_list,
-            query_count=1,
+            query_count=0,
             page_size=50,
         ),
         "relationship_workspace_list": _measure(
             "relationship_workspace_list",
             relationship_workspace_list,
-            query_count=1,
+            query_count=0,
             page_size=50,
         ),
         "commitment_detail": _measure(
-            "commitment_detail", commitment_detail, query_count=1
+            "commitment_detail",
+            commitment_detail,
+            query_count=0,
         ),
         "commitment_scoped_list": _measure(
             "commitment_scoped_list",
             commitment_scoped_list,
-            query_count=1,
+            query_count=0,
             page_size=50,
         ),
         "relationship_update": _measure(
-            "relationship_update", relationship_update, query_count=1
+            "relationship_update",
+            relationship_update,
+            query_count=0,
         ),
         "commitment_update": _measure(
-            "commitment_update", commitment_update, query_count=1
+            "commitment_update",
+            commitment_update,
+            query_count=0,
         ),
         "concurrency_conflict_pair": _measure(
-            "concurrency_conflict_pair", conflict_pair, query_count=2
+            "concurrency_conflict_pair",
+            conflict_pair,
+            query_count=0,
         ),
     }
+
     assert set(results) == set(LIMITS_MS)
 
-
+    for result in results.values():
+        assert result["query_count"] > 0
+        assert result["actor"] == "project_owner"
+        assert result["result"] == "pass"
 def test_no_search_or_graph_traversal_surface_exists():
     from app.services.engineering_context_relationship_service import (
         EngineeringContextRelationshipService,
