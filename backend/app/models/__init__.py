@@ -12,4 +12,5 @@ from .engineering_context import EngineeringContextSubjectReference
 from .engineering_context import EngineeringContextValue
 from .engineering_context_relationship import EngineeringContextRelationship
 from .engineering_context_relationship import InterfaceCommitment
+from .engineering_object import EngineeringObject
 from .audit_log import AuditLog

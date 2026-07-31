@@ -8,6 +8,37 @@ class EngineeringObjectFamily(StrEnum):
     SHARED = "shared"
 
 
+class EngineeringObjectType(StrEnum):
+    INSTRUMENT = "instrument"
+    TRANSMITTER = "transmitter"
+    ANALYZER = "analyzer"
+    FLOWMETER = "flowmeter"
+    CONTROL_VALVE = "control_valve"
+    INSTRUMENT_LOOP = "instrument_loop"
+    JUNCTION_BOX = "junction_box"
+    INSTRUMENT_PANEL = "instrument_panel"
+    MOTOR = "motor"
+    TRANSFORMER = "transformer"
+    MCC = "mcc"
+    SWITCHGEAR = "switchgear"
+    ELECTRICAL_PANEL = "electrical_panel"
+    ELECTRICAL_CABLE = "electrical_cable"
+    PLC = "plc"
+    DCS_CONTROLLER = "dcs_controller"
+    ESD_CONTROLLER = "esd_controller"
+    CONTROL_CABINET = "control_cabinet"
+    IO_CHANNEL = "io_channel"
+    HMI = "hmi"
+    CONTROL_LOGIC = "control_logic"
+    PROJECT = "project"
+    VENDOR = "vendor"
+    REQUIREMENT = "requirement"
+    STANDARD = "standard"
+    DATASHEET = "datasheet"
+    DRAWING = "drawing"
+    TECHNICAL_DECISION = "technical_decision"
+
+
 class EngineeringDiscipline(StrEnum):
     INSTRUMENTATION = "instrumentation"
     ELECTRICAL = "electrical"

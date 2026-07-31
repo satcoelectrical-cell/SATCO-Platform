@@ -22,6 +22,7 @@ from app.enums.engineering_knowledge import (
     EngineeringIdentifierKind,
     EngineeringLifecycle,
     EngineeringObjectFamily,
+    EngineeringObjectType,
     EngineeringRelationshipFamily,
     EngineeringResponsibilityRole,
 )

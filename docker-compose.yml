@@ -36,6 +36,7 @@ services:
       DATABASE_USER: satco
       DATABASE_PASSWORD: satco_password
       DATABASE_NAME: satco_platform
+      TEST_DATABASE_URL: postgresql+psycopg://satco:satco_password@postgres:5432/satco_platform_patch02022_test
 
     volumes:
       - ./backend:/app
