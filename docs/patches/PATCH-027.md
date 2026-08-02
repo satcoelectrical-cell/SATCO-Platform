@@ -5,9 +5,9 @@
 | Field | Value |
 |---|---|
 | Document ID | PATCH-027 |
-| Status | IMPLEMENTATION COMPLETE — DELIVERY AUTHORIZATION PENDING |
+| Status | DONE |
 | Owner | SATCO Platform Architecture Team |
-| Implementation | Completed and validated; Commit and Push not authorized or evidenced |
+| Implementation | Completed, validated, committed, and pushed |
 | Decision Date | 2026-08-01 |
 
 ## Objective
@@ -94,11 +94,13 @@ migration upgrade/downgrade and clean-database migration validation, passing
 Evidence tests and full backend regression, and the recorded absence of
 remaining blockers.
 
-QG-12 is not satisfied because no separately authorized PATCH-027 Commit and
-Push evidence is recorded. PATCH-027 is therefore `IMPLEMENTATION COMPLETE —
-DELIVERY AUTHORIZATION PENDING`. It shall become `DONE` only after both delivery
-gates complete and their evidence is recorded. This status update does not
-alter implementation or repository history.
+QG-12 is satisfied by commit `f9d244c`, which records completion of PATCH-023
+through PATCH-027, and by verified publication of that commit to
+`origin/patch-022.3a-development-infrastructure`. Local HEAD and remote-tracking
+HEAD matched at review, and the pre-review working tree was clean.
+
+PATCH-027 is `DONE`. This status reconciliation records existing Commit and
+Push evidence and does not alter implementation history.
 
 ## Revision History
 
@@ -106,3 +108,4 @@ alter implementation or repository history.
 |---|---|---|
 | 1.0 | 2026-08-01 | Approved bounded Evidence prerequisite |
 | 1.1 | 2026-08-02 | Recorded implementation completion and validation with Commit and Push gates pending. |
+| 1.2 | 2026-08-02 | Recorded QG-12 Commit and Push evidence and finalized PATCH-027 as DONE. |
