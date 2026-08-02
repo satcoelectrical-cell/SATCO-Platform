@@ -584,7 +584,7 @@ authorize implementation.
 | PATCH-025 | Authenticated Organization Context | `docs/patches/PATCH-025.md` | DONE |
 | PATCH-026 | Engineering Relationship Engine | `docs/patches/PATCH-026.md` | DONE |
 | PATCH-027 | Evidence Foundation | `docs/patches/PATCH-027.md` | DONE |
-| PATCH-028.0 | Manifesto Governance Integration | `docs/patches/PATCH-028.0.md` | IMPLEMENTATION COMPLETE — DELIVERY AUTHORIZATION PENDING |
+| PATCH-028.0 | Manifesto Governance Integration | `docs/patches/PATCH-028.0.md` | DONE |
 
 The former PATCH-022.2 through PATCH-022.10 reservations in the Draft
 PATCH-022 sequence are superseded. PATCH-022.4 through PATCH-022.10 are
