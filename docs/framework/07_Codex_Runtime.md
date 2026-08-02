@@ -11,14 +11,16 @@ Codex shall automatically resolve:
 
 1. authoritative PATCH registry entry;
 2. approved PATCH document;
-3. governing Constitution/Product Bible/ADRs/XDRs/Blueprints;
-4. Architecture Review;
-5. accepted EDS and review;
-6. approved IDS;
-7. executable Implementation Plan;
-8. READY IRR;
-9. completed prerequisite PATCHes;
-10. current repository implementation and tests.
+3. governing Constitution, certified Engineering Intelligence Manifesto,
+   Product Bible, ADRs/XDRs, and Blueprints;
+4. accepted Manifesto Alignment Record;
+5. Architecture Review;
+6. accepted EDS and review;
+7. approved IDS;
+8. executable Implementation Plan;
+9. READY IRR with QG-M1 Readiness PASS;
+10. completed prerequisite PATCHes;
+11. current repository implementation and tests.
 
 Resolution uses the minimum deterministic source set. Codex reads the registry
 entry, PATCH, its direct governing decisions and Blueprint, its EDS/IDS/plan,
@@ -81,6 +83,7 @@ if no executable PATCH exists: return "No executable PATCH available."
 if an explicit PATCH cannot be resolved uniquely: BLOCKED
 if authority chain is incomplete/inconsistent: NOT READY
 if IRR is not READY: NOT READY
+if QG-M1 is PENDING or FAIL: NOT READY
 if repository invalidates readiness assumptions: BLOCKED
 if exact implementation boundary is executable: select earliest sprint
 declare exact files
@@ -100,6 +103,7 @@ already present:
 - approved IDS with exact files/contracts;
 - executable Implementation Plan with sprint/checkpoint sequence;
 - READY IRR;
+- Manifesto Alignment Verified YES and QG-M1 Readiness PASS;
 - completed dependencies;
 - accessible validation environment.
 
@@ -143,6 +147,7 @@ Before code:
 - API/error/query bounds;
 - migration scope;
 - dependency direction and modular-extension boundary.
+- Manifesto affected principles, evidence, Human authority, and QG-M1 result.
 
 ## 8. Runtime Reporting
 
@@ -150,6 +155,11 @@ Commentary gives concise progress and evidence during tool work. Final output is
 self-contained and follows the PATCH-required format. Never claim a check ran
 when it did not. Distinguish warnings from blockers and focused tests from full
 regression.
+
+Reports include the certified Manifesto version, Manifesto alignment result,
+QG-M1 result, limitations, and any Human approvals still required. Codex may
+technically verify evidence but never represent its own review as Human
+approval.
 
 ## 9. Human Escalation
 

@@ -13,6 +13,8 @@ independently verifiable execution units without changing PATCH scope.
 - Persistence precedes transport when transport requires durable behavior.
 - A prerequisite PATCH remains separate from its consumer PATCH.
 - A sprint inherits every PATCH non-scope and stop condition.
+- A sprint consumes the accepted Manifesto Alignment Record and inherits every
+  affected-principle requirement.
 
 ## 3. Standard Sprint Classes
 
@@ -93,6 +95,7 @@ Each sprint checkpoint defines:
 - rollback boundary;
 - stop conditions;
 - exit state.
+- QG-M1 checkpoint result and principle-level evidence.
 
 No checkpoint is complete merely because files exist.
 
@@ -112,3 +115,8 @@ A sprint is DONE when its exact deliverables exist, focused tests pass,
 architecture boundaries remain intact, no unauthorized diff exists, migration
 state is correct where applicable, and no sprint blocker remains. PATCH DONE
 still requires the final quality gates after all sprints.
+
+Every Sprint DONE decision also requires its QG-M1 checkpoint to PASS. A new
+Manifesto conflict, hidden assumption, provider coupling, authority bypass,
+context loss, or evidence weakening stops the Sprint and returns work to the
+earliest affected documentation phase.

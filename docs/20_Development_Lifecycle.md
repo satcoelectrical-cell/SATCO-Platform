@@ -122,6 +122,15 @@ inputs or scope have materially changed.
 No PATCH may bypass an approved lifecycle gate. Every mandatory gate must
 complete successfully before the next gate begins.
 
+Every new PATCH from PATCH-028.0 onward also carries one Manifesto Alignment
+Record through the lifecycle. Architecture Review records `Manifesto
+Compliance: PASS|FAIL`; EDS/IDS map affected principles to behavior and exact
+implementation contracts; IRR records `Manifesto Alignment Verified: YES|NO`
+and `QG-M1 Readiness Result: PASS|FAIL`; Sprint checkpoints preserve the
+accepted record; and Final Review records `QG-M1 Final Result:
+PENDING|PASS|FAIL`. PENDING or FAIL cannot authorize implementation or
+completion.
+
 Prohibited flows include:
 
 - ADR directly to Implementation;

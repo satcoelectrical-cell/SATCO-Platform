@@ -42,6 +42,10 @@ ownership, repository/service boundaries, authorization-before-disclosure,
 Audit ownership, Domain Event ownership, idempotency, Unit of Work, optimistic
 concurrency, and modular extension boundaries.
 
+Architecture validation also verifies the certified Manifesto reference, the
+Manifesto Alignment Record, principle-level evidence, and an Architecture
+Review result of `Manifesto Compliance: PASS`.
+
 ## 5. Documentation Validation
 
 - All referenced documents exist at the exact path.
@@ -51,6 +55,8 @@ concurrency, and modular extension boundaries.
 - Migration parent reflects the approved current chain.
 - No lower document reverses authority direction.
 - Revision histories record material corrections.
+- PATCH, EDS, IDS, plan, and IRR contain one cross-consistent Manifesto
+  Alignment Record and QG-M1 readiness evidence.
 
 ## 6. Implementation Validation
 
@@ -61,6 +67,8 @@ concurrency, and modular extension boundaries.
 - Inner layers remain framework-independent.
 - Error responses do not disclose internals or protected existence.
 - Query limits and pagination are enforced.
+- The final diff preserves every affected Manifesto principle and matches the
+  accepted alignment evidence.
 
 ## 7. Data and Transaction Validation
 
@@ -80,6 +88,9 @@ Record command, environment, scope, result counts, warnings, skipped checks,
 revision/head, and failure details. “Tests pass” without identifiable scope and
 result is insufficient.
 
+QG-M1 evidence additionally records the Manifesto version, affected principles,
+source artifacts, reviewer, date, PENDING/PASS/FAIL result, and limitations.
+
 ## 9. Correction Loop
 
 On failure:
@@ -91,6 +102,12 @@ On failure:
 4. rerun every affected lower validation layer;
 5. rerun required final regressions;
 6. do not weaken tests to manufacture a pass.
+
+A Foundation conflict returns to Governance/Foundation review; an ownership
+failure returns to Architecture/ADR; incomplete behavior returns to EDS;
+missing exact contracts return to IDS; repository mismatch returns to
+readiness; and implementation divergence returns to the earliest affected
+Sprint or design phase.
 
 ## 10. Validation Outcomes
 

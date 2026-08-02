@@ -28,12 +28,16 @@ Before source change, verify:
 1. PATCH identifier and registry scope agree.
 2. PATCH is approved with explicit scope and non-scope.
 3. Required Architecture Review is PASS.
-4. EDS is accepted and its review passes.
-5. IDS is approved and defines an exact file/table/API/test boundary.
-6. Implementation Plan is executable.
-7. IRR says `READY FOR IMPLEMENTATION` and names no unresolved blocker.
-8. All prerequisite PATCHes are complete at their required versions.
-9. Current repository state still matches the IRR assumptions.
+4. The PATCH contains a Manifesto Alignment Record and the Architecture Review
+   records `Manifesto Compliance: PASS`.
+5. EDS is accepted and its review passes, including affected-principle coverage.
+6. IDS is approved and defines an exact file/table/API/test and Manifesto
+   traceability boundary.
+7. Implementation Plan is executable and includes QG-M1 checkpoints.
+8. IRR says `READY FOR IMPLEMENTATION`, `Manifesto Alignment Verified: YES`,
+   and `QG-M1 Readiness Result: PASS`.
+9. All prerequisite PATCHes are complete at their required versions.
+10. Current repository state still matches the IRR assumptions.
 
 Failure of any item returns `NOT READY` or `BLOCKED`; no code is written.
 
@@ -42,6 +46,8 @@ Failure of any item returns `NOT READY` or `BLOCKED`; no code is written.
 ### Phase A — Resolve
 
 - Read repository governance and documentation hierarchy.
+- Resolve the certified Manifesto version and accepted Manifesto Alignment
+  Record.
 - Resolve the PATCH, related ADR/XDR/Blueprint, EDS, IDS, reviews, plan, and IRR.
 - Establish authority order and explicit supersession.
 - Record open assumptions; assumptions that change behavior are blockers.
@@ -58,6 +64,7 @@ Failure of any item returns `NOT READY` or `BLOCKED`; no code is written.
 
 - Produce the exact files to create and modify before implementation.
 - Map every file to one IDS deliverable.
+- Map every affected behavior to its approved Manifesto/EDS evidence.
 - Confirm prohibited files, behaviors, routes, tables, and operations.
 - Stop if a required file is not authorized.
 
@@ -66,6 +73,7 @@ Failure of any item returns `NOT READY` or `BLOCKED`; no code is written.
 - Select the smallest independently verifiable sprint using `02_Sprint_Engine`.
 - Implement domain/contracts before adapters, adapters before transport.
 - Complete each checkpoint before moving outward.
+- Re-evaluate QG-M1 at every Sprint checkpoint and stop on new conflict.
 
 ### Phase E — Validate
 
@@ -77,6 +85,7 @@ Failure of any item returns `NOT READY` or `BLOCKED`; no code is written.
 ### Phase F — Review
 
 - Compare final diff with IDS file scope and PATCH non-scope.
+- Compare the final diff with the accepted Manifesto Alignment Record.
 - Verify architecture, security, backward compatibility, migration, and tests.
 - Perform independent review when required.
 - Record unresolved warnings and blockers honestly.
@@ -170,6 +179,8 @@ Unless the PATCH defines a stricter format, return:
 
 ```text
 Implementation Status
+Manifesto Alignment
+QG-M1 Result
 Files Created
 Files Modified
 Tests Added

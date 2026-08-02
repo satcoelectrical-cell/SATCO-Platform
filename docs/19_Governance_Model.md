@@ -1,6 +1,6 @@
 # SATCO Governance Model
 
-**Version:** 1.1
+**Version:** 1.2
 
 **Status:** Certified and Stable
 
@@ -41,11 +41,12 @@ No implementation decision is valid merely because it is technically possible.
 Before implementation, SATCO must establish:
 
 1. constitutional permission;
-2. Product Bible alignment;
-3. architectural compatibility;
-4. experience compatibility where users are affected;
-5. bounded PATCH authorization;
-6. validation and approval expectations.
+2. Engineering Intelligence Manifesto alignment;
+3. Product Bible alignment;
+4. architectural compatibility;
+5. experience compatibility where users are affected;
+6. bounded PATCH authorization;
+7. validation and approval expectations.
 
 When governance is incomplete, implementation pauses.
 
@@ -53,6 +54,10 @@ When governance is incomplete, implementation pauses.
 
 ```text
 Constitution
+
+↓
+
+Engineering Intelligence Manifesto
 
 ↓
 
@@ -93,10 +98,23 @@ non-negotiable principles.
 
 No document may override the Constitution.
 
-### 2. Product Bible
+### 2. Engineering Intelligence Manifesto
 
-**Authority:** Permanent product governance subordinate only to the
-Constitution.
+**Authority:** Permanent philosophical and product-direction authority
+subordinate only to the Constitution.
+
+**Purpose:** Defines Engineering Intelligence as SATCO's enduring long-term
+vision and establishes the principles governing Human responsibility, context,
+evidence, relationships, explanation, Engineering Memory, and modular
+evolution.
+
+The Manifesto does not prescribe implementation or override the Constitution.
+Changes require Foundation review, approval, versioning, and certification.
+
+### 3. Product Bible
+
+**Authority:** Permanent product governance subordinate to the Constitution
+and Engineering Intelligence Manifesto.
 
 **Purpose:** Defines product identity, Engineering Philosophy, Product Vision,
 Product Principles, AI behavior, knowledge model, user-experience philosophy,
@@ -105,10 +123,10 @@ AI feature framework, and master Product Blueprint.
 Product Bible changes require explicit governance review and recertification
 when material.
 
-### 3. Architecture Decision Record
+### 4. Architecture Decision Record
 
 **Authority:** Binding within its accepted architectural scope and subordinate
-to the Constitution and Product Bible.
+to the Constitution, Engineering Intelligence Manifesto, and Product Bible.
 
 **Purpose:** Records why a durable technical or domain architecture decision
 was made, alternatives, consequences, compatibility, and evolution.
@@ -116,17 +134,17 @@ was made, alternatives, consequences, compatibility, and evolution.
 Only Accepted ADRs are binding. A Proposed ADR does not authorize
 implementation.
 
-### 4. Experience Bible
+### 5. Experience Bible
 
 **Authority:** Permanent experience governance subordinate to the Constitution,
-Product Bible, and accepted ADRs.
+Engineering Intelligence Manifesto, Product Bible, and accepted ADRs.
 
 **Purpose:** Defines how SATCO should be experienced across navigation,
 attention, interaction, AI presence, visual semantics, and accessibility.
 
 The Experience Bible does not redesign architecture.
 
-### 5. Experience Decision Record
+### 6. Experience Decision Record
 
 **Authority:** Binding within its Accepted experience scope and subordinate to
 all higher levels.
@@ -137,7 +155,7 @@ accessibility, and consequences.
 An XDR may interpret an accepted ADR for experience but may not change its
 domain or technical decision.
 
-### 6. PATCH
+### 7. PATCH
 
 **Authority:** Bounded authorization for a specific change.
 
@@ -147,7 +165,7 @@ and approval gates.
 A PATCH does not create permanent governance by implication. Durable
 architecture requires an ADR; durable experience behavior requires an XDR.
 
-### 7. Implementation
+### 8. Implementation
 
 **Authority:** Execution of approved decisions.
 
@@ -218,11 +236,15 @@ Governance Model governs and affected work stops for correction.
 
 ## Foundation Documents
 
-SATCO Foundation v1.1 consists of:
+SATCO Foundation v1.2 consists of:
 
 ### Constitutional Foundation
 
 - `docs/00_Constitution.md`
+
+### Engineering Intelligence Manifesto Foundation
+
+- `docs/Engineering_Intelligence_Manifesto.md`
 
 ### Product Foundation
 
@@ -262,7 +284,7 @@ SATCO Foundation v1.1 consists of:
 Foundation status does not imply that future product capabilities are
 implemented.
 
-SATCO Foundation v1.1 is the governing baseline for feature development.
+SATCO Foundation v1.2 is the governing baseline for feature development.
 Routine PATCH work must not directly rewrite its foundational documents.
 
 A foundational change must first be justified by the governing record
@@ -287,6 +309,21 @@ affected foundation documents are released through a new Foundation version.
 | Certification | SATCO Foundation v1.1 — Certified and Stable |
 | Decision date | 2026-08-02 |
 
+### Foundation v1.2 Certification Record
+
+| Field | Decision |
+|---|---|
+| Proposal | SATCO Engineering Intelligence Manifesto v1.0 |
+| Scope | Additive permanent philosophical Foundation layer immediately below the Constitution |
+| Architecture review | `docs/reviews/Engineering_Intelligence_Manifesto_Architecture_Review.md` — PASS |
+| Architecture Guardian review | Approved |
+| Product Owner approval | Approved |
+| ADR threshold | Not applicable: the Manifesto preserves accepted architecture and delegates technical decisions to ADRs |
+| XDR threshold | Not applicable: the Manifesto creates no interaction or experience behavior |
+| Conflict and consequence assessment | PASS; Constitution remains supreme and existing Foundation meaning is preserved |
+| Certification | SATCO Foundation v1.2 — Certified and Stable |
+| Decision date | 2026-08-02 |
+
 Stable does not prohibit governed evolution. It prohibits uncontrolled
 modification.
 
@@ -297,7 +334,11 @@ Every proposed change follows:
 ```text
 Engineering problem
     ↓
-Constitution and Product Bible review
+Constitution review
+    ↓
+Engineering Intelligence Manifesto alignment
+    ↓
+Product Bible review
     ↓
 Architecture impact assessment
     ↓
@@ -410,6 +451,8 @@ When documents conflict:
 Special rules:
 
 - Constitution always prevails.
+- Engineering Intelligence Manifesto prevails over Product Bible, ADR,
+  Experience Bible, XDR, PATCH, and implementation.
 - Product Bible prevails over ADR, Experience Bible, XDR, PATCH, and
   implementation.
 - Accepted ADRs prevail over the Experience Bible and XDRs in their
@@ -427,6 +470,7 @@ No person or AI agent may silently choose a convenient interpretation.
 | Document type | Primary owner | Required reviewers |
 |---|---|---|
 | Constitution | Product Owner | Architecture Guardian and engineering authority |
+| Engineering Intelligence Manifesto | Product Owner | Architecture Guardian, engineering authority, and product governance |
 | Product Bible | Product Owner | Architecture Guardian and product governance |
 | ADR | Software/Domain Architect | Architecture Guardian and affected technical owners |
 | Experience Bible | Product Owner | Experience governance, Architecture Guardian, accessibility reviewer |
@@ -460,7 +504,8 @@ Routine PATCH work applies foundational governance and must not modify it as an
 incidental implementation step. If PATCH work reveals a necessary foundational
 change, the PATCH pauses that portion of work until:
 
-1. an ADR or XDR justifies and approves the change;
+1. the governing record appropriate to the decision justifies and approves the
+   change, including an ADR or XDR when its threshold is met;
 2. affected foundational documents are reviewed as one coherent set;
 3. a new Foundation version is declared and certified;
 4. dependent PATCH scope is revalidated.
@@ -481,13 +526,17 @@ product, architecture, experience, and governance documents.
 
 Version 1.0 establishes the initial permanent foundation.
 
-Foundation v1.1 is Certified and Stable. A future Foundation version is
+Foundation v1.2 is Certified and Stable. A future Foundation version is
 required for approved changes to foundational meaning. Stable describes change
 control, not an inability to evolve.
 
 Version 1.1 certifies the governance-aligned adoption of SATCO Implementation
 Framework v1.1 without changing product, domain, technical architecture, or
 experience authority.
+
+Version 1.2 certifies SATCO Engineering Intelligence Manifesto v1.0 as the
+second permanent Foundation layer, subordinate only to the Constitution and
+governing all lower layers without changing approved implementation contracts.
 
 ### Document Versions
 
@@ -535,6 +584,7 @@ authorize implementation.
 | PATCH-025 | Authenticated Organization Context | `docs/patches/PATCH-025.md` | DONE |
 | PATCH-026 | Engineering Relationship Engine | `docs/patches/PATCH-026.md` | DONE |
 | PATCH-027 | Evidence Foundation | `docs/patches/PATCH-027.md` | DONE |
+| PATCH-028.0 | Manifesto Governance Integration | `docs/patches/PATCH-028.0.md` | IMPLEMENTATION COMPLETE — DELIVERY AUTHORIZATION PENDING |
 
 The former PATCH-022.2 through PATCH-022.10 reservations in the Draft
 PATCH-022 sequence are superseded. PATCH-022.4 through PATCH-022.10 are
@@ -552,12 +602,30 @@ Before implementation begins, reviewers confirm:
 
 - hierarchy was followed;
 - required documents were read;
+- the certified Engineering Intelligence Manifesto version is referenced;
+- a Manifesto Alignment Record identifies supported, affected, and preserved
+  principles, contribution, risks, and evidence;
+- the Architecture Review records `Manifesto Compliance: PASS`;
+- the IRR records `Manifesto Alignment Verified: YES` and
+  `QG-M1 Readiness Result: PASS`;
 - ADR/XDR thresholds were assessed;
 - all governing records are in an appropriate status;
 - no unresolved conflict remains;
 - PATCH scope is explicit;
 - validation and rollback expectations are defined;
 - no lower-level artifact expands higher-level authority.
+
+`QG-M1 — Manifesto Alignment` is a mandatory cumulative execution-evidence
+gate. It supplements existing quality gates and Human approval; it does not
+create a new authority layer. QG-M1 is evaluated before implementation
+readiness and again during Final Review against the actual diff and evidence.
+A PENDING or FAIL result cannot support READY, IMPLEMENTATION COMPLETE, or
+DONE.
+
+QG-M1 applies prospectively to PATCH-028.0 and later PATCHes after adoption.
+Completed PATCH-023 through PATCH-027 remain governed by their recorded
+completion evidence and are not retroactively reopened. A later material
+change to those capabilities proceeds through a new PATCH under QG-M1.
 
 ## Future Governance Evolution
 

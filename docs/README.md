@@ -1,6 +1,6 @@
-# SATCO Foundation v1.1 Documentation Guide
+# SATCO Foundation v1.2 Documentation Guide
 
-**Version:** 1.1
+**Version:** 1.2
 
 **Foundation Status:** Certified and Stable
 
@@ -15,14 +15,16 @@ experience, governance, PATCH, and implementation records.
 This hierarchy governs documents under `docs/`. It does not replace any
 governing document or authorize implementation.
 
-## Foundation v1.1
+## Foundation v1.2
 
-SATCO Foundation v1.1 is the certified documentation foundation that governs
+SATCO Foundation v1.2 is the certified documentation foundation that governs
 future development.
 
 It consists of:
 
 - **Constitution:** `00_Constitution.md`
+- **Engineering Intelligence Manifesto:**
+  `Engineering_Intelligence_Manifesto.md`
 - **Product Bible:** `10_Engineering_Philosophy.md` through
   `17_SATCO_Product_Blueprint.md`
 - **Architecture:** `01_Architecture.md` and accepted records under `adr/`
@@ -39,13 +41,19 @@ that future product capabilities have been implemented.
 
 Certified and Stable means:
 
-- Foundation v1.1 is the governing baseline for feature development.
+- Foundation v1.2 is the governing baseline for feature development.
 - Routine PATCH work must not directly rewrite foundational documents.
-- A foundational change must first be justified by an approved ADR or XDR
-  appropriate to the decision.
+- A foundational change must first be justified and approved through the
+  governing record appropriate to the decision.
 - Approved foundational changes are released through a new Foundation version.
 - Stable does not prohibit governed evolution; it prohibits uncontrolled
   modification.
+
+PATCH-028.0 adopts `QG-M1 — Manifesto Alignment` prospectively as the mandatory
+execution-evidence gate for future PATCHes. Contributors carry one Manifesto
+Alignment Record through PATCH, AR, EDS/IDS, IRR, Sprint checkpoints, and Final
+Review. This gate does not replace Human approval or reopen completed PATCH-023
+through PATCH-027.
 
 ## Documentation Hierarchy
 
@@ -53,6 +61,10 @@ The mandatory authority hierarchy is:
 
 ```text
 Constitution
+
+↓
+
+Engineering Intelligence Manifesto
 
 ↓
 
@@ -83,6 +95,12 @@ Implementation
 
 `00_Constitution.md` defines the highest mission and responsibility boundaries.
 
+### Engineering Intelligence Manifesto
+
+`Engineering_Intelligence_Manifesto.md` defines the enduring philosophical
+foundation and long-term Engineering Intelligence direction. It is subordinate
+only to the Constitution and governs the Product Bible and all lower layers.
+
 ### Product Bible
 
 `10_Engineering_Philosophy.md` through `17_SATCO_Product_Blueprint.md`
@@ -93,12 +111,14 @@ product rules.
 
 Accepted records under `adr/` define binding architecture within their scope.
 `01_Architecture.md` is the platform architecture baseline interpreted through
-the Constitution, Product Bible, and accepted ADRs.
+the Constitution, Engineering Intelligence Manifesto, Product Bible, and
+accepted ADRs.
 
 ### Experience Bible
 
 `18_Experience_Bible.md` defines permanent experience philosophy subordinate to
-the Constitution, Product Bible, and accepted ADRs.
+the Constitution, Engineering Intelligence Manifesto, Product Bible, and
+accepted ADRs.
 
 ### XDR
 
@@ -129,6 +149,9 @@ without changing the authority hierarchy.
 
 - **Constitution** establishes why SATCO exists and preserves human engineering
   responsibility.
+- **Engineering Intelligence Manifesto** defines the enduring philosophy of
+  governed Engineering Intelligence and the long-term direction that all lower
+  Foundation layers operationalize.
 - **Product Bible** defines what SATCO is and how it creates engineering value.
 - **Architecture** defines durable domain and technical structure through the
   baseline architecture and accepted ADRs.
@@ -160,9 +183,8 @@ No contributor or AI agent may silently reconcile contradictory guidance.
 Every future PATCH begins with:
 
 ```text
-Product Bible v1.0
-(begin with docs/README.md and
-docs/17_SATCO_Product_Blueprint.md)
+SATCO Foundation v1.2
+(begin with docs/README.md)
 
 ↓
 
@@ -170,7 +192,12 @@ docs/00_Constitution.md
 
 ↓
 
-docs/10_Engineering_Philosophy.md
+docs/Engineering_Intelligence_Manifesto.md
+
+↓
+
+docs/10_Engineering_Philosophy.md through
+docs/17_SATCO_Product_Blueprint.md
 
 ↓
 
@@ -249,12 +276,13 @@ learning implementation conventions.
 ### Architects
 
 1. `00_Constitution.md`.
-2. Full Product Bible: `10_Engineering_Philosophy.md` through
+2. `Engineering_Intelligence_Manifesto.md`.
+3. Full Product Bible: `10_Engineering_Philosophy.md` through
    `17_SATCO_Product_Blueprint.md`.
-3. All accepted ADRs.
-4. `18_Experience_Bible.md` and relevant accepted XDRs.
-5. `01_Architecture.md`, `03_AI_Brain.md`, and domain blueprints.
-6. `19_Governance_Model.md`, `02_Roadmap.md`, and relevant PATCH reviews.
+4. All accepted ADRs.
+5. `18_Experience_Bible.md` and relevant accepted XDRs.
+6. `01_Architecture.md`, `03_AI_Brain.md`, and domain blueprints.
+7. `19_Governance_Model.md`, `02_Roadmap.md`, and relevant PATCH reviews.
 
 Architects are responsible for resolving cross-document implications and
 recording new architectural decisions explicitly.

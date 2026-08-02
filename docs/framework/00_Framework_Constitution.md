@@ -24,6 +24,8 @@ authority hierarchy remains exactly:
 ```text
 Constitution
 ↓
+Engineering Intelligence Manifesto
+↓
 Product Bible
 ↓
 Accepted ADRs
@@ -42,6 +44,8 @@ authority and never override the hierarchy above.
 
 If this Framework conflicts with a higher authority, work stops and the higher
 authority governs. The Framework shall then be corrected through governance.
+Framework execution must demonstrate alignment with the certified Engineering
+Intelligence Manifesto through the cumulative QG-M1 evidence gate.
 
 ## 3. Applicability
 
@@ -73,6 +77,9 @@ redesign Core.
    safety require reproducible evidence.
 10. No Silent Expansion: discovered improvements become blockers or future
     recommendations, not unapproved implementation.
+11. Manifesto Alignment: every PATCH shall preserve all eleven Manifesto
+    principles and provide principle-level evidence before readiness and final
+    completion.
 
 ## 5. Framework States
 
@@ -158,6 +165,8 @@ required.
 
 - No implementation without an approved PATCH, Architecture Review, accepted
   EDS, approved IDS, executable plan, and READY IRR.
+- No `READY FOR IMPLEMENTATION`, `IMPLEMENTATION COMPLETE`, or `DONE` claim
+  without QG-M1 PASS at its applicable readiness or Final Review evaluation.
 - No file outside the IDS file set changes without returning to governance.
 - No generic mutation or physical deletion when explicit commands and logical
   lifecycle are governed.
@@ -169,6 +178,9 @@ required.
 - No migration history rewrite except an explicitly accepted ADR-controlled
   historical repair.
 - No test weakening, skipped regression, or hidden failure to claim completion.
+
+QG-M1 applies prospectively from PATCH-028.0. It does not reopen completed
+PATCH-023 through PATCH-027 or change their recorded completion evidence.
 
 ## 9. Change and Versioning
 

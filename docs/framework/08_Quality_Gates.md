@@ -26,6 +26,21 @@ work to the earliest affected lifecycle phase.
 Conditional technical gates are marked not applicable only by reviewed design,
 never by implementer convenience.
 
+### QG-M1 — Manifesto Alignment
+
+QG-M1 is a cumulative evidence gate that supplements, and does not renumber or
+replace, QG-0 through QG-12 or required Human approval.
+
+| State | Meaning |
+|---|---|
+| PENDING | Required principle-level evidence or Human decision is incomplete. |
+| PASS | All eleven principles were reviewed, affected principles have evidence, and no unresolved conflict remains. |
+| FAIL | A conflict, evidence gap, weakened principle, or false authority claim exists. |
+
+QG-M1 is evaluated before readiness and again during Final Review. All eleven
+Manifesto principles remain binding; reviewed design may distinguish affected
+from preserved principles but may not declare a principle inapplicable.
+
 ## 3. READY FOR IMPLEMENTATION Criteria
 
 READY requires all of:
@@ -40,6 +55,7 @@ READY requires all of:
 - environment and repository assumptions verified;
 - IRR explicitly states `READY FOR IMPLEMENTATION`;
 - no unresolved P0 blocker.
+- `Manifesto Alignment Verified: YES` and `QG-M1 Readiness Result: PASS`.
 
 No other status phrase is equivalent.
 
@@ -48,6 +64,8 @@ No other status phrase is equivalent.
 BLOCKED applies when work cannot progress safely under current authority. It
 requires the Blocker Engine record and return to the earliest affected gate.
 Partial implementation does not convert BLOCKED to PASS.
+QG-M1 FAIL returns work to the earliest affected Foundation, Architecture, EDS,
+IDS, readiness, Sprint, validation, or Final Review phase.
 
 ## 5. DONE Criteria
 
@@ -67,6 +85,7 @@ A PATCH is `IMPLEMENTATION COMPLETE` only when QG-1 through QG-11 pass and:
 - rollback/forward-repair strategy is executable;
 - documentation and review artifacts required by the lifecycle are updated;
 - final independent review passes;
+- `QG-M1 Final Result: PASS` against the actual final diff and evidence;
 - warnings and deferred recommendations are recorded;
 - delivery actions remain pending until their own authorization is granted.
 
@@ -116,3 +135,5 @@ Before delivery prove:
 Evidence must be reproducible and attributable. Counts, commands, revision IDs,
 environment identity, dates, reviewer verdicts, and limitations are recorded.
 Fabricated, stale, partial, or scope-mismatched evidence invalidates the gate.
+QG-M1 evidence names the Manifesto version, affected principles, source
+artifacts, reviewer, date, result, and limitations.
