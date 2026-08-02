@@ -65,6 +65,12 @@ the aggregate and its approved service boundary.
 No router, repository consumer, automation, or AI component may directly
 mutate internal aggregate state.
 
+Lifecycle transition, authority transition, reclassification, and steward
+transfer rules belong to explicit `EngineeringObject` Aggregate Root
+operations. The application service may orchestrate these commands but shall
+not duplicate transition policy, implement aggregate invariants, or mutate
+aggregate fields directly.
+
 ## Identity
 
 Every Engineering Object shall contain an immutable UUID primary key.
@@ -80,7 +86,7 @@ Engineering identity shall never depend upon:
 - temporary project code;
 - database sequence visible to users.
 
-Identifiers shall be modeled separately in PATCH-022.4.
+Identifiers shall be modeled separately in a future registered PATCH.
 
 ## Scope
 
@@ -120,8 +126,10 @@ Engineering Object lifecycle shall use the approved controlled lifecycle enum.
 
 Lifecycle persistence shall not perform physical deletion.
 
-Future lifecycle transitions shall be enforced by the service layer introduced
-in a later PATCH.
+Lifecycle transitions shall be enforced by explicit `EngineeringObject`
+Aggregate Root operations introduced through the approved Blueprint command
+contract. A service may coordinate the operation but shall not decide the
+transition or mutate lifecycle state directly.
 
 ## Authority Standing
 
@@ -132,6 +140,11 @@ Authority standing indicates the governance strength and reliability of the
 Engineering Object record.
 
 Authority standing shall not be inferred or changed automatically by AI.
+
+Authority transitions shall occur only through an explicit
+`EngineeringObject` Aggregate Root operation. Reclassification and steward
+transfer shall likewise use their explicit aggregate operations so that all
+approved invariants remain inside the Aggregate Root.
 
 ## Optimistic Concurrency
 
@@ -155,7 +168,9 @@ Every Engineering Object shall preserve:
 
 Creator identity is immutable after creation.
 
-Steward identity may change only through a future approved service operation.
+Steward identity may change only through the explicit approved
+`EngineeringObject` steward-transfer operation orchestrated by the application
+service.
 
 Anonymous responsibility is prohibited.
 
@@ -220,5 +235,5 @@ PATCH-022.3 model design is accepted when:
 PATCH-022.3 establishes EngineeringObject as the central persistent Aggregate
 Root.
 
-PATCH-022.4 shall introduce external and engineering identifiers without
-changing Engineering Object identity.
+A future registered PATCH shall introduce external and engineering identifiers
+without changing Engineering Object identity.

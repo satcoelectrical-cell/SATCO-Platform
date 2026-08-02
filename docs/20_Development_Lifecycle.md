@@ -1,8 +1,8 @@
 # SATCO Development Lifecycle
 
-**Version:** 1.0
+**Version:** 1.1
 
-**Status:** Proposed
+**Status:** Accepted — Official Procedural Standard
 
 ## Purpose
 
@@ -17,9 +17,15 @@ professional engineering authority.
 
 ## Authority and Applicability
 
-This is a supporting development-governance standard under the authority
-defined by the SATCO Governance Model. It applies to every future PATCH and
+This is the formally adopted official procedural standard under the policy
+authority of the SATCO Governance Model. It applies to every future PATCH and
 sub-PATCH that authorizes implementation.
+
+The Governance Model remains the policy authority. This Development Lifecycle
+is subordinate to it and may not change the governance hierarchy, document
+authority, or approval ownership. If the documents conflict, the Governance
+Model governs and this procedural standard must be corrected before affected
+work continues.
 
 All work remains subordinate to:
 
@@ -43,6 +49,32 @@ exclusions, acceptance criteria, risks, rollback expectations, and required
 governance must be approved before an IDS can be approved.
 The IDS defines the implementation contract; implementation begins only after
 IRR confirms readiness.
+
+## Binding Pre-Implementation Workflow
+
+The minimum mandatory workflow before implementation begins is:
+
+```text
+Approved PATCH
+    ↓
+Architecture Review
+    ↓
+Accepted EDS
+    ↓
+Approved IDS
+    ↓
+IRR — READY FOR IMPLEMENTATION
+```
+
+No earlier review, recommendation, conditional approval, or planning artifact
+substitutes for an IRR outcome of **READY FOR IMPLEMENTATION**.
+
+After that outcome, implementation execution follows the mandatory SATCO
+Implementation Framework v1.1 under `docs/framework/`. The Framework defines
+the reusable sprint, blocker, validation, testing, migration, runtime, and
+quality-gate mechanics for this lifecycle. It does not replace any lifecycle
+artifact or approval and remains subordinate to this document and the
+Governance Model.
 
 ## Mandatory Lifecycle
 
@@ -846,6 +878,32 @@ validation or Final Review.
   waive this lifecycle.
 - Automated checks may verify evidence but may not grant human authority.
 - Commit and Push remain separately authorized repository actions.
+
+## Completion State Semantics
+
+- `READY FOR IMPLEMENTATION` authorizes bounded implementation; it is not a
+  completion state.
+- `IMPLEMENTATION COMPLETE` means implementation, applicable migration,
+  validation, regression, and Final Review have passed.
+- `IMPLEMENTATION COMPLETE — DELIVERY AUTHORIZATION PENDING` applies when the
+  release candidate passed Final Review but Commit or Push authority has not
+  yet been granted or exercised.
+- `DONE` applies only after separately authorized Commit and Push gates complete
+  and their required repository and remote-state evidence is recorded.
+- `BLOCKED` applies when safe progress requires missing authority, a governing
+  decision, a required dependency, or an unavailable validation capability; a
+  pending optional timing choice to grant Commit or Push authority does not
+  retroactively invalidate implementation completion.
+
+These states do not merge approval authorities. Final Review, Commit, and Push
+remain distinct mandatory gates with separate authority.
+
+## Revision History
+
+| Version | Date | Description |
+|---|---|---|
+| 1.0 | 2026-08-02 | Initial accepted official procedural standard. |
+| 1.1 | 2026-08-02 | Adopted Framework v1.1 and clarified implementation-complete, delivery-pending, and DONE semantics. |
 
 ## Readiness Criteria
 

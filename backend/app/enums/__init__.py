@@ -11,10 +11,24 @@ from .engineering_context_relationship import CommitmentProviderKind
 from .engineering_context_relationship import ContextRelationshipMeaning
 from .engineering_context_relationship import InterfaceCommitmentState
 from .engineering_context_relationship import RelationshipEndpointKind
-from .engineering_context_relationship import RelationshipLifecycle
+from .engineering_context_relationship import (
+    RelationshipLifecycle as EngineeringContextRelationshipLifecycle,
+)
 from .project_priority import ProjectPriority
 from .project_status import ProjectStatus
 from .workspace_status import WorkspaceStatus
+from .engineering_relationship import ACYCLIC_RELATIONSHIP_PAIRS
+from .engineering_relationship import CROSS_WORKSPACE_RELATIONSHIP_FAMILIES
+from .engineering_relationship import RELATIONSHIP_TYPES_BY_FAMILY
+from .engineering_relationship import RelationshipFamily
+from .engineering_relationship import (
+    RelationshipLifecycle as EngineeringRelationshipLifecycle,
+)
+from .engineering_relationship import RelationshipType
+from .engineering_relationship import validate_relationship_pair
+from .evidence import EvidenceLifecycle
+from .evidence import EvidenceSourceKind
+from .evidence import EvidenceSourceStanding
 from app.enums.engineering_knowledge import (
     EngineeringAuthorityStanding,
     EngineeringConfidentiality,
@@ -26,3 +40,6 @@ from app.enums.engineering_knowledge import (
     EngineeringRelationshipFamily,
     EngineeringResponsibilityRole,
 )
+
+# Backward-compatible Core alias. New domain code must use a qualified export.
+RelationshipLifecycle = EngineeringContextRelationshipLifecycle

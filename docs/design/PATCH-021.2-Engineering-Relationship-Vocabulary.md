@@ -305,6 +305,33 @@ Possible evidence includes:
 A relationship without adequate evidence may remain proposed but shall not
 become authoritative.
 
+## Canonical Vocabulary Discrimination
+
+The canonical Version 1 relationship identifier is the ordered pair:
+
+```text
+(relationship_family, relationship_type)
+```
+
+Relationship type is not globally unique. Where the same type token appears in
+more than one approved family, including `monitored_by`, the family supplies
+the engineering semantic namespace. Therefore:
+
+- (`instrumentation`, `monitored_by`) means instrumentation monitoring;
+- (`automation`, `monitored_by`) means automation-system monitoring.
+
+Every command, persisted relationship, response, filter, uniqueness check,
+duplicate check, cycle check, Audit record, Domain Event, and idempotency
+fingerprint shall carry and evaluate both values. A type without its family is
+invalid and shall never be inferred from the type token alone.
+
+This paired identifier provides backward-compatible extension: a future
+approved family may reuse an existing type token only with explicitly approved
+family-scoped semantics, while existing family/type pairs retain their stored
+values and meaning. An existing pair shall never be reinterpreted. No duplicate
+command is created; the same explicit EngineeringRelationship command consumes
+the canonical pair.
+
 ## Version-1 Boundary
 
 PATCH-021.2 defines relationship vocabulary only.

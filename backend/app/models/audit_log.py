@@ -1,5 +1,6 @@
 
 from sqlalchemy import Column, Integer, String, DateTime, JSON
+from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from datetime import datetime
 
 from app.core.database import Base
@@ -18,6 +19,8 @@ class AuditLog(Base):
     entity = Column(String, nullable=False)
 
     entity_id = Column(Integer, nullable=True)
+
+    entity_uuid = Column(PostgreSQLUUID(as_uuid=True), nullable=True)
 
     details = Column(JSON, nullable=True)
 

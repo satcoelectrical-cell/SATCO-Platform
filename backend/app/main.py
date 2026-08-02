@@ -9,6 +9,13 @@ from app.api.v1.routers.audit_logs import router as audit_router
 from app.api.v1.routers.engineering_workspaces import (
     router as engineering_workspace_router,
 )
+from app.api.v1.routers.engineering_objects import (
+    router as engineering_object_router,
+)
+from app.api.v1.routers.evidence import router as evidence_router
+from app.api.v1.routers.engineering_relationships import (
+    router as engineering_relationship_router,
+)
 
 from app.exceptions.handlers import register_exception_handlers
 
@@ -29,6 +36,9 @@ app.include_router(search_router)
 app.include_router(auth_router)
 app.include_router(audit_router)
 app.include_router(engineering_workspace_router)
+app.include_router(engineering_object_router)
+app.include_router(evidence_router)
+app.include_router(engineering_relationship_router)
 
 
 @app.get("/")

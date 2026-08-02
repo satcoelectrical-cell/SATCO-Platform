@@ -72,6 +72,10 @@ from app.models import engineering_context  # noqa: F401
 from app.models import engineering_context_relationship  # noqa: F401
 from app.models import project  # noqa: F401
 from app.models import user  # noqa: F401
+from app.models import evidence  # noqa: F401
+from app.models import evidence_command  # noqa: F401
+from app.models import engineering_relationship  # noqa: F401
+from app.models import engineering_relationship_command  # noqa: F401
 
 target_metadata = Base.metadata
 

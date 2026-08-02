@@ -1,6 +1,6 @@
-# SATCO Foundation v1.0 Documentation Guide
+# SATCO Foundation v1.1 Documentation Guide
 
-**Version:** 1.0
+**Version:** 1.1
 
 **Foundation Status:** Certified and Stable
 
@@ -15,9 +15,9 @@ experience, governance, PATCH, and implementation records.
 This hierarchy governs documents under `docs/`. It does not replace any
 governing document or authorize implementation.
 
-## Foundation v1.0
+## Foundation v1.1
 
-SATCO Foundation v1.0 is the certified documentation foundation that governs
+SATCO Foundation v1.1 is the certified documentation foundation that governs
 future development.
 
 It consists of:
@@ -29,6 +29,8 @@ It consists of:
 - **Experience:** `18_Experience_Bible.md` and accepted records under `xdr/`
 - **Governance:** `19_Governance_Model.md`, this guide, and
   `09_Codex_Guidelines.md`
+- **Implementation Framework:** `framework/00_Framework_Constitution.md`
+  through `framework/09_Framework_Roadmap.md`
 - **Delivery context:** roadmap, PATCH definitions, implementation plans, and
   review records
 
@@ -37,7 +39,7 @@ that future product capabilities have been implemented.
 
 Certified and Stable means:
 
-- Foundation v1.0 is the governing baseline for feature development.
+- Foundation v1.1 is the governing baseline for feature development.
 - Routine PATCH work must not directly rewrite foundational documents.
 - A foundational change must first be justified by an approved ADR or XDR
   appropriate to the decision.
@@ -118,6 +120,10 @@ decision. It has no authority to reinterpret missing or conflicting governance.
 The roadmap, technical blueprints, coding standards, workflow guidance,
 implementation plans, and review reports provide planning, constraints, and
 evidence. They do not override the mandatory authority hierarchy.
+
+The SATCO Implementation Framework v1.1 is the mandatory execution standard
+used after an IRR grants `READY FOR IMPLEMENTATION`. It consolidates procedure
+without changing the authority hierarchy.
 
 ## Relationships Among Foundation Layers
 

@@ -1,6 +1,6 @@
 # SATCO Governance Model
 
-**Version:** 1.0
+**Version:** 1.1
 
 **Status:** Certified and Stable
 
@@ -176,9 +176,49 @@ The roadmap establishes planned direction, not architectural authority.
 Review reports record evidence, not permanent decisions unless that decision is
 incorporated into the proper governing document.
 
+### Official Development Procedure
+
+`docs/20_Development_Lifecycle.md` is the formally adopted official
+procedural standard for SATCO implementation delivery. It operates under this
+Governance Model and may define mandatory delivery gates, evidence, and exit
+criteria, but it may not change policy authority, document precedence, or
+approval ownership established by this Governance Model.
+
+The minimum binding workflow before implementation begins is:
+
+```text
+Approved PATCH
+    ↓
+Architecture Review
+    ↓
+Accepted EDS
+    ↓
+Approved IDS
+    ↓
+IRR — READY FOR IMPLEMENTATION
+```
+
+The Development Lifecycle remains subordinate to this Governance Model. If
+the two documents conflict, this Governance Model governs and the procedural
+standard must be corrected before affected work continues.
+
+### Official Implementation Execution Standard
+
+`docs/framework/00_Framework_Constitution.md` and the SATCO Implementation
+Framework v1.1 documents under `docs/framework/` are the mandatory execution
+standard for implementing a PATCH after the Development Lifecycle has produced
+an IRR outcome of `READY FOR IMPLEMENTATION`.
+
+The Framework consolidates existing execution, sprint, blocker, validation,
+testing, migration, Codex-runtime, and quality-gate rules. It is subordinate to
+this Governance Model and to the Development Lifecycle procedure. It may not
+create product or architecture authority, skip a lifecycle gate, change
+approval ownership, or broaden an approved PATCH. If a conflict exists, this
+Governance Model governs and affected work stops for correction.
+
 ## Foundation Documents
 
-SATCO Foundation v1.0 consists of:
+SATCO Foundation v1.1 consists of:
 
 ### Constitutional Foundation
 
@@ -210,6 +250,8 @@ SATCO Foundation v1.0 consists of:
 - `docs/19_Governance_Model.md`
 - `docs/README.md`
 - `docs/09_Codex_Guidelines.md`
+- `docs/framework/00_Framework_Constitution.md` through
+  `docs/framework/09_Framework_Roadmap.md`
 
 ### Delivery Governance
 
@@ -220,12 +262,30 @@ SATCO Foundation v1.0 consists of:
 Foundation status does not imply that future product capabilities are
 implemented.
 
-SATCO Foundation v1.0 is the governing baseline for feature development.
+SATCO Foundation v1.1 is the governing baseline for feature development.
 Routine PATCH work must not directly rewrite its foundational documents.
 
-A foundational change must first be justified by an approved ADR or XDR
-appropriate to the decision. After approval, affected foundation documents are
-released through a new Foundation version.
+A foundational change must first be justified by the governing record
+appropriate to the decision. Durable architecture requires an accepted ADR;
+durable experience behavior requires an accepted XDR. A governance-only
+procedural change that alters neither may be approved and recorded directly in
+the Governance Model through the complete Foundation approval flow, provided
+the ADR/XDR threshold assessment is explicitly recorded. After approval,
+affected foundation documents are released through a new Foundation version.
+
+### Foundation v1.1 Certification Record
+
+| Field | Decision |
+|---|---|
+| Proposal | Framework Review Resolution — SATCO Implementation Framework v1.1 |
+| Scope | Governance execution procedure and supporting documentation only |
+| ADR threshold | Not applicable: no durable product, domain, or technical architecture decision changes |
+| XDR threshold | Not applicable: no experience behavior or interaction decision changes |
+| Architecture Guardian review | Approved |
+| Product Owner review | Approved |
+| Conflict and consequence assessment | PASS; authority hierarchy preserved and procedural gates clarified |
+| Certification | SATCO Foundation v1.1 — Certified and Stable |
+| Decision date | 2026-08-02 |
 
 Stable does not prohibit governed evolution. It prohibits uncontrolled
 modification.
@@ -421,9 +481,13 @@ product, architecture, experience, and governance documents.
 
 Version 1.0 establishes the initial permanent foundation.
 
-Foundation v1.0 is Certified and Stable. A future Foundation version is
+Foundation v1.1 is Certified and Stable. A future Foundation version is
 required for approved changes to foundational meaning. Stable describes change
 control, not an inability to evolve.
+
+Version 1.1 certifies the governance-aligned adoption of SATCO Implementation
+Framework v1.1 without changing product, domain, technical architecture, or
+experience authority.
 
 ### Document Versions
 
@@ -445,6 +509,37 @@ new record rather than rewriting an Accepted record silently.
 
 PATCH identifiers define bounded delivery units. Sub-PATCHes may decompose
 approved work but may not broaden the parent scope.
+
+### PATCH Registry and Numbering
+
+The PATCH registry in this section is the authoritative source for PATCH
+number allocation, reservation, scope, status, and supersession. The
+Governance Model owns the numbering policy. A PATCH number may be allocated,
+released, reassigned, or retired only through an approved governance change
+accepted by the Architecture Guardian and Repository Owner.
+
+Authoritative PATCH records reside under `docs/patches/`. Records under
+`docs/design/` may define subordinate design contracts but do not independently
+authorize implementation.
+
+| Identifier | Registered scope | Authoritative record | Registry status |
+|---|---|---|---|
+| PATCH-022 | EKG Backend Foundation | `docs/patches/PATCH-022.md` | Draft |
+| PATCH-022.1 | Core Enumerations and Contracts | `docs/design/PATCH-022.1-Core-Enumerations-and-Contracts.md` | Delivered stage |
+| PATCH-022.2 | Engineering Foundation | `docs/design/PATCH-022.2-Engineering-Foundation.md` | Delivered stage |
+| PATCH-022.3 | Engineering Object Aggregate | `docs/design/PATCH-022.3-Engineering-Object-Aggregate.md` | Registered stage |
+| PATCH-022.3A | Development Environment Standardization | `docs/design/PATCH-022.3A-Development-Environment-Standardization.md` | Approval status unresolved |
+| PATCH-023 | EngineeringObject Application Layer | `docs/patches/PATCH-023.md` | DONE |
+| PATCH-023.1 | EngineeringObject API Contract | `docs/design/PATCH-023.1-EngineeringObject-API-Contract.md` | Draft; not authorized |
+| PATCH-024 | EngineeringObject Persistence Migration | `docs/patches/PATCH-024.md` | DONE |
+| PATCH-025 | Authenticated Organization Context | `docs/patches/PATCH-025.md` | DONE |
+| PATCH-026 | Engineering Relationship Engine | `docs/patches/PATCH-026.md` | DONE |
+| PATCH-027 | Evidence Foundation | `docs/patches/PATCH-027.md` | IMPLEMENTATION COMPLETE — DELIVERY AUTHORIZATION PENDING |
+
+The former PATCH-022.2 through PATCH-022.10 reservations in the Draft
+PATCH-022 sequence are superseded. PATCH-022.4 through PATCH-022.10 are
+released and unassigned. Repository, service, and API work for
+EngineeringObject is governed by PATCH-023 and its approved sub-PATCHes.
 
 ### Implementation Versions
 

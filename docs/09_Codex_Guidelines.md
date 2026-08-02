@@ -1,6 +1,6 @@
 # SATCO Codex Guidelines
 
-Version: 2.0
+Version: 2.1
 
 ## 1. Role
 
@@ -85,6 +85,12 @@ choose the less authoritative instruction.
 ---
 
 ## 3. Standard Patch Workflow
+
+After an approved PATCH reaches an IRR outcome of `READY FOR IMPLEMENTATION`,
+Codex shall execute it under SATCO Implementation Framework v1.1 in
+`docs/framework/`. The instruction `Implement PATCH-XXX` invokes that complete
+runtime; it does not waive this document, the Governance Model, the Development
+Lifecycle, or any approval gate.
 
 Every patch follows:
 

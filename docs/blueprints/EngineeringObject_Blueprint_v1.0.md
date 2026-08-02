@@ -2,7 +2,7 @@
 
 Version: 1.0  
 Status: Approved  
-Last Updated: 2026-07-29
+Last Updated: 2026-07-31
 
 ## Table of Contents
 
@@ -29,12 +29,16 @@ Revision: 1
 |---|---|
 | Title | EngineeringObject Blueprint |
 | Version | 1.0 |
-| Status | Draft — Pending Section Approval and Architecture Review |
+| Status | Approved — Architecture Contract |
 | Document class | Architecture Blueprint |
 | Aggregate | `EngineeringObject` |
 | Bounded context | Engineering Knowledge Graph Core |
-| Implementation authority | None |
-| Required next gate | Independent Architecture Review |
+| Implementation authority | Granted for bounded implementation through an approved PATCH after all PATCH-specific approval gates are complete |
+| Architecture Review | PASS — `docs/reviews/EngineeringObject-Blueprint-v1.0-Architecture-Review.md` |
+| Approval authority | SATCO Architecture Guardian and Product Owner |
+| Decision date | 2026-07-31 |
+| Product Owner approval | Approved — 2026-07-31 |
+| Required next gate | Approved PATCH, accepted EDS, approved IDS, and IRR `READY FOR IMPLEMENTATION` |
 | System of record | PostgreSQL |
 | Governing method | DDD, Clean Architecture, Engineering Knowledge Graph, enterprise governance |
 
@@ -2888,6 +2892,17 @@ The review shall record:
 - decision date.
 
 `PASS WITH CONDITIONS` authorizes implementation only after all blocking conditions are closed.
+
+### Recorded Decision
+
+Blueprint v1.0 received a final Architecture Review verdict of `PASS` on
+2026-07-31. The SATCO Architecture Guardian accepted the Blueprint as the
+EngineeringObject architecture contract, and the Product Owner approved its
+use as the governing basis for bounded implementation PATCHes.
+
+This approval grants architecture-level implementation authority only.
+Implementation remains prohibited until the governing PATCH, EDS, IDS, and
+IRR gates for the requested delivery scope are complete.
 
 ## 12.6 Implementation Gate
 

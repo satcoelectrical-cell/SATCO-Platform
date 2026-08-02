@@ -1,4 +1,5 @@
 from enum import StrEnum
+from datetime import datetime
 from uuid import UUID
 from uuid import uuid4
 
@@ -20,6 +21,17 @@ from app.enums import EngineeringDiscipline
 from app.enums import EngineeringLifecycle
 from app.enums import EngineeringObjectFamily
 from app.enums import EngineeringObjectType
+from app.models.engineering_object_command import CreateEngineeringObject
+from app.models.engineering_object_command import EngineeringObjectCommandResult
+from app.models.engineering_object_command import EngineeringObjectDomainEvent
+from app.models.engineering_object_command import EngineeringObjectNoOp
+from app.models.engineering_object_command import EngineeringObjectTransitionRejected
+from app.models.engineering_object_command import EngineeringObjectVersionMismatch
+from app.models.engineering_object_command import MutationCommand
+from app.models.engineering_object_command import ReclassifyEngineeringObject
+from app.models.engineering_object_command import TransferEngineeringObjectSteward
+from app.models.engineering_object_command import TransitionEngineeringObjectAuthority
+from app.models.engineering_object_command import TransitionEngineeringObjectLifecycle
 
 
 def _values(enum_type: type[StrEnum]) -> str:
@@ -83,6 +95,54 @@ FAMILY_OBJECT_TYPES = {
         EngineeringObjectType.DATASHEET.value,
         EngineeringObjectType.DRAWING.value,
         EngineeringObjectType.TECHNICAL_DECISION.value,
+    },
+}
+
+LIFECYCLE_TRANSITIONS = {
+    EngineeringLifecycle.PROPOSED: {
+        EngineeringLifecycle.ACTIVE,
+        EngineeringLifecycle.WITHDRAWN,
+    },
+    EngineeringLifecycle.ACTIVE: {
+        EngineeringLifecycle.SUPERSEDED,
+        EngineeringLifecycle.WITHDRAWN,
+        EngineeringLifecycle.RETIRED,
+    },
+    EngineeringLifecycle.WITHDRAWN: {
+        EngineeringLifecycle.PROPOSED,
+    },
+    EngineeringLifecycle.SUPERSEDED: {
+        EngineeringLifecycle.RETIRED,
+    },
+    EngineeringLifecycle.RETIRED: set(),
+}
+
+AUTHORITY_TRANSITIONS = {
+    EngineeringAuthorityStanding.DRAFT: {
+        EngineeringAuthorityStanding.PROPOSED,
+    },
+    EngineeringAuthorityStanding.PROPOSED: {
+        EngineeringAuthorityStanding.REVIEWED,
+        EngineeringAuthorityStanding.DISPUTED,
+        EngineeringAuthorityStanding.REJECTED,
+    },
+    EngineeringAuthorityStanding.REVIEWED: {
+        EngineeringAuthorityStanding.APPROVED,
+        EngineeringAuthorityStanding.PROPOSED,
+        EngineeringAuthorityStanding.DISPUTED,
+        EngineeringAuthorityStanding.REJECTED,
+    },
+    EngineeringAuthorityStanding.APPROVED: {
+        EngineeringAuthorityStanding.PROPOSED,
+        EngineeringAuthorityStanding.DISPUTED,
+    },
+    EngineeringAuthorityStanding.DISPUTED: {
+        EngineeringAuthorityStanding.PROPOSED,
+        EngineeringAuthorityStanding.REVIEWED,
+        EngineeringAuthorityStanding.REJECTED,
+    },
+    EngineeringAuthorityStanding.REJECTED: {
+        EngineeringAuthorityStanding.DRAFT,
     },
 }
 
@@ -312,7 +372,14 @@ class EngineeringObject(Base):
         }[key]
         if normalized not in allowed:
             raise ValueError(f"Invalid Engineering Object {key}")
-        if key in {"family", "discipline", "object_type"}:
+        if (
+            key in {"family", "discipline", "object_type"}
+            and not getattr(
+                self,
+                "_classification_mutation_in_progress",
+                False,
+            )
+        ):
             self._validate_classification_candidate(key, normalized)
         return normalized
 
@@ -429,3 +496,323 @@ class EngineeringObject(Base):
             raise ValueError(
                 "Engineering Object family and object_type are incompatible"
             )
+
+    @classmethod
+    def create(
+        cls,
+        command: CreateEngineeringObject,
+        occurred_at: datetime,
+    ) -> tuple["EngineeringObject", EngineeringObjectCommandResult]:
+        """Establish one complete aggregate in its approved initial state."""
+
+        cls._validate_command_time(occurred_at)
+        if command.organization_id != command.metadata.actor.organization_id:
+            raise ValueError(
+                "organization_id must match the authenticated actor scope"
+            )
+        if command.creator_id != command.metadata.actor.actor_id:
+            raise ValueError(
+                "creator_id must match the authenticated actor"
+            )
+        engineering_object = cls(
+            organization_id=command.organization_id,
+            customer_id=command.customer_id,
+            project_id=command.project_id,
+            workspace_id=command.workspace_id,
+            family=command.family,
+            discipline=command.discipline,
+            object_type=command.object_type,
+            subtype=None,
+            lifecycle=EngineeringLifecycle.PROPOSED,
+            authority_standing=EngineeringAuthorityStanding.DRAFT,
+            version=1,
+            creator_id=command.creator_id,
+            steward_id=command.steward_id,
+            created_at=occurred_at,
+            updated_at=occurred_at,
+        )
+        event = engineering_object._event(
+            command.metadata,
+            "EngineeringObjectCreated",
+            occurred_at,
+            {
+                "family": engineering_object.family,
+                "discipline": engineering_object.discipline,
+                "object_type": engineering_object.object_type,
+                "lifecycle": engineering_object.lifecycle,
+                "authority_standing": (
+                    engineering_object.authority_standing
+                ),
+                "creator_id": engineering_object.creator_id,
+                "steward_id": engineering_object.steward_id,
+            },
+        )
+        return engineering_object, engineering_object._result(
+            "CreateEngineeringObject",
+            command.metadata.correlation_id,
+            previous_version=None,
+            events=(event,),
+        )
+
+    def reclassify(
+        self,
+        command: ReclassifyEngineeringObject,
+        occurred_at: datetime,
+    ) -> EngineeringObjectCommandResult:
+        """Apply a complete valid classification and reassess authority."""
+
+        previous_version = self._prepare_mutation(command, occurred_at)
+        target = {
+            "family": command.family.value,
+            "discipline": command.discipline.value,
+            "object_type": command.object_type.value,
+        }
+        self._validate_classification_values(target)
+        previous = {
+            "family": self.family,
+            "discipline": self.discipline,
+            "object_type": self.object_type,
+        }
+        if previous == target:
+            raise EngineeringObjectNoOp(
+                "Reclassification must change the complete classification"
+            )
+
+        prior_authority = self.authority_standing
+        self._classification_mutation_in_progress = True
+        try:
+            self.family = target["family"]
+            self.discipline = target["discipline"]
+            self.object_type = target["object_type"]
+        finally:
+            self._classification_mutation_in_progress = False
+        self._validate_classification()
+        if prior_authority in {
+            EngineeringAuthorityStanding.REVIEWED.value,
+            EngineeringAuthorityStanding.APPROVED.value,
+        }:
+            self.authority_standing = EngineeringAuthorityStanding.PROPOSED
+
+        self._complete_mutation(previous_version, occurred_at)
+        events = [
+            self._event(
+                command.metadata,
+                "EngineeringObjectReclassified",
+                occurred_at,
+                {
+                    **target,
+                    "previous_family": previous["family"],
+                    "previous_discipline": previous["discipline"],
+                    "previous_object_type": previous["object_type"],
+                },
+            )
+        ]
+        if self.authority_standing != prior_authority:
+            events.append(
+                self._event(
+                    command.metadata,
+                    "EngineeringObjectAuthorityTransitioned",
+                    occurred_at,
+                    {
+                        "previous_authority_standing": prior_authority,
+                        "authority_standing": self.authority_standing,
+                        "reason": "material_reclassification",
+                    },
+                )
+            )
+        return self._result(
+            "ReclassifyEngineeringObject",
+            command.metadata.correlation_id,
+            previous_version,
+            tuple(events),
+        )
+
+    def transition_lifecycle(
+        self,
+        command: TransitionEngineeringObjectLifecycle,
+        occurred_at: datetime,
+    ) -> EngineeringObjectCommandResult:
+        """Apply exactly one Blueprint-approved lifecycle transition."""
+
+        previous_version = self._prepare_mutation(command, occurred_at)
+        current = EngineeringLifecycle(self.lifecycle)
+        target = command.lifecycle
+        if target not in LIFECYCLE_TRANSITIONS[current]:
+            raise EngineeringObjectTransitionRejected(
+                f"Lifecycle transition {current.value} -> {target.value} "
+                "is prohibited"
+            )
+        if target is EngineeringLifecycle.SUPERSEDED:
+            if command.replacement_object_id is None:
+                raise EngineeringObjectTransitionRejected(
+                    "Supersession requires a replacement Engineering Object"
+                )
+            if command.replacement_object_id == self.id:
+                raise EngineeringObjectTransitionRejected(
+                    "An Engineering Object cannot supersede itself"
+                )
+        elif command.replacement_object_id is not None:
+            raise EngineeringObjectTransitionRejected(
+                "replacement_object_id is valid only for supersession"
+            )
+
+        self.lifecycle = target
+        self._complete_mutation(previous_version, occurred_at)
+        event = self._event(
+            command.metadata,
+            "EngineeringObjectLifecycleTransitioned",
+            occurred_at,
+            {
+                "previous_lifecycle": current.value,
+                "lifecycle": target.value,
+                "replacement_object_id": command.replacement_object_id,
+            },
+        )
+        return self._result(
+            "TransitionEngineeringObjectLifecycle",
+            command.metadata.correlation_id,
+            previous_version,
+            (event,),
+        )
+
+    def transition_authority(
+        self,
+        command: TransitionEngineeringObjectAuthority,
+        occurred_at: datetime,
+    ) -> EngineeringObjectCommandResult:
+        """Apply exactly one Blueprint-approved authority transition."""
+
+        previous_version = self._prepare_mutation(command, occurred_at)
+        current = EngineeringAuthorityStanding(self.authority_standing)
+        target = command.authority_standing
+        if target not in AUTHORITY_TRANSITIONS[current]:
+            raise EngineeringObjectTransitionRejected(
+                f"Authority transition {current.value} -> {target.value} "
+                "is prohibited"
+            )
+        self.authority_standing = target
+        self._complete_mutation(previous_version, occurred_at)
+        event = self._event(
+            command.metadata,
+            "EngineeringObjectAuthorityTransitioned",
+            occurred_at,
+            {
+                "previous_authority_standing": current.value,
+                "authority_standing": target.value,
+            },
+        )
+        return self._result(
+            "TransitionEngineeringObjectAuthority",
+            command.metadata.correlation_id,
+            previous_version,
+            (event,),
+        )
+
+    def transfer_steward(
+        self,
+        command: TransferEngineeringObjectSteward,
+        occurred_at: datetime,
+    ) -> EngineeringObjectCommandResult:
+        """Transfer stewardship without changing any unrelated state."""
+
+        previous_version = self._prepare_mutation(command, occurred_at)
+        if command.steward_id == self.steward_id:
+            raise EngineeringObjectNoOp(
+                "Steward transfer must select a different Human"
+            )
+        previous_steward_id = self.steward_id
+        self.steward_id = command.steward_id
+        self._complete_mutation(previous_version, occurred_at)
+        event = self._event(
+            command.metadata,
+            "EngineeringObjectStewardTransferred",
+            occurred_at,
+            {
+                "previous_steward_id": previous_steward_id,
+                "steward_id": self.steward_id,
+            },
+        )
+        return self._result(
+            "TransferEngineeringObjectSteward",
+            command.metadata.correlation_id,
+            previous_version,
+            (event,),
+        )
+
+    def _prepare_mutation(
+        self,
+        command: MutationCommand,
+        occurred_at: datetime,
+    ) -> int:
+        """Validate aggregate identity, version, and controlled time."""
+
+        self._validate_command_time(occurred_at)
+        if command.object_id != self.id:
+            raise ValueError("Command target does not match aggregate identity")
+        if command.expected_version != self.version:
+            raise EngineeringObjectVersionMismatch(
+                "Engineering Object expected version is stale"
+            )
+        if occurred_at < self.updated_at:
+            raise ValueError("Command time cannot precede updated_at")
+        return self.version
+
+    def _complete_mutation(
+        self,
+        previous_version: int,
+        occurred_at: datetime,
+    ) -> None:
+        """Advance version and modification time once after accepted change."""
+
+        self.version = previous_version + 1
+        self.updated_at = occurred_at
+        self._validate_required_state()
+        self._validate_classification()
+
+    @staticmethod
+    def _validate_command_time(value: datetime) -> None:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Command time must be timezone-aware")
+
+    def _event(
+        self,
+        metadata,
+        event_type: str,
+        occurred_at: datetime,
+        payload: dict,
+    ) -> EngineeringObjectDomainEvent:
+        """Build the immutable Blueprint event envelope for current state."""
+
+        return EngineeringObjectDomainEvent(
+            event_id=uuid4(),
+            event_type=event_type,
+            schema_version=1,
+            object_id=self.id,
+            aggregate_version=self.version,
+            occurred_at=occurred_at,
+            actor_id=metadata.actor.actor_id,
+            correlation_id=metadata.correlation_id,
+            causation_id=metadata.command_id,
+            organization_id=self.organization_id,
+            project_id=self.project_id,
+            workspace_id=self.workspace_id,
+            payload=payload,
+        )
+
+    def _result(
+        self,
+        command_type: str,
+        correlation_id: UUID,
+        previous_version: int | None,
+        events: tuple[EngineeringObjectDomainEvent, ...],
+    ) -> EngineeringObjectCommandResult:
+        """Build a bounded result without exposing uncommitted internals."""
+
+        return EngineeringObjectCommandResult(
+            object_id=self.id,
+            previous_version=previous_version,
+            version=self.version,
+            command_type=command_type,
+            correlation_id=correlation_id,
+            events=events,
+        )

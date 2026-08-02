@@ -53,15 +53,15 @@ The following remain deferred:
 PATCH-022 shall be divided into bounded implementation stages:
 
 1. PATCH-022.1 Core Enumerations and Contracts
-2. PATCH-022.2 Engineering Object Persistence
-3. PATCH-022.3 Engineering Object Identifier Persistence
-4. PATCH-022.4 Engineering Relationship Persistence
-5. PATCH-022.5 Engineering Context Persistence
-6. PATCH-022.6 Repository Boundaries
-7. PATCH-022.7 Service Boundaries
-8. PATCH-022.8 Migration Validation
-9. PATCH-022.9 API Foundation
-10. PATCH-022.10 Full Regression and Release Review
+2. PATCH-022.2 Engineering Foundation
+3. PATCH-022.3 Engineering Object Aggregate
+4. PATCH-022.3A Development Environment Standardization
+
+The former PATCH-022.2 through PATCH-022.10 reservations are superseded by
+the authoritative registry in `docs/19_Governance_Model.md`. PATCH-022.4
+through PATCH-022.10 are released and unassigned. EngineeringObject
+repository, service, and API work belongs to PATCH-023 and its approved
+sub-PATCHes.
 
 Each stage requires validation before the next stage begins.
 

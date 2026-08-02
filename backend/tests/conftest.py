@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -7,6 +8,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
+from alembic import command
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 
 TEST_DATABASE_NAME = "satco_platform_patch02022_test"
@@ -26,6 +30,14 @@ os.environ["DATABASE_PASSWORD"] = (
     parsed_database_url.password or "satco_password"
 )
 os.environ["DATABASE_NAME"] = TEST_DATABASE_NAME
+os.environ["ALEMBIC_DATABASE_URL"] = test_database_url
+
+backend_root = Path(__file__).resolve().parents[1]
+alembic_config = Config(str(backend_root / "alembic.ini"))
+alembic_config.set_main_option("script_location", str(backend_root / "migrations"))
+TEST_DATABASE_REVISION = ScriptDirectory.from_config(
+    alembic_config
+).get_current_head()
 
 from app.core.database import engine, get_db  # noqa: E402
 
@@ -48,11 +60,17 @@ if inspect(engine).has_table("alembic_version"):
 else:
     migrated_revision = None
 
-if migrated_revision != "b2022c0202f2":
-    raise RuntimeError(
-        "PATCH-020.2.2 tests require an Alembic-migrated database at "
-        "revision b2022c0202f2"
-    )
+if migrated_revision != TEST_DATABASE_REVISION:
+    command.upgrade(alembic_config, "head")
+    with engine.connect() as schema_connection:
+        migrated_revision = schema_connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+    if migrated_revision != TEST_DATABASE_REVISION:
+        raise RuntimeError(
+            "Test database bootstrap did not reach repository head "
+            f"{TEST_DATABASE_REVISION}"
+        )
 
 
 from app.core.security import hash_password  # noqa: E402
