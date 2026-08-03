@@ -8,7 +8,7 @@
 | Detected at | Sprint 2 preflight — Persistence and Atomicity |
 | Blocker class | Architecture, security, dependency, and repository blocker |
 | Severity | P0 for Sprint 2 and later implementation |
-| Status | OPEN |
+| Status | CLOSED — PATCH-028.1 DONE |
 | Date | 2026-08-02 |
 
 ## 2. Blocking Condition
@@ -139,7 +139,9 @@ PATCH-028.1 full backend regression: PASS — 381 passed, 0 failed
 PATCH-028.1 Human QG-11 review: PASS — after focused IDS Amendment 2 independent review
 PATCH-028.1 development/deployment migration: NOT AUTHORIZED / NOT EXECUTED
 Manifesto Alignment Verified for PATCH-028.1 implementation: YES
-PATCH-028 Sprint 2: BLOCKED pending PATCH-028.1 governance closure and focused IRR-028 re-review
+PATCH-028.1 commit/push/remote verification/QG-12: PASS — f58b2ebcf0df4f143729c76e6d43349dc298b6c4
+Project Organization ownership blocker: CLOSED
+PATCH-028 Sprint 2: NOT READY for separate migration-lineage amendment identified by focused IRR-028
 PATCH-028: BLOCKED
 ```
 
@@ -149,3 +151,4 @@ PATCH-028: BLOCKED
 |---|---|---|
 | 1.0 | 2026-08-02 | Recorded missing Project Organization ownership at Sprint 2 preflight. |
 | 1.1 | 2026-08-02 | Reconciled validated PATCH-028.1 implementation evidence; retained PATCH-028 block pending prerequisite final review and focused readiness restoration. |
+| 2.0 | 2026-08-03 | Closed the Project Organization ownership blocker after PATCH-028.1 QG-12 PASS and DONE/CLOSED; recorded the separate PATCH-028 migration-lineage readiness finding. |

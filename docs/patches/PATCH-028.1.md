@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Document ID | PATCH-028.1 |
-| Status | DELIVERY AUTHORIZED — COMMIT AND PUSH EXECUTION PENDING |
+| Status | DONE / CLOSED |
 | Classification | Bounded prerequisite for PATCH-028 Sprint 2 |
 | Owner | SATCO Product Owner / Platform Architecture |
 | Date | 2026-08-02 |
@@ -13,8 +13,9 @@
 The accepted IDS, Implementation Plan, and IRR authorize the bounded source
 implementation and isolated validation now present in the repository.
 Development/deployment migration remains separately gated and unauthorized.
-Bounded commit and push are authorized by DA-028.1, but neither action has been
-executed and QG-12 evidence remains pending.
+Bounded commit and push completed at
+`f58b2ebcf0df4f143729c76e6d43349dc298b6c4`; remote verification and QG-12
+pass. Development/deployment migration remains unauthorized and unexecuted.
 
 ## 2. Engineering and Security Problem
 
@@ -195,10 +196,11 @@ IDS-028.1 Amendment 2 independent review: PASS
 Human QG-11: PASS
 Implementation: COMPLETE
 QG-12 prerequisites: PASS
-Commit authorization: GRANTED — NOT EXECUTED
-Push authorization: GRANTED — NOT EXECUTED
-QG-12: AUTHORIZED — EXECUTION EVIDENCE PENDING
-PATCH-028.1 CLOSED/DONE: NO
+Commit: PASS — f58b2ebcf0df4f143729c76e6d43349dc298b6c4
+Push: PASS
+Remote verification: PASS
+QG-12: PASS
+PATCH-028.1 CLOSED/DONE: YES
 Development/deployment migration: NOT AUTHORIZED / NOT EXECUTED
 ```
 
@@ -219,3 +221,4 @@ Development/deployment migration: NOT AUTHORIZED / NOT EXECUTED
 | 1.1 | 2026-08-03 | Human QG-11 recorded FAIL because five related runtime/test changes are absent from the exact IDS file set; formal closure withheld. |
 | 1.2 | 2026-08-03 | Focused IDS Amendment 2 and independent review PASS reconciled exactly five files; repeated Human QG-11 PASS established implementation completion with QG-12 pending. |
 | 1.3 | 2026-08-03 | Human authority granted bounded commit and push authorization; QG-12 and CLOSED/DONE remain pending execution evidence. Migration remains unauthorized. |
+| 2.0 | 2026-08-03 | Recorded commit f58b2eb, push and remote verification PASS, QG-12 PASS, and formal DONE/CLOSED status; migration remains unauthorized and unexecuted. |

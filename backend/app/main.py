@@ -16,6 +16,9 @@ from app.api.v1.routers.evidence import router as evidence_router
 from app.api.v1.routers.engineering_relationships import (
     router as engineering_relationship_router,
 )
+from app.api.v1.routers.engineering_experience_captures import (
+    router as engineering_experience_capture_router,
+)
 
 from app.exceptions.handlers import register_exception_handlers
 
@@ -39,6 +42,7 @@ app.include_router(engineering_workspace_router)
 app.include_router(engineering_object_router)
 app.include_router(evidence_router)
 app.include_router(engineering_relationship_router)
+app.include_router(engineering_experience_capture_router)
 
 
 @app.get("/")

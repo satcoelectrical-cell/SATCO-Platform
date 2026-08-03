@@ -585,8 +585,8 @@ authorize implementation.
 | PATCH-026 | Engineering Relationship Engine | `docs/patches/PATCH-026.md` | DONE |
 | PATCH-027 | Evidence Foundation | `docs/patches/PATCH-027.md` | DONE |
 | PATCH-028.0 | Manifesto Governance Integration | `docs/patches/PATCH-028.0.md` | DONE |
-| PATCH-028 | Universal Engineering Capture Foundation | `docs/patches/PATCH-028.md` | BLOCKED — PATCH-028.1 delivery and governance closure required |
-| PATCH-028.1 | Project Organization Ownership | `docs/patches/PATCH-028.1.md` | DELIVERY AUTHORIZED — Commit and push execution pending |
+| PATCH-028 | Universal Engineering Capture Foundation | `docs/patches/PATCH-028.md` | DELIVERY AUTHORIZED — Commit and push execution pending |
+| PATCH-028.1 | Project Organization Ownership | `docs/patches/PATCH-028.1.md` | DONE / CLOSED |
 
 The former PATCH-022.2 through PATCH-022.10 reservations in the Draft
 PATCH-022 sequence are superseded. PATCH-022.4 through PATCH-022.10 are

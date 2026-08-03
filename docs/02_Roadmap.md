@@ -342,7 +342,7 @@ autonomous AI reasoning remain deferred.
 
 ### Status
 
-BLOCKED — PATCH-028.1 DELIVERY AND GOVERNANCE CLOSURE REQUIRED
+DELIVERY AUTHORIZED — COMMIT AND PUSH EXECUTION PENDING
 
 ### Version-1 Objective
 
@@ -362,8 +362,9 @@ history-preserving correction or supersession.
 
 ### Next Stage
 
-Complete the authorized PATCH-028.1 commit and push, record QG-12 evidence, and close governance; then revalidate
-EDS/IDS assumptions and perform a focused IRR-028 re-review before Sprint 2.
+Create and push the bounded authorized PATCH-028 delivery commit, verify local
+and remote equality, then record QG-12 PASS and DONE/CLOSED. Development and
+deployment migration remain separately unauthorized.
 
 ### Registered Prerequisite — PATCH-028.1
 
@@ -381,8 +382,10 @@ implementation and isolated validation. Its three implementation Sprints now
 pass, including protected Organization-scoped dependent loaders and a complete
 backend regression of 381 passed and 0 failed. Focused IDS Amendment 2 added
 exactly five related runtime/test files, its independent review passed, and the
-repeated Human QG-11 passed without semantic scope expansion. PATCH-028.1
-commit and push are now authorized but have not been executed. It is not DONE
-until QG-12 records repository and remote-state evidence. Development and
-deployment migration remain unauthorized. These changes satisfy PATCH-028.1 only;
-PATCH-028 Capture persistence, application, and transport remain unimplemented.
+repeated Human QG-11 passed without semantic scope expansion. Commit
+`f58b2ebcf0df4f143729c76e6d43349dc298b6c4`, push, remote verification, and
+QG-12 all pass; PATCH-028.1 is DONE/CLOSED. Development and deployment
+migration remain unauthorized and unexecuted. These changes satisfy PATCH-028.1 only;
+PATCH-028 Capture persistence, application, and transport are implementation
+complete with 414 backend tests passing and no remaining finding. Commit and
+push are authorized but not executed.

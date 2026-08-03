@@ -10,6 +10,39 @@ from conftest import alembic_config
 MIGRATION = Path(
     "migrations/versions/e02810000001_project_organization_ownership.py"
 )
+PERSISTENT_TEST_ORGANIZATION_ID = "02810000-0000-4000-8000-000000000001"
+
+
+def _restore_shared_test_state():
+    try:
+        command.downgrade(alembic_config, "e02600000001")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    TRUNCATE TABLE
+                        projects,
+                        customers,
+                        users,
+                        organizations,
+                        user_organization_memberships
+                    RESTART IDENTITY CASCADE
+                    """
+                )
+            )
+    finally:
+        command.upgrade(alembic_config, "head")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO organizations (id, is_active)
+                    VALUES (:organization_id, true)
+                    ON CONFLICT (id) DO UPDATE SET is_active = true
+                    """
+                ),
+                {"organization_id": PERSISTENT_TEST_ORGANIZATION_ID},
+            )
 
 
 def test_patch_028_1_revision_and_non_destructive_contract():
@@ -57,8 +90,8 @@ def test_patch_028_1_preserves_seven_projects_and_engineer():
             text("SELECT current_database()")
         ).scalar_one() == "satco_platform_patch02022_test"
 
-    command.downgrade(alembic_config, "e02600000001")
     try:
+        command.downgrade(alembic_config, "e02600000001")
         with engine.begin() as connection:
             connection.execute(
                 text(
@@ -184,19 +217,4 @@ def test_patch_028_1_preserves_seven_projects_and_engineer():
             }
             assert columns["organization_id"]["nullable"] is False
     finally:
-        command.downgrade(alembic_config, "e02600000001")
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    """
-                    TRUNCATE TABLE
-                        projects,
-                        customers,
-                        users,
-                        organizations,
-                        user_organization_memberships
-                    RESTART IDENTITY CASCADE
-                    """
-                )
-            )
-        command.upgrade(alembic_config, "head")
+        _restore_shared_test_state()

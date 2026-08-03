@@ -23,4 +23,7 @@ from .organization import UserOrganizationMembership
 from .evidence import Evidence
 from .evidence_command import EvidenceOutbox
 from .evidence_command import EvidenceIdempotency
+from .engineering_experience_capture import EngineeringExperienceCapture
+from .engineering_experience_capture_command import EngineeringExperienceCaptureIdempotency
+from .engineering_experience_capture_command import EngineeringExperienceCaptureOutbox
 from .audit_log import AuditLog

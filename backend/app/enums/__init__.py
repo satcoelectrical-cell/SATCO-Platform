@@ -29,6 +29,8 @@ from .engineering_relationship import validate_relationship_pair
 from .evidence import EvidenceLifecycle
 from .evidence import EvidenceSourceKind
 from .evidence import EvidenceSourceStanding
+from .engineering_experience_capture import EngineeringExperienceCaptureLifecycle
+from .engineering_experience_capture import EngineeringExperienceSourceKind
 from app.enums.engineering_knowledge import (
     EngineeringAuthorityStanding,
     EngineeringConfidentiality,
