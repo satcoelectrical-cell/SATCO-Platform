@@ -2,6 +2,7 @@ import logging
 from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -54,11 +55,17 @@ class ProjectService:
         self.repository = ProjectRepository(db)
         self.customer_repository = CustomerRepository(db)
 
-    def get_all(self, **filters):
-        return self.repository.get_all(**filters)
+    def get_all(self, *, organization_id: UUID, **filters):
+        return self.repository.get_all(
+            organization_id=organization_id,
+            **filters,
+        )
 
-    def get_by_id(self, project_id: int):
-        project = self.repository.get_by_id(project_id)
+    def get_by_id(self, project_id: int, *, organization_id: UUID):
+        project = self.repository.get_by_id(
+            project_id,
+            organization_id=organization_id,
+        )
         if project is None:
             raise ProjectNotFoundException(project_id)
         return project
@@ -67,6 +74,7 @@ class ProjectService:
         self,
         project: ProjectCreate,
         current_user: User,
+        organization_id: UUID,
     ):
         self._validate_customer(project.customer_id)
         owner_id = self._resolve_owner_for_create(
@@ -89,6 +97,7 @@ class ProjectService:
 
         result = self.repository.create(
             project,
+            organization_id=organization_id,
             owner_id=owner_id,
         )
         snapshot = self._snapshot(result)
@@ -112,8 +121,12 @@ class ProjectService:
         project_id: int,
         project_data: ProjectUpdate,
         current_user: User,
+        organization_id: UUID,
     ):
-        project = self.get_by_id(project_id)
+        project = self.get_by_id(
+            project_id,
+            organization_id=organization_id,
+        )
         update_data = project_data.model_dump(
             exclude_unset=True
         )
@@ -209,13 +222,20 @@ class ProjectService:
         self,
         project_id: int,
         current_user: User,
+        organization_id: UUID,
     ) -> dict:
-        project = self.get_by_id(project_id)
+        project = self.get_by_id(
+            project_id,
+            organization_id=organization_id,
+        )
         if current_user.role != Role.ADMIN.value:
             raise ProjectForbiddenException(
                 "Only administrators may delete Projects"
             )
-        if self.repository.has_workspace_history(project_id):
+        if self.repository.has_workspace_history(
+            project_id,
+            organization_id=organization_id,
+        ):
             raise ProjectHasWorkspaceHistory()
         snapshot = self._snapshot(project)
         project_code = project.project_code

@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+from uuid import UUID
 
 from sqlalchemy import asc, desc
 from sqlalchemy.dialects.postgresql import insert
@@ -18,6 +19,8 @@ class ProjectRepository:
 
     def get_all(
         self,
+        *,
+        organization_id: UUID,
         page: int = 1,
         size: int = 20,
         customer_id: int | None = None,
@@ -33,7 +36,7 @@ class ProjectRepository:
         sort_by: str = "created_at",
         order: str = "desc",
     ):
-        query = self._base_query()
+        query = self._base_query(organization_id)
 
         if customer_id is not None:
             query = query.filter(
@@ -110,16 +113,16 @@ class ProjectRepository:
 
         return items, total
 
-    def get_by_id(self, project_id: int):
+    def get_by_id(self, project_id: int, *, organization_id: UUID):
         return (
-            self._base_query()
+            self._base_query(organization_id)
             .filter(Project.id == project_id)
             .first()
         )
 
-    def get_by_code(self, project_code: str):
+    def get_by_code(self, project_code: str, *, organization_id: UUID):
         return (
-            self._base_query()
+            self._base_query(organization_id)
             .filter(Project.project_code == project_code)
             .first()
         )
@@ -131,6 +134,7 @@ class ProjectRepository:
         self,
         project: ProjectCreate,
         *,
+        organization_id: UUID,
         owner_id: int,
         creation_time: datetime | None = None,
     ):
@@ -145,6 +149,7 @@ class ProjectRepository:
 
         db_project = Project(
             **data,
+            organization_id=organization_id,
             project_code=project_code,
             owner_id=owner_id,
             status=ProjectStatus.NEW.value,
@@ -156,7 +161,10 @@ class ProjectRepository:
             self.db.add(db_project)
             self.db.commit()
             self.db.refresh(db_project)
-            return self.get_by_id(db_project.id)
+            return self.get_by_id(
+                db_project.id,
+                organization_id=organization_id,
+            )
         except Exception:
             self.db.rollback()
             raise
@@ -174,17 +182,27 @@ class ProjectRepository:
         self.db.commit()
         self.db.refresh(db_project)
 
-        return self.get_by_id(db_project.id)
+        return self.get_by_id(
+            db_project.id,
+            organization_id=db_project.organization_id,
+        )
 
     def delete(self, db_project: Project):
         self.db.delete(db_project)
         self.db.commit()
 
-    def has_workspace_history(self, project_id: int) -> bool:
+    def has_workspace_history(
+        self,
+        project_id: int,
+        *,
+        organization_id: UUID,
+    ) -> bool:
         return (
             self.db.query(EngineeringWorkspace.id)
+            .join(Project, Project.id == EngineeringWorkspace.project_id)
             .filter(
-                EngineeringWorkspace.project_id == project_id
+                EngineeringWorkspace.project_id == project_id,
+                Project.organization_id == organization_id,
             )
             .first()
             is not None
@@ -219,7 +237,7 @@ class ProjectRepository:
             f"{sequence_value:04d}"
         )
 
-    def _base_query(self):
+    def _base_query(self, organization_id: UUID):
         return (
             self.db.query(Project)
             .options(
@@ -227,4 +245,5 @@ class ProjectRepository:
                 joinedload(Project.owner),
                 joinedload(Project.primary_assignee),
             )
+            .filter(Project.organization_id == organization_id)
         )

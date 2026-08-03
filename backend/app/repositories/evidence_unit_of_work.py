@@ -53,10 +53,12 @@ class SqlAlchemyEvidenceAuthorizationPolicy:
         user=self.session.get(User,actor.actor_id)
         if user is None or not user.is_active: return False
         if evidence is not None and evidence.organization_id!=actor.organization_id: return False
-        if user.role=="admin": return True
         if project_id is None: return True
-        project=self.session.get(Project,project_id)
+        project=self.session.query(Project).filter_by(
+            id=project_id, organization_id=actor.organization_id
+        ).first()
         if project is None: return False
+        if user.role=="admin": return True
         if actor.actor_id in {project.owner_id,project.primary_assignee_id}: return True
         if workspace_id is None: return False
         workspace=self.session.get(EngineeringWorkspace,workspace_id)
@@ -66,10 +68,19 @@ class SqlAlchemyEvidenceValidator:
     def __init__(self,session): self.session=session
     def validate_scope(self,*,actor,project_id,workspace_id):
         if workspace_id is not None and project_id is None: raise EvidenceValidationError("Workspace requires Project")
-        if project_id is not None and self.session.get(Project,project_id) is None: raise EvidenceValidationError("Project is invalid")
+        project = None if project_id is None else self.session.query(Project).filter_by(
+            id=project_id, organization_id=actor.organization_id
+        ).first()
+        if project_id is not None and project is None: raise EvidenceValidationError("Project is invalid")
         if workspace_id is not None:
-            workspace=self.session.get(EngineeringWorkspace,workspace_id)
-            if workspace is None or workspace.project_id!=project_id: raise EvidenceValidationError("Workspace is invalid")
+            workspace=self.session.query(EngineeringWorkspace).join(
+                Project, Project.id == EngineeringWorkspace.project_id
+            ).filter(
+                EngineeringWorkspace.id == workspace_id,
+                EngineeringWorkspace.project_id == project_id,
+                Project.organization_id == actor.organization_id,
+            ).first()
+            if workspace is None: raise EvidenceValidationError("Workspace is invalid")
     def validate_reference(self,*,actor,evidence_id,project_id,workspace_ids):
         evidence=self.session.query(Evidence).filter_by(id=evidence_id,organization_id=actor.organization_id).first()
         if evidence is None: raise EvidenceValidationError("Evidence is unavailable")

@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -18,6 +19,7 @@ from app.models.engineering_context import EngineeringContextSourceReference
 from app.models.engineering_context import EngineeringContextSubjectReference
 from app.models.engineering_workspace import EngineeringWorkspace
 from app.models.project import Project
+from app.models.organization import UserOrganizationMembership
 from app.models.user import User
 from app.permissions.roles import Role
 from app.services.engineering_context_service import EngineeringContextService
@@ -323,20 +325,22 @@ def test_update_withdraw_restore_and_no_physical_delete(db_session):
 
 
 def test_concurrent_updates_have_one_winner_and_one_audit():
+    token = uuid4().hex[:12]
+    code_suffix = str(uuid4().int % 100000000).zfill(8)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     setup = session_factory()
     owner = User(
-        email="context-concurrency-owner@example.com",
-        username="context-concurrency-owner",
+        email=f"context-concurrency-owner-{token}@example.com",
+        username=f"context-concurrency-owner-{token}",
         hashed_password="hashed",
         role=Role.ENGINEER.value,
         is_active=True,
     )
-    customer = Customer(name="Context Concurrency Customer")
+    customer = Customer(name=f"Context Concurrency Customer {token}")
     setup.add_all([owner, customer])
     setup.flush()
     project = Project(
-        project_code="SAT-PRJ-2098-2999",
+        project_code=f"SAT-PRJ-2098-{code_suffix}",
         name="Context Concurrency Project",
         customer_id=customer.id,
         owner_id=owner.id,
@@ -415,6 +419,9 @@ def test_concurrent_updates_have_one_winner_and_one_audit():
         )
         verify.query(Customer).filter(
             Customer.id == customer_id
+        ).delete(synchronize_session=False)
+        verify.query(UserOrganizationMembership).filter(
+            UserOrganizationMembership.user_id == owner_id
         ).delete(synchronize_session=False)
         verify.query(User).filter(User.id == owner_id).delete(
             synchronize_session=False

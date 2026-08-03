@@ -1,5 +1,5 @@
 from sqlalchemy import asc
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import Session
 
@@ -14,14 +14,24 @@ from app.models.engineering_workspace import EngineeringWorkspace
 from app.models.engineering_workspace import EngineeringWorkspaceMember
 from app.models.project import Project
 from app.models.user import User
+from app.models.organization import UserOrganizationMembership
 
 
 class EngineeringContextRelationshipRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_project(self, project_id: int) -> Project | None:
-        return self.db.get(Project, project_id)
+    def get_project(self, project_id: int, current_user: User) -> Project | None:
+        return self.db.query(Project).filter(
+            Project.id == project_id,
+            Project.organization_id.in_(
+                select(UserOrganizationMembership.organization_id).where(
+                    UserOrganizationMembership.user_id == current_user.id,
+                    UserOrganizationMembership.is_enabled.is_(True),
+                    UserOrganizationMembership.is_selected.is_(True),
+                )
+            ),
+        ).first()
 
     def get_workspace(
         self,
@@ -267,7 +277,18 @@ class EngineeringContextRelationshipRepository:
         participation = self._relationship_participation(current_user)
         if current_user.role == "admin":
             participation = True
-        return self._relationship_query().filter(participation)
+        return self._relationship_query().filter(
+            EngineeringContextRelationship.project.has(
+                Project.organization_id.in_(
+                    select(UserOrganizationMembership.organization_id).where(
+                        UserOrganizationMembership.user_id == current_user.id,
+                        UserOrganizationMembership.is_enabled.is_(True),
+                        UserOrganizationMembership.is_selected.is_(True),
+                    )
+                )
+            ),
+            participation,
+        )
 
     def _relationship_participation(self, current_user: User):
         return or_(
@@ -337,6 +358,15 @@ class EngineeringContextRelationshipRepository:
         if current_user.role == "admin":
             participation = True
         return self._commitment_query().filter(
+            InterfaceCommitment.project.has(
+                Project.organization_id.in_(
+                    select(UserOrganizationMembership.organization_id).where(
+                        UserOrganizationMembership.user_id == current_user.id,
+                        UserOrganizationMembership.is_enabled.is_(True),
+                        UserOrganizationMembership.is_selected.is_(True),
+                    )
+                )
+            ),
             participation,
             or_(
                 InterfaceCommitment.confidentiality

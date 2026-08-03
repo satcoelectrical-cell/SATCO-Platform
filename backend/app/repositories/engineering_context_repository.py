@@ -6,6 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from app.enums import ContextConfidentiality
 from app.enums import ContextLifecycle
@@ -19,14 +20,24 @@ from app.models.engineering_workspace import EngineeringWorkspace
 from app.models.engineering_workspace import EngineeringWorkspaceMember
 from app.models.project import Project
 from app.models.user import User
+from app.models.organization import UserOrganizationMembership
 
 
 class EngineeringContextRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_project(self, project_id: int) -> Project | None:
-        return self.db.get(Project, project_id)
+    def get_project(self, project_id: int, current_user: User) -> Project | None:
+        return self.db.query(Project).filter(
+            Project.id == project_id,
+            Project.organization_id.in_(
+                select(UserOrganizationMembership.organization_id).where(
+                    UserOrganizationMembership.user_id == current_user.id,
+                    UserOrganizationMembership.is_enabled.is_(True),
+                    UserOrganizationMembership.is_selected.is_(True),
+                )
+            ),
+        ).first()
 
     def get_workspace(
         self,
@@ -237,7 +248,7 @@ class EngineeringContextRepository:
         if current_user.role == "admin":
             return True
 
-        project = self.get_project(project_id)
+        project = self.get_project(project_id, current_user)
         if project is not None and current_user.id in {
             project.owner_id,
             project.primary_assignee_id,
@@ -310,6 +321,15 @@ class EngineeringContextRepository:
             )
         )
         return query.filter(
+            EngineeringContext.project.has(
+                Project.organization_id.in_(
+                    select(UserOrganizationMembership.organization_id).where(
+                        UserOrganizationMembership.user_id == current_user.id,
+                        UserOrganizationMembership.is_enabled.is_(True),
+                        UserOrganizationMembership.is_selected.is_(True),
+                    )
+                )
+            ),
             participation,
             ~restricted_to_another_user,
         )

@@ -19,6 +19,7 @@ from app.models.engineering_context_relationship import (
 )
 from app.models.engineering_workspace import EngineeringWorkspace
 from app.models.project import Project
+from app.models.organization import UserOrganizationMembership
 from app.models.user import User
 from app.services.engineering_context_relationship_service import (
     EngineeringContextRelationshipService,
@@ -337,6 +338,10 @@ def _cleanup_domain(domain: RaceDomain) -> None:
             .all()
         )
         user_ids.update(owner_id for (owner_id,) in workspace_owner_ids)
+
+        session.query(UserOrganizationMembership).filter(
+            UserOrganizationMembership.user_id.in_(user_ids)
+        ).delete(synchronize_session=False)
 
         # Workspaces have already been deleted, so recover remaining test users
         # by their deterministic email suffix through the Project creator group.

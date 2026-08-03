@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from uuid import UUID
 
 from app.models.customer import Customer
 from app.models.project import Project
@@ -49,11 +50,13 @@ def search_projects(
     keyword: str,
     page: int,
     size: int,
+    organization_id: UUID,
 ):
 
     query = (
         db.query(Project)
         .filter(
+            Project.organization_id == organization_id,
             or_(
                 Project.name.ilike(keyword),
                 Project.project_code.ilike(keyword),
@@ -98,6 +101,7 @@ def search_workspaces(
     page: int,
     size: int,
     current_user: User,
+    organization_id: UUID,
 ):
     owner = db.query(User).subquery()
     assignee = db.query(User).subquery()
@@ -113,6 +117,7 @@ def search_workspaces(
         .filter(
             EngineeringWorkspace.status
             != WorkspaceStatus.ARCHIVED.value,
+            Project.organization_id == organization_id,
             or_(
                 EngineeringWorkspace.discipline.ilike(keyword),
                 (
@@ -159,6 +164,7 @@ def search_all(
     page: int = 1,
     size: int = 20,
     current_user: User | None = None,
+    organization_id: UUID | None = None,
 ):
 
     keyword = f"%{query}%"
@@ -188,11 +194,14 @@ def search_all(
 
 
     if search_type in ("all", "project"):
+        if organization_id is None:
+            raise ValueError("Organization context is required for Project search")
         result["projects"], totals["projects"] = search_projects(
             db,
             keyword,
             page,
             size,
+            organization_id,
         )
 
 
@@ -205,12 +214,15 @@ def search_all(
         )
 
     if search_type in ("all", "workspace") and current_user is not None:
+        if organization_id is None:
+            raise ValueError("Organization context is required for Workspace search")
         result["workspaces"], totals["workspaces"] = search_workspaces(
             db,
             keyword,
             page,
             size,
             current_user,
+            organization_id,
         )
 
 

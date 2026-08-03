@@ -335,3 +335,54 @@ Knowledge Graph foundation.
 
 Graph databases, vector databases, Engineering Digital Twin behavior, and
 autonomous AI reasoning remain deferred.
+
+---
+
+## PATCH-028 Universal Engineering Capture Foundation
+
+### Status
+
+BLOCKED — PATCH-028.1 DELIVERY AND GOVERNANCE CLOSURE REQUIRED
+
+### Version-1 Objective
+
+Establish one governed point of origin for bounded textual Engineering
+Experience with immutable original content, trusted Human/Organization
+provenance, optional governed Project/Workspace/discipline/object context, and
+history-preserving correction or supersession.
+
+### Scope Boundary
+
+- Capture is not fact, Evidence, approval, knowledge, or Organizational Memory.
+- PostgreSQL remains the structured System of Record.
+- Binary files, uploads, OCR, document management, Inbox UI, AI Author, Human
+  Review workflow, publishing, semantic/vector search, and graph databases are
+  deferred.
+- No implementation begins before accepted EDS/IDS and IRR READY.
+
+### Next Stage
+
+Complete the authorized PATCH-028.1 commit and push, record QG-12 evidence, and close governance; then revalidate
+EDS/IDS assumptions and perform a focused IRR-028 re-review before Sprint 2.
+
+### Registered Prerequisite — PATCH-028.1
+
+`PATCH-028.1 — Project Organization Ownership` is registered as the bounded
+prerequisite. ADR-022 and the architecture are accepted. Read-only discovery
+found seven legacy Projects in a database at revision `d8271b8f1a29` with no
+Organization baseline. The Repository/Data Owner approved preserving all seven
+Projects and mapping them non-destructively to a migration-owned default
+Organization. EDS-028.1 is accepted and independently reviewed PASS. The
+existing `admin@satco.com` User is explicitly approved as the sole bootstrap
+member; the engineer User must remain unchanged. IDS-028.1 is accepted after
+independent review PASS. Implementation Plan-028.1 is now proposed with
+technical PASS and is Human-accepted. Focused IRR-028.1 authorized scoped
+implementation and isolated validation. Its three implementation Sprints now
+pass, including protected Organization-scoped dependent loaders and a complete
+backend regression of 381 passed and 0 failed. Focused IDS Amendment 2 added
+exactly five related runtime/test files, its independent review passed, and the
+repeated Human QG-11 passed without semantic scope expansion. PATCH-028.1
+commit and push are now authorized but have not been executed. It is not DONE
+until QG-12 records repository and remote-state evidence. Development and
+deployment migration remain unauthorized. These changes satisfy PATCH-028.1 only;
+PATCH-028 Capture persistence, application, and transport remain unimplemented.

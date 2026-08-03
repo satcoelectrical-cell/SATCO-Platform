@@ -1,13 +1,14 @@
 import os
 from pathlib import Path
 from urllib.parse import urlparse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from fastapi import Depends
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect
+from sqlalchemy import event, inspect
 from sqlalchemy import text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session as SqlAlchemySession, sessionmaker
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -99,7 +100,16 @@ from app.models.project import (  # noqa: E402,F401
     ProjectCodeSequence,
 )
 from app.models.user import User  # noqa: E402
+from app.models.organization import (  # noqa: E402
+    Organization,
+    UserOrganizationMembership,
+)
 from app.permissions.roles import Role  # noqa: E402
+from app.dependencies.auth import (  # noqa: E402
+    AuthenticatedOrganizationContext,
+    get_current_user,
+    get_current_user_organization_context,
+)
 from app.services.engineering_context_relationship_service import (  # noqa: E402
     EngineeringContextRelationshipService,
 )
@@ -117,6 +127,17 @@ def db_session():
     session = testing_session()
 
     try:
+        test_organization_id = UUID(
+            "02810000-0000-4000-8000-000000000001"
+        )
+        connection.execute(
+            text(
+                "INSERT INTO organizations (id, is_active) "
+                "VALUES (:organization_id, true) "
+                "ON CONFLICT (id) DO NOTHING"
+            ),
+            {"organization_id": test_organization_id},
+        )
         yield session
     finally:
         session.close()
@@ -134,10 +155,54 @@ def client(db_session):
 
     app.dependency_overrides[get_db] = override_get_db
 
+    def override_organization_context(
+        current_user: User = Depends(get_current_user),
+    ):
+        return AuthenticatedOrganizationContext(
+            user=current_user,
+            organization_id=UUID(
+                "02810000-0000-4000-8000-000000000001"
+            ),
+        )
+
+    app.dependency_overrides[
+        get_current_user_organization_context
+    ] = override_organization_context
+
     with TestClient(app) as test_client:
         yield test_client
 
     app.dependency_overrides.clear()
+
+
+@event.listens_for(SqlAlchemySession, "before_flush")
+def assign_test_project_organization(session, flush_context, instances):
+    organization_id = UUID("02810000-0000-4000-8000-000000000001")
+    for record in session.new:
+        if isinstance(record, Project) and record.organization_id is None:
+            record.organization_id = organization_id
+
+
+@event.listens_for(User, "after_insert")
+def assign_test_user_membership(mapper, connection, target):
+    connection.execute(
+        text(
+            """
+            INSERT INTO user_organization_memberships (
+                user_id, organization_id, is_enabled, is_selected
+            ) VALUES (
+                :user_id, :organization_id, true, true
+            )
+            ON CONFLICT (user_id, organization_id) DO NOTHING
+            """
+        ),
+        {
+            "user_id": target.id,
+            "organization_id": UUID(
+                "02810000-0000-4000-8000-000000000001"
+            ),
+        },
+    )
 
 
 def create_user(
@@ -156,6 +221,16 @@ def create_user(
         is_active=is_active,
     )
     db_session.add(user)
+    db_session.flush()
+    test_organization_id = UUID("02810000-0000-4000-8000-000000000001")
+    organization = db_session.get(Organization, test_organization_id)
+    if organization is None:
+        organization = Organization(
+            id=test_organization_id,
+            is_active=True,
+        )
+        db_session.add(organization)
+        db_session.flush()
     db_session.commit()
     db_session.refresh(user)
     return user

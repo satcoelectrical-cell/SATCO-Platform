@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy.orm import Session
 
 from app.repositories.search_repository import search_all
@@ -15,6 +17,7 @@ class SearchService:
         page: int = 1,
         size: int = 20,
         current_user: User | None = None,
+        organization_id: UUID | None = None,
     ):
 
         results, totals = search_all(
@@ -24,6 +27,7 @@ class SearchService:
             page,
             size,
             current_user,
+            organization_id,
         )
 
 

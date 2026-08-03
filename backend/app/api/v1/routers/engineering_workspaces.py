@@ -3,7 +3,10 @@ from sqlalchemy.orm import Session
 
 from app import schemas
 from app.core.database import get_db
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import (
+    AuthenticatedOrganizationContext,
+    get_current_user_organization_context,
+)
 from app.enums import Discipline, WorkspaceStatus
 from app.models.user import User
 from app.schemas.engineering_workspace import (
@@ -164,12 +167,14 @@ def create_workspace(
     project_id: int,
     data: schemas.EngineeringWorkspaceCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
-    return EngineeringWorkspaceService(db).create(
+    return EngineeringWorkspaceService(db, context.organization_id).create(
         project_id,
         data,
-        current_user,
+        context.user,
     )
 
 
@@ -208,11 +213,15 @@ def list_project_workspaces(
     sort_by: WorkspaceSortField = Query("created_at"),
     order: WorkspaceSortOrder = Query("desc"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
-    return EngineeringWorkspaceService(db).list_for_project(
+    return EngineeringWorkspaceService(
+        db, context.organization_id
+    ).list_for_project(
         project_id=project_id,
-        current_user=current_user,
+        current_user=context.user,
         page=page,
         size=size,
         discipline=discipline,
@@ -241,11 +250,13 @@ def list_project_workspaces(
 def get_workspace(
     workspace_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
-    return EngineeringWorkspaceService(db).get(
+    return EngineeringWorkspaceService(db, context.organization_id).get(
         workspace_id,
-        current_user,
+        context.user,
     )
 
 
@@ -266,12 +277,14 @@ def update_workspace(
     workspace_id: int,
     data: schemas.EngineeringWorkspaceUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
-    return EngineeringWorkspaceService(db).update(
+    return EngineeringWorkspaceService(db, context.organization_id).update(
         workspace_id,
         data,
-        current_user,
+        context.user,
     )
 
 
@@ -292,12 +305,16 @@ def transition_workspace(
     workspace_id: int,
     data: schemas.WorkspaceStatusTransitionRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
-    return EngineeringWorkspaceService(db).transition(
+    return EngineeringWorkspaceService(
+        db, context.organization_id
+    ).transition(
         workspace_id,
         data,
-        current_user,
+        context.user,
     )
 
 
@@ -326,12 +343,14 @@ def archive_workspace(
     workspace_id: int,
     data: schemas.WorkspaceArchiveRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
-    return EngineeringWorkspaceService(db).archive(
+    return EngineeringWorkspaceService(db, context.organization_id).archive(
         workspace_id,
         data,
-        current_user,
+        context.user,
     )
 
 
@@ -352,12 +371,14 @@ def restore_workspace(
     workspace_id: int,
     data: schemas.WorkspaceRestoreRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
-    return EngineeringWorkspaceService(db).restore(
+    return EngineeringWorkspaceService(db, context.organization_id).restore(
         workspace_id,
         data,
-        current_user,
+        context.user,
     )
 
 
@@ -378,12 +399,16 @@ def add_workspace_collaborator(
     workspace_id: int,
     data: schemas.EngineeringWorkspaceCollaboratorAdd,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
-    return EngineeringWorkspaceService(db).add_collaborator(
+    return EngineeringWorkspaceService(
+        db, context.organization_id
+    ).add_collaborator(
         workspace_id,
         data,
-        current_user,
+        context.user,
     )
 
 
@@ -400,12 +425,16 @@ def remove_workspace_collaborator(
     user_id: int,
     expected_version: int = Query(..., gt=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
-    EngineeringWorkspaceService(db).remove_collaborator(
+    EngineeringWorkspaceService(
+        db, context.organization_id
+    ).remove_collaborator(
         workspace_id,
         user_id,
         expected_version,
-        current_user,
+        context.user,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -83,7 +83,7 @@ class EngineeringContextService:
             authority,
             "Context authority",
         )
-        project = self._require_project(project_id)
+        project = self._require_project(project_id, current_user)
         workspace = self._validate_scope(
             project_id=project_id,
             workspace_id=workspace_id,
@@ -199,7 +199,7 @@ class EngineeringContextService:
             raise InvalidContext("Invalid Context pagination")
         if not self._is_active_actor(current_user):
             raise ContextForbidden()
-        project = self._require_project(project_id)
+        project = self._require_project(project_id, current_user)
         workspace = self._validate_scope(
             project_id=project_id,
             workspace_id=workspace_id,
@@ -645,8 +645,10 @@ class EngineeringContextService:
             raise ContextNotFound(context_id)
         return context
 
-    def _require_project(self, project_id: int) -> Project:
-        project = self.repository.get_project(project_id)
+    def _require_project(
+        self, project_id: int, current_user: User
+    ) -> Project:
+        project = self.repository.get_project(project_id, current_user)
         if project is None:
             raise InvalidContext("Project does not exist")
         return project

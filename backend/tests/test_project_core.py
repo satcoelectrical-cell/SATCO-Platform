@@ -1,6 +1,7 @@
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
@@ -199,7 +200,16 @@ def test_project_validation_and_openapi_examples(
 
 
 def test_yearly_sequence_and_concurrent_project_creation():
+    organization_id = UUID("02810000-0000-4000-8000-000000000001")
     with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO organizations (id, is_active) "
+                "VALUES (:organization_id, true) "
+                "ON CONFLICT (id) DO NOTHING"
+            ),
+            {"organization_id": organization_id},
+        )
         customer_id = connection.execute(
             text(
                 "INSERT INTO customers (name) "
@@ -228,6 +238,7 @@ def test_yearly_sequence_and_concurrent_project_creation():
                     name=f"Concurrent Project {index}",
                     customer_id=customer_id,
                 ),
+                organization_id=organization_id,
                 owner_id=None,
                 creation_time=datetime(
                     2027,
@@ -252,6 +263,7 @@ def test_yearly_sequence_and_concurrent_project_creation():
                 name="New Year Project",
                 customer_id=customer_id,
             ),
+            organization_id=organization_id,
             owner_id=None,
             creation_time=datetime(
                 2028,

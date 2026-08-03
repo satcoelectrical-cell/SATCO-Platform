@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from threading import Barrier
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +12,7 @@ from app.enums import Discipline, WorkspaceStatus
 from app.models.customer import Customer
 from app.models.engineering_workspace import EngineeringWorkspace
 from app.models.project import Project
+from app.models.organization import UserOrganizationMembership
 from app.repositories.engineering_workspace_repository import (
     EngineeringWorkspaceRepository,
 )
@@ -432,6 +433,9 @@ def test_repository_filters_sorting_pagination_archives_and_project_scope(
     repository = EngineeringWorkspaceRepository(db_session)
 
     common = {
+        "organization_id": UUID(
+            "02810000-0000-4000-8000-000000000001"
+        ),
         "project_id": projects[0].id,
         "current_user": engineer_user,
         "page": 1,
@@ -544,6 +548,9 @@ def test_concurrent_workspace_uniqueness_for_project_and_discipline():
             ).delete()
             setup.delete(project)
             setup.delete(customer)
+            setup.query(UserOrganizationMembership).filter_by(
+                user_id=user.id
+            ).delete(synchronize_session=False)
             setup.delete(user)
             setup.commit()
         setup.close()

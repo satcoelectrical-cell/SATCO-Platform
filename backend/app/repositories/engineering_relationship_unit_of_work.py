@@ -46,12 +46,19 @@ def _json(value):
     return getattr(value, "value", value)
 
 
-def _workspace_access(session: Session, actor_id: int, workspace_id: int) -> bool:
+def _workspace_access(
+    session: Session, actor_id: int, workspace_id: int, organization_id: UUID
+) -> bool:
     user = session.get(User, actor_id)
     workspace = session.get(EngineeringWorkspace, workspace_id)
     if user is None or not user.is_active or workspace is None:
         return False
-    project = session.get(Project, workspace.project_id)
+    project = session.query(Project).filter(
+        Project.id == workspace.project_id,
+        Project.organization_id == organization_id,
+    ).first()
+    if project is None:
+        return False
     if user.role == "admin" or actor_id in {
         workspace.owner_id, workspace.primary_assignee_id,
     } or (project is not None and actor_id == project.owner_id):
@@ -85,7 +92,10 @@ class SqlAlchemyRelationshipAuthorizationPolicy:
         if len(endpoints) != 2:
             return False
         if not all(
-            _workspace_access(self.session, actor.actor_id, item.workspace_id)
+            _workspace_access(
+                self.session, actor.actor_id, item.workspace_id,
+                actor.organization_id,
+            )
             for item in endpoints
         ):
             return False
@@ -105,7 +115,8 @@ class SqlAlchemyRelationshipAuthorizationPolicy:
                 if item.project_id is not None and item.project_id != endpoints[0].project_id:
                     return False
                 if item.workspace_id is not None and not _workspace_access(
-                    self.session, actor.actor_id, item.workspace_id
+                    self.session, actor.actor_id, item.workspace_id,
+                    actor.organization_id,
                 ):
                     return False
         return True
@@ -136,7 +147,9 @@ class SqlAlchemyRelationshipValidator:
             raise EngineeringRelationshipValidationError(
                 "Cross-Project relationships are prohibited"
             )
-        if not all(_workspace_access(self.session, actor.actor_id, item.workspace_id)
+        if not all(_workspace_access(
+                   self.session, actor.actor_id, item.workspace_id,
+                   actor.organization_id)
                    for item in (source, target)):
             raise EngineeringRelationshipValidationError("Endpoint is unavailable")
         family = RelationshipFamily(relationship_family)
@@ -223,14 +236,17 @@ class SqlAlchemyRelationshipValidator:
                     "Evidence is unavailable or unacceptable"
                 ) from exc
             if item.workspace_id is not None and not _workspace_access(
-                self.session, actor.actor_id, item.workspace_id
+                self.session, actor.actor_id, item.workspace_id,
+                actor.organization_id,
             ):
                 raise EngineeringRelationshipValidationError("Evidence is unavailable")
 
     def _validate_responsible(self, actor, user_id, workspace_ids):
         user = self.session.get(User, user_id)
         if user is None or not user.is_active or not all(
-            _workspace_access(self.session, user_id, workspace_id)
+            _workspace_access(
+                self.session, user_id, workspace_id, actor.organization_id
+            )
             for workspace_id in set(workspace_ids)
         ):
             raise EngineeringRelationshipValidationError(

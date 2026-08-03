@@ -1,4 +1,5 @@
 from conftest import create_user
+from uuid import UUID
 
 from app.models.project import Project
 from app.permissions.roles import Role
@@ -127,6 +128,7 @@ def test_legacy_unowned_project_is_updateable(
         engineer_headers,
     )
     project = Project(
+        organization_id=UUID("02810000-0000-4000-8000-000000000001"),
         project_code="SAT-PRJ-2025-9001",
         name="Legacy Unowned",
         customer_id=customer_id,

@@ -102,7 +102,7 @@ class EngineeringContextRelationshipService:
         data: dict,
         current_user: User,
     ) -> dict:
-        project = self._project(data.get("project_id"))
+        project = self._project(data.get("project_id"), current_user)
         self._require_active(current_user)
         self._require_project_capability(project, current_user)
         meaning = self._enum(
@@ -991,8 +991,8 @@ class EngineeringContextRelationshipService:
             ).value
         }
 
-    def _project(self, project_id) -> Project:
-        project = self.repository.get_project(project_id)
+    def _project(self, project_id, current_user: User) -> Project:
+        project = self.repository.get_project(project_id, current_user)
         if project is None:
             raise InvalidRelationship("Governing Project is invalid")
         return project

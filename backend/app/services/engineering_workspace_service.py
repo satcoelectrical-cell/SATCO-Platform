@@ -64,9 +64,10 @@ PROJECT_BLOCKED_STATUSES = {
 
 
 class EngineeringWorkspaceService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, organization_id=None):
         self.db = db
         self.repository = EngineeringWorkspaceRepository(db)
+        self.organization_id = organization_id
 
     def create(
         self,
@@ -74,7 +75,8 @@ class EngineeringWorkspaceService:
         data: EngineeringWorkspaceCreate,
         current_user: User,
     ) -> dict:
-        project = self._get_project(project_id)
+        organization_id = self._organization_id(current_user)
+        project = self._get_project(project_id, organization_id)
         is_admin = self._is_admin(current_user)
         if not is_admin and project.owner_id != current_user.id:
             raise WorkspaceForbidden()
@@ -86,6 +88,7 @@ class EngineeringWorkspaceService:
         if self.repository.get_by_project_discipline(
             project_id,
             data.discipline,
+            organization_id,
         ):
             raise WorkspaceAlreadyExists()
 
@@ -150,10 +153,12 @@ class EngineeringWorkspaceService:
         current_user: User,
         **filters,
     ) -> dict:
-        project = self._get_project(project_id)
+        organization_id = self._organization_id(current_user)
+        project = self._get_project(project_id, organization_id)
         items, total = self.repository.list_for_project(
             project_id=project_id,
             current_user=current_user,
+            organization_id=organization_id,
             **filters,
         )
         if (
@@ -163,6 +168,7 @@ class EngineeringWorkspaceService:
             and not self.repository.user_has_project_workspace_access(
                 project_id,
                 current_user.id,
+                organization_id,
             )
         ):
             raise ProjectNotFoundException(project_id)
@@ -220,7 +226,10 @@ class EngineeringWorkspaceService:
             data.expected_version,
             values,
         )
-        updated = self.repository.get_by_id(workspace.id)
+        updated = self.repository.get_by_id(
+            workspace.id,
+            self._organization_id(current_user),
+        )
         after = self._snapshot(updated)
         changed = [
             key for key in values
@@ -458,8 +467,8 @@ class EngineeringWorkspaceService:
             },
         )
 
-    def _get_project(self, project_id: int):
-        project = self.repository.get_project(project_id)
+    def _get_project(self, project_id: int, organization_id):
+        project = self.repository.get_project(project_id, organization_id)
         if project is None:
             raise ProjectNotFoundException(project_id)
         return project
@@ -469,13 +478,27 @@ class EngineeringWorkspaceService:
         workspace_id: int,
         current_user: User,
     ) -> EngineeringWorkspace:
+        organization_id = self._organization_id(current_user)
         workspace = self.repository.get_visible_by_id(
             workspace_id,
             current_user,
+            organization_id,
         )
         if workspace is None:
             raise WorkspaceNotFound(workspace_id)
         return workspace
+
+    def _organization_id(self, current_user: User):
+        if self.organization_id is not None:
+            self._active_organization_id = self.organization_id
+            return self.organization_id
+        organization_id = self.repository.get_selected_organization_id(
+            current_user.id
+        )
+        if organization_id is None:
+            raise WorkspaceNotFound(0)
+        self._active_organization_id = organization_id
+        return organization_id
 
     def _validate_user(self, user_id: int, kind: str) -> User:
         user = self.repository.get_user(user_id)
@@ -588,6 +611,7 @@ class EngineeringWorkspaceService:
             workspace_id,
             expected_version,
             values,
+            organization_id=self._active_organization_id,
         ):
             self.db.rollback()
             raise WorkspaceVersionConflict()

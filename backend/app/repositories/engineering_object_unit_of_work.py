@@ -149,15 +149,18 @@ class SqlAlchemyAuthorizationPolicy:
         user = self.session.get(User, actor.actor_id)
         if user is None or not user.is_active:
             return False
-        if user.role == "admin":
-            return True
         project_id = (
             current_state.project_id if current_state is not None
             else target_state.get("project_id")
         )
-        project = self.session.get(Project, project_id) if project_id else None
+        project = self.session.query(Project).filter(
+            Project.id == project_id,
+            Project.organization_id == actor.organization_id,
+        ).first() if project_id else None
         if project is None:
             return False
+        if user.role == "admin":
+            return True
         if actor.actor_id in {project.owner_id, project.primary_assignee_id}:
             return True
         workspace_id = (
@@ -191,7 +194,10 @@ class SqlAlchemyReferenceValidator:
         steward_id: int | None, evidence_references: tuple[UUID, ...],
         discipline: EngineeringDiscipline | None = None,
     ) -> Mapping[str, Scalar]:
-        project = self.session.get(Project, project_id)
+        project = self.session.query(Project).filter(
+            Project.id == project_id,
+            Project.organization_id == actor.organization_id,
+        ).first()
         if project is None:
             raise EngineeringObjectValidationError("Project is invalid")
         workspace_discipline = self.COMPATIBILITY.get(discipline)
@@ -199,8 +205,12 @@ class SqlAlchemyReferenceValidator:
             raise EngineeringObjectValidationError(
                 "Engineering Object discipline has no compatible Workspace"
             )
-        workspace = self.session.query(EngineeringWorkspace).filter_by(
-            project_id=project_id, discipline=workspace_discipline,
+        workspace = self.session.query(EngineeringWorkspace).join(
+            Project, Project.id == EngineeringWorkspace.project_id
+        ).filter(
+            EngineeringWorkspace.project_id == project_id,
+            EngineeringWorkspace.discipline == workspace_discipline,
+            Project.organization_id == actor.organization_id,
         ).one_or_none()
         if workspace is None:
             raise EngineeringObjectValidationError(
@@ -224,7 +234,9 @@ class SqlAlchemyReferenceValidator:
         if discipline is not None:
             discipline = EngineeringDiscipline(discipline)
             workspace_discipline = self.COMPATIBILITY.get(discipline)
-            aggregate = self.session.get(EngineeringObject, object_id)
+            aggregate = self.session.query(EngineeringObject).filter_by(
+                id=object_id, organization_id=actor.organization_id
+            ).first()
             workspace = (
                 self.session.get(EngineeringWorkspace, aggregate.workspace_id)
                 if aggregate is not None else None
@@ -244,7 +256,9 @@ class SqlAlchemyReferenceValidator:
                 raise EngineeringObjectValidationError("Steward is invalid")
         replacement_id = references.get("replacement_object_id")
         if replacement_id is not None:
-            replacement = self.session.get(EngineeringObject, replacement_id)
+            replacement = self.session.query(EngineeringObject).filter_by(
+                id=replacement_id, organization_id=actor.organization_id
+            ).first()
             if replacement is None:
                 raise EngineeringObjectValidationError(
                     "Replacement Engineering Object is invalid"

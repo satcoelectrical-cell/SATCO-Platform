@@ -9,6 +9,7 @@ from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy import UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -59,6 +60,16 @@ class Project(Base):
     id = Column(
         Integer,
         primary_key=True,
+        index=True,
+    )
+    organization_id = Column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey(
+            "organizations.id",
+            name="fk_projects_organization_id_organizations",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
         index=True,
     )
     project_code = Column(
@@ -146,3 +157,4 @@ class Project(Base):
         "User",
         foreign_keys=[primary_assignee_id],
     )
+    organization = relationship("Organization")

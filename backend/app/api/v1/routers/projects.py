@@ -5,7 +5,10 @@ from sqlalchemy.orm import Session
 
 from app import schemas
 from app.core.database import get_db
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import (
+    AuthenticatedOrganizationContext,
+    get_current_user_organization_context,
+)
 from app.enums import ProjectPriority, ProjectStatus
 from app.models.user import User
 from app.schemas.project import ProjectSortField, SortOrder
@@ -121,11 +124,14 @@ VALIDATION_RESPONSE = {
 def create_project_api(
     project: schemas.ProjectCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
     return ProjectService(db).create(
         project,
-        current_user,
+        context.user,
+        context.organization_id,
     )
 
 
@@ -168,9 +174,12 @@ def get_projects_api(
     sort_by: ProjectSortField = Query("created_at"),
     order: SortOrder = Query("desc"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
     items, total = ProjectService(db).get_all(
+        organization_id=context.organization_id,
         page=page,
         size=size,
         customer_id=customer_id,
@@ -216,9 +225,14 @@ def get_projects_api(
 def get_project_api(
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
-    return ProjectService(db).get_by_id(project_id)
+    return ProjectService(db).get_by_id(
+        project_id,
+        organization_id=context.organization_id,
+    )
 
 
 @router.put(
@@ -244,12 +258,15 @@ def update_project_api(
     project_id: int,
     project: schemas.ProjectUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
     return ProjectService(db).update(
         project_id,
         project,
-        current_user,
+        context.user,
+        context.organization_id,
     )
 
 
@@ -276,11 +293,14 @@ def update_project_api(
 def delete_project_api(
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
     deleted = ProjectService(db).delete(
         project_id,
-        current_user,
+        context.user,
+        context.organization_id,
     )
     return {
         "message": "Project deleted successfully",
