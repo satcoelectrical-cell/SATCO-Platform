@@ -3,12 +3,19 @@
 from typing import Mapping, Protocol
 from uuid import UUID
 
+from app.enums.engineering_experience_capture import (
+    EngineeringExperienceCaptureLifecycle,
+    EngineeringExperienceSourceKind,
+)
 from app.models.engineering_experience_capture import EngineeringExperienceCapture
 from app.models.engineering_experience_capture_command import (
     EngineeringExperienceCaptureActor,
     EngineeringExperienceCaptureEvent,
     EngineeringExperienceCaptureOutcome,
     EngineeringExperienceCaptureResult,
+)
+from app.schemas.engineering_experience_capture import (
+    EngineeringExperienceCaptureReadPage,
 )
 
 
@@ -20,6 +27,20 @@ class EngineeringExperienceCaptureRepository(Protocol):
     def persist_expected_version(self, capture: EngineeringExperienceCapture, expected_version: int) -> bool: ...
     def replacement_is_used(self, replacement_capture_id: UUID) -> bool: ...
     def predecessor_chain(self, capture_id: UUID, *, maximum_depth: int) -> tuple[EngineeringExperienceCapture, ...]: ...
+    def read_authorized_page(
+        self,
+        *,
+        organization_id: UUID,
+        project_id: int,
+        workspace_id: int | None,
+        engineering_object_id: UUID | None,
+        lifecycle: EngineeringExperienceCaptureLifecycle,
+        source_kind: EngineeringExperienceSourceKind | None,
+        discipline: str | None,
+        page: int,
+        size: int,
+        authorized_workspace_ids: tuple[int, ...] | None,
+    ) -> EngineeringExperienceCaptureReadPage: ...
 
 
 class CaptureAuthorizationPolicy(Protocol):

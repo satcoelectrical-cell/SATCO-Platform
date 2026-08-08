@@ -21,7 +21,12 @@ from app.models.user import User
 from app.permissions.roles import Role
 from app.repositories.customer_repository import CustomerRepository
 from app.repositories.project_repository import ProjectRepository
-from app.schemas.project import ProjectCreate, ProjectUpdate
+from app.schemas.project import (
+    ProjectAuthorizedSelectionPage,
+    ProjectCreate,
+    ProjectSelectionActor,
+    ProjectUpdate,
+)
 from app.services.audit_service import create_audit_log
 
 
@@ -69,6 +74,36 @@ class ProjectService:
         if project is None:
             raise ProjectNotFoundException(project_id)
         return project
+
+    def list_authorized_selection(
+        self,
+        *,
+        actor: ProjectSelectionActor,
+        page: int,
+        size: int,
+    ) -> ProjectAuthorizedSelectionPage:
+        """Return only Projects visible to an active actor in trusted scope."""
+
+        if not self.repository.selection_actor_is_active(
+            actor_id=actor.actor_id,
+            organization_id=actor.organization_id,
+        ):
+            raise ProjectForbiddenException()
+        return self.repository.list_authorized_selection(
+            actor_id=actor.actor_id,
+            organization_id=actor.organization_id,
+            page=page,
+            size=size,
+        )
+
+    def authorize_selection_actor(self, *, actor: ProjectSelectionActor) -> None:
+        """Establish active trusted scope before a Project-less shell exists."""
+
+        if not self.repository.selection_actor_is_active(
+            actor_id=actor.actor_id,
+            organization_id=actor.organization_id,
+        ):
+            raise ProjectForbiddenException()
 
     def create(
         self,

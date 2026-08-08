@@ -1,7 +1,8 @@
 from datetime import date, datetime
 from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.enums import ProjectPriority, ProjectStatus
 
@@ -211,3 +212,41 @@ class ProjectResponse(BaseModel):
             ]
         },
     )
+
+
+class ProjectSelectionDTO(BaseModel):
+    """Immutable base for actor-authorized Project selection contracts."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class ProjectSelectionActor(ProjectSelectionDTO):
+    """Minimum trusted context used by the canonical Project application read."""
+
+    actor_id: int = Field(gt=0)
+    organization_id: UUID
+
+
+class ProjectAuthorizedSelectionItem(ProjectSelectionDTO):
+    """Minimal canonical Project choice visible to the current actor."""
+
+    project_id: int = Field(gt=0)
+    display_name: str = Field(min_length=1, max_length=200)
+
+
+class ProjectAuthorizedSelectionPage(ProjectSelectionDTO):
+    """Bounded Project choices without a hidden or global total."""
+
+    items: tuple[ProjectAuthorizedSelectionItem, ...] = Field(max_length=100)
+    page: int = Field(ge=1)
+    size: int = Field(ge=1, le=100)
+    returned_count: int = Field(ge=0, le=100)
+    has_more: bool
+
+    @model_validator(mode="after")
+    def validate_returned_count(self) -> "ProjectAuthorizedSelectionPage":
+        if self.returned_count != len(self.items):
+            raise ValueError("returned_count must equal returned Project choices")
+        if len(self.items) > self.size:
+            raise ValueError("Project choices exceed requested size")
+        return self

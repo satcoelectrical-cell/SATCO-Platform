@@ -6,7 +6,15 @@ from uuid import UUID
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
+from app.enums.engineering_experience_capture import (
+    EngineeringExperienceCaptureLifecycle,
+    EngineeringExperienceSourceKind,
+)
 from app.models.engineering_experience_capture import EngineeringExperienceCapture
+from app.schemas.engineering_experience_capture import (
+    EngineeringExperienceCaptureReadPage,
+    EngineeringExperienceCaptureSummary,
+)
 
 
 class SqlAlchemyEngineeringExperienceCaptureRepository:
@@ -53,6 +61,103 @@ class SqlAlchemyEngineeringExperienceCaptureRepository:
 
     def list_workspace_scoped(self, **values):
         return self._list(**values)
+
+    def read_authorized_page(
+        self,
+        *,
+        organization_id: UUID,
+        project_id: int,
+        workspace_id: int | None,
+        engineering_object_id: UUID | None,
+        lifecycle: EngineeringExperienceCaptureLifecycle,
+        source_kind: EngineeringExperienceSourceKind | None,
+        discipline: str | None,
+        page: int,
+        size: int,
+        authorized_workspace_ids: tuple[int, ...] | None,
+    ) -> EngineeringExperienceCaptureReadPage:
+        """Return one selected-field page and protected counts without writes."""
+
+        query = self.session.query(EngineeringExperienceCapture).filter(
+            EngineeringExperienceCapture.organization_id == organization_id,
+            EngineeringExperienceCapture.project_id == project_id,
+            EngineeringExperienceCapture.lifecycle
+            == getattr(lifecycle, "value", lifecycle),
+        )
+        if workspace_id is not None:
+            query = query.filter(
+                EngineeringExperienceCapture.workspace_id == workspace_id
+            )
+        elif authorized_workspace_ids is not None:
+            query = query.filter(
+                EngineeringExperienceCapture.workspace_id.in_(
+                    authorized_workspace_ids
+                )
+            )
+        if engineering_object_id is not None:
+            query = query.filter(
+                EngineeringExperienceCapture.engineering_object_id
+                == engineering_object_id
+            )
+
+        authorized_total = query.count()
+        if source_kind is not None:
+            query = query.filter(
+                EngineeringExperienceCapture.source_kind
+                == getattr(source_kind, "value", source_kind)
+            )
+        if discipline is not None:
+            query = query.filter(
+                EngineeringExperienceCapture.discipline == discipline
+            )
+        filtered_total = query.count()
+
+        rows = (
+            query.with_entities(
+                EngineeringExperienceCapture.id,
+                EngineeringExperienceCapture.project_id,
+                EngineeringExperienceCapture.workspace_id,
+                EngineeringExperienceCapture.discipline,
+                EngineeringExperienceCapture.engineering_object_id,
+                EngineeringExperienceCapture.source_kind,
+                EngineeringExperienceCapture.creator_id,
+                EngineeringExperienceCapture.lifecycle,
+                EngineeringExperienceCapture.version,
+                EngineeringExperienceCapture.created_at,
+                EngineeringExperienceCapture.updated_at,
+            )
+            .order_by(
+                EngineeringExperienceCapture.created_at.desc(),
+                EngineeringExperienceCapture.id.desc(),
+            )
+            .offset((page - 1) * size)
+            .limit(size)
+            .all()
+        )
+        items = tuple(
+            EngineeringExperienceCaptureSummary(
+                id=row.id,
+                project_id=row.project_id,
+                workspace_id=row.workspace_id,
+                discipline=row.discipline,
+                engineering_object_id=row.engineering_object_id,
+                source_kind=row.source_kind,
+                creator_id=row.creator_id,
+                lifecycle=row.lifecycle,
+                version=row.version,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+            )
+            for row in rows
+        )
+        return EngineeringExperienceCaptureReadPage(
+            items=items,
+            authorized_total=authorized_total,
+            filtered_total=filtered_total,
+            visible_total=len(items),
+            page=page,
+            size=size,
+        )
 
     def persist_expected_version(self, capture: EngineeringExperienceCapture, expected_version: int) -> bool:
         if capture in self.session:

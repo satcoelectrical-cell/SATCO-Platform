@@ -30,7 +30,10 @@ from app.models.engineering_experience_capture_command import (
     WithdrawEngineeringExperienceCapture,
 )
 from app.schemas.engineering_experience_capture import (
+    EngineeringExperienceCaptureAuthorizedScope,
+    EngineeringExperienceCaptureDetail,
     EngineeringExperienceCaptureListResponse,
+    EngineeringExperienceCaptureReadPage,
     EngineeringExperienceCaptureResponse,
     EngineeringExperienceCaptureSupersessionChainResponse,
 )
@@ -165,6 +168,177 @@ class EngineeringExperienceCaptureService:
         with self.uow_factory() as uow:
             capture = self._require_visible(uow, capture_id, actor)
             return _state(capture, self._actions(uow, capture, actor))
+
+    @staticmethod
+    def _authorize_read_scope(
+        uow,
+        *,
+        actor,
+        project_id: int,
+        workspace_id: int | None,
+        engineering_object_id: UUID | None,
+    ):
+        """Authorize a canonical read scope without creating write effects."""
+
+        try:
+            context = uow.context.validate(
+                actor=actor,
+                project_id=project_id,
+                workspace_id=workspace_id,
+                engineering_object_id=engineering_object_id,
+            )
+        except EngineeringExperienceCaptureInvalidContext as exc:
+            raise EngineeringExperienceCaptureProtectedNotFound() from exc
+
+        authorized_workspace_ids = None
+        if workspace_id is None:
+            authorized_workspace_ids = uow.authorization.project_list_workspace_scope(
+                actor=actor, project_id=project_id
+            )
+            if authorized_workspace_ids == ():
+                raise EngineeringExperienceCaptureProtectedNotFound()
+        elif not uow.authorization.authorize(
+            actor=actor,
+            operation="list",
+            project_id=project_id,
+            workspace_id=workspace_id,
+            engineering_object_id=engineering_object_id,
+        ):
+            raise EngineeringExperienceCaptureProtectedNotFound()
+
+        return context, authorized_workspace_ids
+
+    def authorize_read_scope(
+        self,
+        *,
+        actor,
+        project_id: int,
+        workspace_id: int | None,
+        engineering_object_id: UUID | None,
+    ) -> EngineeringExperienceCaptureAuthorizedScope:
+        """Return only current authorized canonical scope context."""
+
+        with self.uow_factory() as uow:
+            context, _ = self._authorize_read_scope(
+                uow,
+                actor=actor,
+                project_id=project_id,
+                workspace_id=workspace_id,
+                engineering_object_id=engineering_object_id,
+            )
+            return EngineeringExperienceCaptureAuthorizedScope(
+                organization_id=actor.organization_id,
+                project_id=project_id,
+                workspace_id=workspace_id,
+                discipline=context["discipline"],
+                engineering_object_id=engineering_object_id,
+            )
+
+    def read_authorized_page(
+        self,
+        *,
+        actor,
+        project_id: int,
+        workspace_id: int | None,
+        engineering_object_id: UUID | None,
+        lifecycle,
+        source_kind,
+        discipline: str | None,
+        page: int,
+        size: int,
+    ) -> EngineeringExperienceCaptureReadPage:
+        """Read one authorized minimal page and protected totals atomically."""
+
+        with self.uow_factory() as uow:
+            _, authorized_workspace_ids = self._authorize_read_scope(
+                uow,
+                actor=actor,
+                project_id=project_id,
+                workspace_id=workspace_id,
+                engineering_object_id=engineering_object_id,
+            )
+            return uow.captures.read_authorized_page(
+                organization_id=actor.organization_id,
+                project_id=project_id,
+                workspace_id=workspace_id,
+                engineering_object_id=engineering_object_id,
+                lifecycle=lifecycle,
+                source_kind=source_kind,
+                discipline=discipline,
+                page=page,
+                size=size,
+                authorized_workspace_ids=authorized_workspace_ids,
+            )
+
+    def read_authorized_detail(
+        self,
+        *,
+        actor,
+        project_id: int,
+        workspace_id: int | None,
+        engineering_object_id: UUID | None,
+        capture_id: UUID,
+    ) -> EngineeringExperienceCaptureDetail:
+        """Reauthorize and return the separate canonical detail projection."""
+
+        with self.uow_factory() as uow:
+            self._authorize_read_scope(
+                uow,
+                actor=actor,
+                project_id=project_id,
+                workspace_id=workspace_id,
+                engineering_object_id=engineering_object_id,
+            )
+            capture = self._require_visible(uow, capture_id, actor)
+            if capture.project_id != project_id:
+                raise EngineeringExperienceCaptureProtectedNotFound()
+            if workspace_id is not None and capture.workspace_id != workspace_id:
+                raise EngineeringExperienceCaptureProtectedNotFound()
+            if (
+                engineering_object_id is not None
+                and capture.engineering_object_id != engineering_object_id
+            ):
+                raise EngineeringExperienceCaptureProtectedNotFound()
+            replacement_id = capture.superseded_by_capture_id
+            authorized_replacement_id = None
+            if replacement_id is not None:
+                try:
+                    replacement = self._require_visible(
+                        uow, replacement_id, actor
+                    )
+                except EngineeringExperienceCaptureProtectedNotFound:
+                    replacement = None
+                if replacement is not None:
+                    replacement_in_scope = (
+                        replacement.project_id == project_id
+                        and (
+                            workspace_id is None
+                            or replacement.workspace_id == workspace_id
+                        )
+                        and (
+                            engineering_object_id is None
+                            or replacement.engineering_object_id
+                            == engineering_object_id
+                        )
+                    )
+                    if replacement_in_scope:
+                        authorized_replacement_id = replacement.id
+            return EngineeringExperienceCaptureDetail(
+                id=capture.id,
+                project_id=capture.project_id,
+                workspace_id=capture.workspace_id,
+                discipline=capture.discipline,
+                engineering_object_id=capture.engineering_object_id,
+                source_kind=capture.source_kind,
+                creator_id=capture.creator_id,
+                lifecycle=capture.lifecycle,
+                version=capture.version,
+                created_at=capture.created_at,
+                updated_at=capture.updated_at,
+                original_content=capture.original_content,
+                source_reference=capture.source_reference,
+                superseded_by_capture_id=authorized_replacement_id,
+            )
 
     def list_project(self, project_id, filters, page, size, actor):
         with self.uow_factory() as uow:

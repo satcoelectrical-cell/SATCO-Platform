@@ -1,15 +1,23 @@
 from datetime import date, datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import asc, desc
+from sqlalchemy import and_, asc, desc, exists, or_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, joinedload
 
 from app.enums import ProjectPriority, ProjectStatus
 from app.models.project import Project, ProjectCodeSequence
-from app.models.engineering_workspace import EngineeringWorkspace
+from app.models.engineering_workspace import (
+    EngineeringWorkspace,
+    EngineeringWorkspaceMember,
+)
+from app.models.organization import Organization, UserOrganizationMembership
 from app.models.user import User
-from app.schemas.project import ProjectCreate
+from app.schemas.project import (
+    ProjectAuthorizedSelectionItem,
+    ProjectAuthorizedSelectionPage,
+    ProjectCreate,
+)
 
 
 class ProjectRepository:
@@ -125,6 +133,91 @@ class ProjectRepository:
             self._base_query(organization_id)
             .filter(Project.project_code == project_code)
             .first()
+        )
+
+    def selection_actor_is_active(
+        self, *, actor_id: int, organization_id: UUID
+    ) -> bool:
+        """Check trusted actor prerequisites for protected Project selection."""
+
+        return (
+            self.db.query(User.id)
+            .join(
+                UserOrganizationMembership,
+                and_(
+                    UserOrganizationMembership.user_id == User.id,
+                    UserOrganizationMembership.organization_id == organization_id,
+                ),
+            )
+            .join(Organization, Organization.id == organization_id)
+            .filter(
+                User.id == actor_id,
+                User.is_active.is_(True),
+                User.role.in_(("admin", "engineer")),
+                UserOrganizationMembership.is_enabled.is_(True),
+                Organization.is_active.is_(True),
+            )
+            .first()
+            is not None
+        )
+
+    def list_authorized_selection(
+        self,
+        *,
+        actor_id: int,
+        organization_id: UUID,
+        page: int,
+        size: int,
+    ) -> ProjectAuthorizedSelectionPage:
+        """Return a bounded deterministic page using existing access predicates."""
+
+        user = self.db.get(User, actor_id)
+        query = self.db.query(Project.id, Project.name).filter(
+            Project.organization_id == organization_id
+        )
+        if user is None or user.role != "admin":
+            workspace_access = exists().where(
+                and_(
+                    EngineeringWorkspace.project_id == Project.id,
+                    or_(
+                        EngineeringWorkspace.owner_id == actor_id,
+                        EngineeringWorkspace.primary_assignee_id == actor_id,
+                        exists().where(
+                            and_(
+                                EngineeringWorkspaceMember.workspace_id
+                                == EngineeringWorkspace.id,
+                                EngineeringWorkspaceMember.user_id == actor_id,
+                            )
+                        ),
+                    ),
+                )
+            )
+            query = query.filter(
+                or_(
+                    Project.owner_id == actor_id,
+                    Project.primary_assignee_id == actor_id,
+                    workspace_access,
+                )
+            )
+        rows = (
+            query.order_by(Project.name.asc(), Project.id.asc())
+            .offset((page - 1) * size)
+            .limit(size + 1)
+            .all()
+        )
+        has_more = len(rows) > size
+        items = tuple(
+            ProjectAuthorizedSelectionItem(
+                project_id=row.id, display_name=row.name
+            )
+            for row in rows[:size]
+        )
+        return ProjectAuthorizedSelectionPage(
+            items=items,
+            page=page,
+            size=size,
+            returned_count=len(items),
+            has_more=has_more,
         )
 
     def get_user_by_id(self, user_id: int):
