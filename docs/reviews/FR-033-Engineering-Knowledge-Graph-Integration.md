@@ -5,16 +5,18 @@
 | Field | Value |
 |---|---|
 | PATCH | PATCH-033 — Engineering Knowledge Graph Integration |
-| Package purpose | Final implementation review and Human QG-11 evidence index |
-| Package status | COMPLETE — HUMAN QG-11 PASS RECORDED |
+| Package purpose | Final implementation, acceptance, delivery, and closure evidence index |
+| Package status | COMPLETE — PATCH-033 DONE / CLOSED |
 | Independent Final Review verdict | PASS after focused governance re-review |
 | Human QG-11 Final Acceptance | PASS |
-| Delivery authority | NOT GRANTED |
-| PATCH closure authority | NOT GRANTED |
+| QG-12 bounded delivery | PASS |
+| Delivery commit | `b10d84c1a1116796b22a930bcf159666c9bb104b` |
+| Remote verification | PASS — divergence `0/0` |
+| PATCH status | DONE / CLOSED |
 
-This artifact is an evidence index. It records the completed Independent Final
-Implementation Review and Human QG-11 acceptance. It grants no delivery, push,
-deployment, or closure authority.
+This artifact records the completed Independent Final Implementation Review,
+Human QG-11 acceptance, QG-12 bounded delivery, remote verification, and
+post-delivery governance closure.
 
 ## 2. Authoritative Chain
 
@@ -131,6 +133,12 @@ authority.
 ```text
 Independent Final Implementation Review: PASS AFTER FOCUSED GOVERNANCE RE-REVIEW
 Human QG-11 Final Acceptance: PASS
-Delivery authority: NOT GRANTED
-PATCH closure authority: NOT GRANTED
+QG-12 bounded delivery: PASS
+Delivery commit: b10d84c1a1116796b22a930bcf159666c9bb104b
+Remote verification: PASS — DIVERGENCE 0/0
+PATCH-033: DONE / CLOSED
 ```
+
+The delivered V1 contains only the `engineering_object` node projection and
+`get_node`. All deferred EKG capabilities recorded by the accepted IDS and
+Implementation Plan remain non-delivered and non-authoritative.
