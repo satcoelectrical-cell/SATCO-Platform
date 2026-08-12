@@ -587,6 +587,29 @@ authorize implementation.
 | PATCH-028.0 | Manifesto Governance Integration | `docs/patches/PATCH-028.0.md` | DONE |
 | PATCH-028 | Universal Engineering Capture Foundation | `docs/patches/PATCH-028.md` | DELIVERY AUTHORIZED — Commit and push execution pending |
 | PATCH-028.1 | Project Organization Ownership | `docs/patches/PATCH-028.1.md` | DONE / CLOSED |
+| PATCH-029 | Engineering Journal | `docs/patches/PATCH-029.md` | DONE / CLOSED — commit `b7fb8d4412d6b7528365f19b1418926aaa716686`; push and remote verification PASS; divergence 0/0; migration not required and not executed |
+| PATCH-032 | Technical Report | `docs/patches/PATCH-032.md` | DONE / CLOSED — implementation delivery `26b67727e364c7929747f581c2360ab418cbbdb3`; governance closure `3611fc5c0b8651e604278a70a23d9acf3f076913`; QG-M1, QG-11, QG-12, push, and remote verification PASS |
+
+PATCH-030 and PATCH-031 are intentionally unregistered PATCH identifiers. The
+repository contains the separate Draft
+`docs/design/EDS-030-Technical-Proposal-Review.md` and the historically
+referenced deferred architectural target
+`docs/design/EDS-031-Engineering-Digital-Twin-Vision.md`. Their EDS numbers
+do not register, reserve, or authorize PATCH-030 or PATCH-031.
+
+PATCH identifiers and EDS identifiers are not interchangeable registrations.
+The Technical Report governance chain was deliberately aligned at PATCH-032
+and is now `DONE / CLOSED`. PATCH-033 is the next valid PATCH identifier, but
+it is not registered, authorized, or executable by this record.
+
+### Current Roadmap Position After PATCH-032
+
+PATCH-029 Engineering Journal and PATCH-032 Technical Report are `DONE /
+CLOSED`. PATCH-032 bounded delivery, push, remote verification, QG-M1, Human
+QG-11, and QG-12 are `PASS`; its governance-closure record is reachable at
+commit `3611fc5c0b8651e604278a70a23d9acf3f076913`. PATCH-030 and PATCH-031
+remain intentionally unregistered. No successor PATCH is registered or
+executable.
 
 The former PATCH-022.2 through PATCH-022.10 reservations in the Draft
 PATCH-022 sequence are superseded. PATCH-022.4 through PATCH-022.10 are

@@ -18,25 +18,24 @@ The goal is Engineering Assistance.
 
 # Current Project Status
 
-Current Version:
+Current Roadmap Position:
 
-v0.1.0
+Post-PATCH-032 closure within active Phase 2 Engineering Intelligence delivery.
 
-Current Phase:
+Latest Completed Capability:
 
-Foundation
+PATCH-032 — Technical Report — DONE / CLOSED
 
-Overall Progress:
+Next Conceptual Capability:
 
-10%
+No successor capability is registered. PATCH-030 and PATCH-031 remain
+intentionally unregistered PATCH identifiers; their existing EDS identifiers
+retain their separate historical meanings. PATCH-033 is the next valid PATCH
+identifier, but it is neither registered nor authorized.
 
-Current Backend Patch:
+Executable PATCH:
 
-PATCH-020.1 — Engineering Workspace Core
-
-Status:
-
-Implemented — Awaiting Final Review Approval
+No executable PATCH is registered.
 
 ---
 
