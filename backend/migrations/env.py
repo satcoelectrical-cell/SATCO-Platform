@@ -4,6 +4,7 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from sqlalchemy.engine import URL
+from sqlalchemy.engine import make_url
 
 from alembic import context
 
@@ -14,40 +15,15 @@ config = context.config
 
 def get_database_url() -> str:
     explicit_url = os.getenv("ALEMBIC_DATABASE_URL")
-    if explicit_url:
-        return explicit_url
-
-    setting_names = (
-        "DATABASE_HOST",
-        "DATABASE_PORT",
-        "DATABASE_USER",
-        "DATABASE_PASSWORD",
-        "DATABASE_NAME",
-    )
-    settings = {
-        name: os.getenv(name)
-        for name in setting_names
-    }
-    missing_settings = [
-        name
-        for name, value in settings.items()
-        if not value
-    ]
-    if missing_settings:
-        raise RuntimeError(
-            "Alembic requires ALEMBIC_DATABASE_URL or all DATABASE_* "
-            "connection settings; missing: "
-            + ", ".join(missing_settings)
-        )
-
-    return URL.create(
-        drivername="postgresql",
-        username=settings["DATABASE_USER"],
-        password=settings["DATABASE_PASSWORD"],
-        host=settings["DATABASE_HOST"],
-        port=int(settings["DATABASE_PORT"]),
-        database=settings["DATABASE_NAME"],
-    ).render_as_string(hide_password=False)
+    if not explicit_url:
+        raise RuntimeError("Alembic requires explicit ALEMBIC_DATABASE_URL")
+    migration_role = make_url(explicit_url).username
+    runtime_role = os.getenv("RUNTIME_DATABASE_ROLE") or os.getenv("DATABASE_USER")
+    if not runtime_role:
+        raise RuntimeError("Alembic requires RUNTIME_DATABASE_ROLE to identify the runtime role")
+    if migration_role == runtime_role:
+        raise RuntimeError("Alembic migration role must differ from the runtime role")
+    return explicit_url
 
 
 config.set_main_option(
@@ -78,6 +54,8 @@ from app.models import engineering_relationship  # noqa: F401
 from app.models import engineering_relationship_command  # noqa: F401
 from app.models import engineering_experience_capture  # noqa: F401
 from app.models import engineering_experience_capture_command  # noqa: F401
+from app.models import technical_report  # noqa: F401
+from app.models import technical_report_command  # noqa: F401
 
 target_metadata = Base.metadata
 

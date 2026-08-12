@@ -27,3 +27,8 @@ from .engineering_experience_capture import EngineeringExperienceCapture
 from .engineering_experience_capture_command import EngineeringExperienceCaptureIdempotency
 from .engineering_experience_capture_command import EngineeringExperienceCaptureOutbox
 from .audit_log import AuditLog
+from .technical_report import TechnicalReport
+from .technical_report import TechnicalReportProvenanceRecord
+from .technical_report import TechnicalReportRecord
+from .technical_report_command import TechnicalReportIdempotencyRecord
+from .technical_report_command import TechnicalReportOutboxRecord

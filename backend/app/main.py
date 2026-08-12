@@ -22,6 +22,7 @@ from app.api.v1.routers.engineering_experience_captures import (
 from app.api.v1.routers.engineering_journal import (
     router as engineering_journal_router,
 )
+from app.api.v1.routers.technical_reports import router as technical_report_router
 
 from app.exceptions.handlers import register_exception_handlers
 
@@ -47,6 +48,7 @@ app.include_router(evidence_router)
 app.include_router(engineering_relationship_router)
 app.include_router(engineering_experience_capture_router)
 app.include_router(engineering_journal_router)
+app.include_router(technical_report_router)
 
 
 @app.get("/")

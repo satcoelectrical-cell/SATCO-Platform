@@ -7,14 +7,22 @@ services:
 
     environment:
       POSTGRES_USER: satco
-      POSTGRES_PASSWORD: satco_password
+      POSTGRES_PASSWORD: ${SATCO_SCHEMA_OWNER_DATABASE_PASSWORD:?SATCO_SCHEMA_OWNER_DATABASE_PASSWORD is required}
       POSTGRES_DB: satco_platform
+      SATCO_RUNTIME_DATABASE_PASSWORD: ${SATCO_RUNTIME_DATABASE_PASSWORD:?SATCO_RUNTIME_DATABASE_PASSWORD is required}
 
     ports:
       - "5432:5432"
 
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U satco -d satco_platform"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
     volumes:
       - ./postgres/data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
 
 
   backend:
@@ -28,15 +36,30 @@ services:
       - "8000:8000"
 
     depends_on:
-      - postgres
+      migrate:
+        condition: service_completed_successfully
 
     environment:
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_USER: satco
-      DATABASE_PASSWORD: satco_password
+      DATABASE_USER: satco_runtime
+      DATABASE_PASSWORD: ${SATCO_RUNTIME_DATABASE_PASSWORD:?SATCO_RUNTIME_DATABASE_PASSWORD is required}
       DATABASE_NAME: satco_platform
-      TEST_DATABASE_URL: postgresql+psycopg://satco:satco_password@postgres:5432/satco_platform_patch02022_test
+      MIGRATION_DATABASE_ROLE: satco
+      TECHNICAL_REPORT_PERSISTENCE_ENABLED: "true"
 
+    volumes:
+      - ./backend:/app
+
+  migrate:
+    build:
+      context: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ALEMBIC_DATABASE_URL: postgresql+psycopg2://satco:${SATCO_SCHEMA_OWNER_DATABASE_PASSWORD:?SATCO_SCHEMA_OWNER_DATABASE_PASSWORD is required}@postgres:5432/satco_platform
+      RUNTIME_DATABASE_ROLE: satco_runtime
+    command: ["alembic", "upgrade", "head"]
     volumes:
       - ./backend:/app

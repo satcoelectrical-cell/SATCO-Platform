@@ -1,5 +1,4 @@
 from functools import lru_cache
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,9 +12,13 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    DATABASE_URL: str = (
-        "postgresql://satco:satco@localhost:5432/satco"
-    )
+    DATABASE_HOST: str = "localhost"
+    DATABASE_PORT: int = 5432
+    DATABASE_USER: str = "satco_runtime"
+    DATABASE_PASSWORD: str = ""
+    DATABASE_NAME: str = "satco"
+    MIGRATION_DATABASE_ROLE: str = "satco"
+    TECHNICAL_REPORT_PERSISTENCE_ENABLED: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

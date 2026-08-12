@@ -8,6 +8,7 @@ from fastapi import Depends
 from fastapi.testclient import TestClient
 from sqlalchemy import event, inspect
 from sqlalchemy import text
+from sqlalchemy import create_engine as create_bootstrap_engine
 from sqlalchemy.orm import Session as SqlAlchemySession, sessionmaker
 from alembic import command
 from alembic.config import Config
@@ -24,14 +25,34 @@ if parsed_database_url.path.lstrip("/") != TEST_DATABASE_NAME:
         f"{TEST_DATABASE_NAME}"
     )
 
+runtime_password = os.getenv("TEST_RUNTIME_DATABASE_PASSWORD", "satco_runtime_test_password")
+runtime_role = "satco_runtime"
+
+bootstrap_engine = create_bootstrap_engine(test_database_url)
+with bootstrap_engine.begin() as bootstrap_connection:
+    role_exists = bootstrap_connection.execute(
+        text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:role)"),
+        {"role": runtime_role},
+    ).scalar_one()
+    if not role_exists:
+        create_statement = bootstrap_connection.execute(
+            text("SELECT format('CREATE ROLE satco_runtime LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS', :password)"),
+            {"password": runtime_password},
+        ).scalar_one()
+        bootstrap_connection.exec_driver_sql(create_statement)
+    bootstrap_connection.exec_driver_sql(
+        "ALTER ROLE satco_runtime NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"
+    )
+
 os.environ["DATABASE_HOST"] = parsed_database_url.hostname or "postgres"
 os.environ["DATABASE_PORT"] = str(parsed_database_url.port or 5432)
-os.environ["DATABASE_USER"] = parsed_database_url.username or "satco"
-os.environ["DATABASE_PASSWORD"] = (
-    parsed_database_url.password or "satco_password"
-)
+os.environ["DATABASE_USER"] = runtime_role
+os.environ["DATABASE_PASSWORD"] = runtime_password
 os.environ["DATABASE_NAME"] = TEST_DATABASE_NAME
 os.environ["ALEMBIC_DATABASE_URL"] = test_database_url
+os.environ["MIGRATION_DATABASE_ROLE"] = parsed_database_url.username or "satco"
+os.environ["RUNTIME_DATABASE_ROLE"] = runtime_role
+os.environ["TECHNICAL_REPORT_PERSISTENCE_ENABLED"] = "false"
 
 backend_root = Path(__file__).resolve().parents[1]
 alembic_config = Config(str(backend_root / "alembic.ini"))
@@ -39,6 +60,74 @@ alembic_config.set_main_option("script_location", str(backend_root / "migrations
 TEST_DATABASE_REVISION = ScriptDirectory.from_config(
     alembic_config
 ).get_current_head()
+
+if inspect(bootstrap_engine).has_table("alembic_version"):
+    with bootstrap_engine.connect() as schema_connection:
+        migrated_revision = schema_connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one_or_none()
+else:
+    migrated_revision = None
+
+if migrated_revision != TEST_DATABASE_REVISION:
+    command.upgrade(alembic_config, "head")
+    with bootstrap_engine.connect() as schema_connection:
+        migrated_revision = schema_connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+    if migrated_revision != TEST_DATABASE_REVISION:
+        raise RuntimeError(
+            "Test database bootstrap did not reach repository head "
+            f"{TEST_DATABASE_REVISION}"
+        )
+
+owner_engine = bootstrap_engine
+with owner_engine.begin() as owner_connection:
+    owner_connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO satco_runtime")
+    legacy_crud_tables = (
+        "users", "customers", "contacts", "projects", "project_code_sequences",
+        "organizations", "user_organization_memberships", "engineering_workspaces",
+        "engineering_workspace_members", "engineering_contexts", "engineering_context_facts",
+        "engineering_context_values", "engineering_context_assumptions",
+        "engineering_context_subject_references", "engineering_context_source_references",
+        "engineering_context_relationships", "interface_commitments",
+    )
+    aggregate_tables = (
+        "engineering_objects", "engineering_relationships", "evidence",
+        "engineering_experience_captures",
+    )
+    command_tables = (
+        "engineering_object_outbox", "engineering_object_idempotency",
+        "engineering_relationship_outbox", "engineering_relationship_idempotency",
+        "evidence_outbox", "evidence_idempotency",
+        "engineering_experience_capture_outbox", "engineering_experience_capture_idempotency",
+    )
+    for table_name in legacy_crud_tables:
+        if owner_connection.execute(text("SELECT to_regclass(:name)"), {"name": f"public.{table_name}"}).scalar_one() is not None:
+            owner_connection.exec_driver_sql(
+                f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "{table_name}" TO satco_runtime'
+            )
+    for table_name in aggregate_tables:
+        if owner_connection.execute(text("SELECT to_regclass(:name)"), {"name": f"public.{table_name}"}).scalar_one() is not None:
+            owner_connection.exec_driver_sql(
+                f'GRANT SELECT, INSERT, UPDATE ON TABLE "{table_name}" TO satco_runtime'
+            )
+    for table_name in command_tables:
+        if owner_connection.execute(text("SELECT to_regclass(:name)"), {"name": f"public.{table_name}"}).scalar_one() is not None:
+            owner_connection.exec_driver_sql(
+                f'GRANT SELECT, INSERT, UPDATE ON TABLE "{table_name}" TO satco_runtime'
+            )
+    if owner_connection.execute(text("SELECT to_regclass('public.audit_logs')")).scalar_one() is not None:
+        owner_connection.exec_driver_sql("REVOKE ALL ON TABLE audit_logs FROM satco_runtime")
+        owner_connection.exec_driver_sql("GRANT SELECT, INSERT ON TABLE audit_logs TO satco_runtime")
+    owner_connection.exec_driver_sql("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO satco_runtime")
+owner_engine.dispose()
+
+# The legacy shared-process test harness retains its schema-owner engine because
+# historical migration-isolation tests perform owner-only DDL/TRUNCATE. Focused
+# PATCH-032 role tests use their explicit restricted runtime engine.
+os.environ["DATABASE_USER"] = parsed_database_url.username or "satco"
+os.environ["DATABASE_PASSWORD"] = parsed_database_url.password or "satco_password"
 
 from app.core.database import engine, get_db  # noqa: E402
 
@@ -52,26 +141,6 @@ if actual_database_name != TEST_DATABASE_NAME:
         "PATCH-020.2.2 database guard rejected "
         f"{actual_database_name}"
     )
-
-if inspect(engine).has_table("alembic_version"):
-    with engine.connect() as schema_connection:
-        migrated_revision = schema_connection.execute(
-            text("SELECT version_num FROM alembic_version")
-        ).scalar_one_or_none()
-else:
-    migrated_revision = None
-
-if migrated_revision != TEST_DATABASE_REVISION:
-    command.upgrade(alembic_config, "head")
-    with engine.connect() as schema_connection:
-        migrated_revision = schema_connection.execute(
-            text("SELECT version_num FROM alembic_version")
-        ).scalar_one()
-    if migrated_revision != TEST_DATABASE_REVISION:
-        raise RuntimeError(
-            "Test database bootstrap did not reach repository head "
-            f"{TEST_DATABASE_REVISION}"
-        )
 
 
 from app.core.security import hash_password  # noqa: E402

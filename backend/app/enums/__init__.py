@@ -31,6 +31,14 @@ from .evidence import EvidenceSourceKind
 from .evidence import EvidenceSourceStanding
 from .engineering_experience_capture import EngineeringExperienceCaptureLifecycle
 from .engineering_experience_capture import EngineeringExperienceSourceKind
+from .technical_report import TechnicalReportAvailabilityStatus
+from .technical_report import TechnicalReportIntegrityAlgorithm
+from .technical_report import TechnicalReportLifecycle
+from .technical_report import TechnicalReportOwningCapability
+from .technical_report import TechnicalReportPurpose
+from .technical_report import TechnicalReportSourceClass
+from .technical_report import TechnicalReportSourceType
+from .technical_report import TechnicalReportVerificationStatus
 from app.enums.engineering_knowledge import (
     EngineeringAuthorityStanding,
     EngineeringConfidentiality,
