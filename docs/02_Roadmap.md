@@ -20,22 +20,26 @@ The goal is Engineering Assistance.
 
 Current Roadmap Position:
 
-Post-PATCH-032 closure within active Phase 2 Engineering Intelligence delivery.
+PATCH-034 implementation and governance validation complete within active
+Phase 2 Engineering Intelligence delivery; QG-12 delivery readiness pending.
 
 Latest Completed Capability:
 
-PATCH-032 — Technical Report — DONE / CLOSED
+PATCH-033 — Engineering Knowledge Graph Integration — DONE / CLOSED.
+PATCH-034 is implementation-complete but is not delivered or closed.
 
 Next Conceptual Capability:
 
-No successor capability is registered. PATCH-030 and PATCH-031 remain
-intentionally unregistered PATCH identifiers; their existing EDS identifiers
-retain their separate historical meanings. PATCH-033 is the next valid PATCH
-identifier, but it is neither registered nor authorized.
+PATCH-034 — Engineering Organizational Memory — ARCHITECTURE / DESIGN /
+IMPLEMENTATION COMPLETE; INDEPENDENT FINAL REVIEW AND HUMAN QG-11 PASS; QG-12
+DELIVERY READINESS PENDING. PATCH-030 and PATCH-031 remain intentionally
+unregistered PATCH identifiers; their existing EDS identifiers retain their
+separate historical meanings.
 
 Executable PATCH:
 
-No executable PATCH is registered.
+No executable PATCH is available. PATCH-034 delivery and closure authority
+remain not granted.
 
 ---
 

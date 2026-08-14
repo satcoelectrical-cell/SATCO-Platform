@@ -183,11 +183,12 @@ all migration, atomicity, security, focused, and regression tests pass.
 
 **Registry Status:** Approved; READY FOR IMPLEMENTATION under IRR-027.
 
-### PATCH-028 through PATCH-041 — Unassigned
+### PATCH-028 through PATCH-041 — Registry Status
 
-The authoritative PATCH registry contains no allocation or reservation for
-PATCH-028 through PATCH-041. These identifiers have no approved roadmap scope
-or implementation authority.
+PATCH-034 architecture, design, implementation, Independent Final Review, and
+Human QG-11 are complete. QG-12 delivery readiness, delivery, and closure
+remain pending. Other identifiers retain their separately governed registry
+status.
 
 | Identifier | Registry status | Roadmap scope |
 |---|---|---|
@@ -197,7 +198,7 @@ or implementation authority.
 | PATCH-031 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-032 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-033 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
-| PATCH-034 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
+| PATCH-034 | IMPLEMENTATION COMPLETE — FINAL REVIEW / QG-11 PASS — QG-12 DELIVERY READINESS PENDING | Engineering Organizational Memory; delivery and closure authority NOT GRANTED |
 | PATCH-035 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-036 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-037 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |

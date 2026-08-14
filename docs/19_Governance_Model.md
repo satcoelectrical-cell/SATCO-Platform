@@ -589,6 +589,7 @@ authorize implementation.
 | PATCH-028.1 | Project Organization Ownership | `docs/patches/PATCH-028.1.md` | DONE / CLOSED |
 | PATCH-029 | Engineering Journal | `docs/patches/PATCH-029.md` | DONE / CLOSED — commit `b7fb8d4412d6b7528365f19b1418926aaa716686`; push and remote verification PASS; divergence 0/0; migration not required and not executed |
 | PATCH-032 | Technical Report | `docs/patches/PATCH-032.md` | DONE / CLOSED — implementation delivery `26b67727e364c7929747f581c2360ab418cbbdb3`; governance closure `3611fc5c0b8651e604278a70a23d9acf3f076913`; QG-M1, QG-11, QG-12, push, and remote verification PASS |
+| PATCH-034 | Engineering Organizational Memory | `docs/patches/PATCH-034.md` | IMPLEMENTATION COMPLETE — INDEPENDENT FINAL REVIEW AND HUMAN QG-11 PASS; QG-12 DELIVERY READINESS PENDING; DELIVERY AND CLOSURE AUTHORITY NOT GRANTED |
 
 PATCH-030 and PATCH-031 are intentionally unregistered PATCH identifiers. The
 repository contains the separate Draft
@@ -599,17 +600,22 @@ do not register, reserve, or authorize PATCH-030 or PATCH-031.
 
 PATCH identifiers and EDS identifiers are not interchangeable registrations.
 The Technical Report governance chain was deliberately aligned at PATCH-032
-and is now `DONE / CLOSED`. PATCH-033 is the next valid PATCH identifier, but
-it is not registered, authorized, or executable by this record.
+and is now `DONE / CLOSED`. PATCH-033 subsequently completed and is `DONE /
+CLOSED`. PATCH-034 has completed Architecture, EDS, IDS, Implementation Plan,
+Batches 1–7, Independent Final Review, and Human QG-11. QG-12 delivery
+readiness is pending; delivery and closure authority are not granted.
 
-### Current Roadmap Position After PATCH-032
+### Current Roadmap Position During PATCH-034 Delivery Readiness
 
-PATCH-029 Engineering Journal and PATCH-032 Technical Report are `DONE /
-CLOSED`. PATCH-032 bounded delivery, push, remote verification, QG-M1, Human
-QG-11, and QG-12 are `PASS`; its governance-closure record is reachable at
-commit `3611fc5c0b8651e604278a70a23d9acf3f076913`. PATCH-030 and PATCH-031
-remain intentionally unregistered. No successor PATCH is registered or
-executable.
+PATCH-029 Engineering Journal, PATCH-032 Technical Report, and PATCH-033
+Engineering Knowledge Graph Integration are `DONE / CLOSED`. PATCH-034 is the
+bounded Engineering Organizational Memory successor. Version 1 permits only
+explicit Human admission of an exact Human-accepted Technical Report version;
+acceptance is not admission, and no other source or automated process may
+promote material into memory. Architecture, EDS, IDS, Implementation Plan,
+Batches 1–7, Independent Final Review, and Human QG-11 are complete or PASS.
+QG-12 delivery readiness, delivery, and closure remain pending; delivery and
+closure authority are not granted.
 
 The former PATCH-022.2 through PATCH-022.10 reservations in the Draft
 PATCH-022 sequence are superseded. PATCH-022.4 through PATCH-022.10 are

@@ -1,12 +1,13 @@
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 
 from app.core.database import engine
-from tests.conftest import TEST_DATABASE_REVISION
+from tests.conftest import TEST_DATABASE_REVISION, alembic_config, owner_engine
 
 
 def test_capture_revision_is_repository_head():
-    assert TEST_DATABASE_REVISION == "e02800000001"
-    with engine.connect() as connection:
+    assert ScriptDirectory.from_config(alembic_config).get_current_head() == TEST_DATABASE_REVISION
+    with owner_engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == TEST_DATABASE_REVISION
 
 

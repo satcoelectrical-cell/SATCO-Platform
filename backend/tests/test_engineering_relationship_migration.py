@@ -1,7 +1,7 @@
 from sqlalchemy import inspect, text
 
 from app.core.database import engine
-from tests.conftest import TEST_DATABASE_REVISION
+from tests.conftest import TEST_DATABASE_REVISION, owner_engine
 
 
 def test_relationship_migration_schema_matches_contract():
@@ -26,7 +26,7 @@ def test_relationship_migration_schema_matches_contract():
         item["name"] for item in inspector.get_indexes("engineering_relationships")
     }
     assert "uq_engineering_relationships_active_identity" in indexes
-    with engine.connect() as connection:
+    with owner_engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
             == TEST_DATABASE_REVISION
