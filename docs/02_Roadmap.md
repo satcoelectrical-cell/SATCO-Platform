@@ -20,25 +20,26 @@ The goal is Engineering Assistance.
 
 Current Roadmap Position:
 
-PATCH-035 AI Capture Assistant implementation and Independent Final Review are
-complete within active Phase 2 Engineering Intelligence delivery; QG-12
-bounded delivery is ready and pending execution.
+PATCH-036 SATCO Web Application & Engineering Dashboard implementation and
+Independent Final Review are complete; Human QG-11 is PASS and QG-12 bounded
+delivery is ready and pending execution.
 
 Latest Completed Capability:
 
-PATCH-034 — Engineering Organizational Memory — DONE / CLOSED.
+PATCH-035 — AI Capture Assistant — DONE / CLOSED.
 
 Next Conceptual Capability:
 
-PATCH-035 — AI Capture Assistant — ARCHITECTURE / DESIGN / IMPLEMENTATION
-COMPLETE; INDEPENDENT FINAL REVIEW AND HUMAN QG-11 PASS; QG-12 DELIVERY READY.
+PATCH-036 — SATCO Web Application & Engineering Dashboard — ARCHITECTURE /
+DESIGN / IMPLEMENTATION COMPLETE; INDEPENDENT FINAL REVIEW AND HUMAN QG-11
+PASS; QG-12 DELIVERY READY.
 PATCH-030 and PATCH-031 remain
 intentionally unregistered PATCH identifiers; their existing EDS identifiers
 retain their separate historical meanings.
 
 Executable PATCH:
 
-PATCH-035 implementation batches are complete; bounded delivery and closure
+PATCH-036 implementation batches are complete; bounded delivery and closure
 remain pending.
 
 ---

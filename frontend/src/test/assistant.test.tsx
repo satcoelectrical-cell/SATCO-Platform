@@ -1,0 +1,13 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
+import { AssistantPage } from "../pages/AssistantPage";
+
+const advice = vi.fn();
+vi.mock("../api/client", () => ({ api: { advice: (...args: unknown[]) => advice(...args) } }));
+
+describe("AI Capture Assistant presentation", () => {
+  beforeEach(() => advice.mockReset());
+  it("keeps Human instruction explicit and AI visually advisory", async () => { advice.mockResolvedValue({ state: "success", data: { outcome: "success", proposal: { advisory: true, suggested_text: "Clarify the trip setting basis.", observations: ["Setting is stated."], assumptions: ["Protection study is current."], missing_information: ["Study revision."], confidence: "medium", confidence_rationale: "One source gap.", limitations: ["Not an approval."], recommended_next_step: "Verify the study revision.", capture_attribution: { capture_id: "00000000-0000-0000-0000-000000000001", version: 2, project_id: 4, workspace_id: 5, source_kind: "human_observation", updated_at: "2026-08-14T00:00:00Z" }, provider_attribution: { provider_id: "provider", model_id: "model", model_version: "1" }, generated_at: "2026-08-14T00:00:00Z" } } }); const user = userEvent.setup(); render(<MemoryRouter><AssistantPage /></MemoryRouter>); expect(screen.getByText(/never authoritative/i)).toBeVisible(); await user.type(screen.getByLabelText("Capture ID"), "00000000-0000-0000-0000-000000000001"); await user.type(screen.getByLabelText("Project ID"), "4"); await user.type(screen.getByLabelText("Human instruction"), "Clarify the technical basis."); await user.click(screen.getByRole("button", { name: /prepare advisory refinement/i })); expect(await screen.findByText("Clarify the trip setting basis.")).toBeVisible(); expect(screen.getByText("Not an approval.")).toBeVisible(); expect(advice).toHaveBeenCalledWith(expect.objectContaining({ human_instruction: "Clarify the technical basis." })); });
+  it("renders protected outcomes without detail", async () => { advice.mockResolvedValue({ state: "success", data: { outcome: "protected_not_found" } }); const user = userEvent.setup(); render(<MemoryRouter><AssistantPage /></MemoryRouter>); await user.type(screen.getByLabelText("Capture ID"), "00000000-0000-0000-0000-000000000001"); await user.type(screen.getByLabelText("Project ID"), "4"); await user.type(screen.getByLabelText("Human instruction"), "Clarify."); await user.click(screen.getByRole("button", { name: /prepare advisory refinement/i })); expect(await screen.findByText("Not available")).toBeVisible(); expect(screen.queryByText(/denied|forbidden|capture exists/i)).not.toBeInTheDocument(); });
+});

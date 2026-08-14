@@ -188,8 +188,9 @@ all migration, atomicity, security, focused, and regression tests pass.
 The authoritative PATCH registry remains the source of truth for this range.
 Completed capabilities retain their recorded closure status. Technical Report
 is PATCH-032, Engineering Knowledge Graph Integration is PATCH-033, and
-Engineering Organizational Memory is PATCH-034 and AI Capture Assistant is
-PATCH-035. PATCH-034 is DONE/CLOSED. PATCH-035 architecture, design,
+Engineering Organizational Memory is PATCH-034, AI Capture Assistant is
+PATCH-035, and the SATCO Web Application & Engineering Dashboard is PATCH-036.
+PATCH-034 and PATCH-035 are DONE/CLOSED. PATCH-036 architecture, design,
 implementation, Independent Final Review, and Human QG-11 are complete; QG-12
 delivery is ready and pending. Every other unallocated identifier remains
 unassigned.
@@ -203,8 +204,8 @@ unassigned.
 | PATCH-032 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-033 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-034 | DONE / CLOSED | Engineering Organizational Memory |
-| PATCH-035 | IMPLEMENTATION COMPLETE — FINAL REVIEW / QG-11 PASS — QG-12 READY | AI Capture Assistant; provider-neutral ephemeral advisory Capture refinement; delivery/closure pending |
-| PATCH-036 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
+| PATCH-035 | DONE / CLOSED | AI Capture Assistant; provider-neutral ephemeral advisory Capture refinement |
+| PATCH-036 | IMPLEMENTATION COMPLETE — FINAL REVIEW / QG-11 PASS — QG-12 READY | SATCO Web Application & Engineering Dashboard; bounded delivery/closure pending |
 | PATCH-037 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-038 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-039 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
