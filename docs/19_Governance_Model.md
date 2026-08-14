@@ -591,7 +591,7 @@ authorize implementation.
 | PATCH-032 | Technical Report | `docs/patches/PATCH-032.md` | DONE / CLOSED — implementation delivery `26b67727e364c7929747f581c2360ab418cbbdb3`; governance closure `3611fc5c0b8651e604278a70a23d9acf3f076913`; QG-M1, QG-11, QG-12, push, and remote verification PASS |
 | PATCH-034 | Engineering Organizational Memory | `docs/patches/PATCH-034.md` | DONE / CLOSED — delivery `5d657a77bc3826498d2ae5db602283bbfc1f95df`; governance closure `18f0bb19a51c20edb0d99e78481af8df02668f79`; QG-M1/QG-11/QG-12 and remote verification PASS |
 | PATCH-035 | AI Capture Assistant | `docs/patches/PATCH-035.md` | DONE / CLOSED — delivery `ec8a0bc92c63d18d0d8d4831e6fa3814ac5118fe`; governance closure `01fb002186297eb5bcaa5e6d0ee835402616ee33`; QG-M1/QG-11/QG-12 and remote verification PASS |
-| PATCH-036 | SATCO Web Application & Engineering Dashboard | `docs/patches/PATCH-036.md` | IMPLEMENTATION COMPLETE — INDEPENDENT FINAL REVIEW AND HUMAN QG-11 PASS; QG-12 READY; DELIVERY AND CLOSURE PENDING |
+| PATCH-036 | SATCO Web Application & Engineering Dashboard | `docs/patches/PATCH-036.md` | DONE / CLOSED — delivery `9e2749f1534bca21131d0fd38fe6b963e41f38de`; QG-M1/QG-11/QG-12, push, and remote verification PASS; divergence 0/0 |
 
 PATCH-030 and PATCH-031 are intentionally unregistered PATCH identifiers. The
 repository contains the separate Draft
@@ -603,11 +603,11 @@ do not register, reserve, or authorize PATCH-030 or PATCH-031.
 PATCH identifiers and EDS identifiers are not interchangeable registrations.
 The Technical Report governance chain was deliberately aligned at PATCH-032
 and is now `DONE / CLOSED`. PATCH-033 subsequently completed and is `DONE /
-CLOSED`. PATCH-034 and PATCH-035 are `DONE / CLOSED`. PATCH-036 has completed
-Architecture, EDS, IDS, Implementation Plan, IRR, and Batches 1–4. Independent
-Final Review and Human QG-11 are PASS; QG-12 bounded delivery is ready.
+CLOSED`. PATCH-034, PATCH-035, and PATCH-036 are `DONE / CLOSED`. PATCH-036
+Architecture, EDS, IDS, Implementation Plan, IRR, Batches 1–4, Independent
+Final Review, Human QG-11, and bounded QG-12 delivery are PASS / COMPLETE.
 
-### Current Roadmap Position During PATCH-036 Final Review
+### Current Roadmap Position After PATCH-036 Closure
 
 PATCH-029 Engineering Journal, PATCH-032 Technical Report, PATCH-033
 Engineering Knowledge Graph Integration, PATCH-034 Engineering Organizational
@@ -616,8 +616,8 @@ the first authenticated SATCO Web Application & Engineering Dashboard over
 those accepted APIs. It owns presentation and bounded device-local layout
 preferences only; it owns no canonical engineering or authorization state.
 Architecture, EDS, IDS, Plan, IRR, implementation, Independent Final Review,
-and Human QG-11 are complete or PASS; QG-12 delivery is ready, while delivery
-and closure remain pending.
+Human QG-11, QG-12 delivery, push, and remote verification are PASS; PATCH-036
+is `DONE / CLOSED`. PATCH-037 remains unregistered and has not begun.
 
 The former PATCH-022.2 through PATCH-022.10 reservations in the Draft
 PATCH-022 sequence are superseded. PATCH-022.4 through PATCH-022.10 are

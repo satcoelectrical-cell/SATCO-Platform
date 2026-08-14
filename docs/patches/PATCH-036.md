@@ -2,10 +2,15 @@
 
 ## Governance Status
 
+DONE / CLOSED.
+
 Architecture/QG-M1, EDS, IDS, Implementation Plan, IRR, Batches 1–4,
-Independent Final Review, and Human QG-11 are PASS / ACCEPTED / COMPLETE.
-QG-12 bounded delivery is READY and pending execution. Delivery and closure
-have not yet been performed.
+Independent Final Review, Human QG-11, and QG-12 bounded delivery are PASS /
+ACCEPTED / COMPLETE. Delivery commit
+`9e2749f1534bca21131d0fd38fe6b963e41f38de` is verified at the governed remote
+HEAD with local/remote divergence `0/0`. The historical Batch 3 FAIL,
+`B3-MAJ-01` remediation, and focused re-review PASS remain preserved. No
+PATCH-037 or deferred capability authority is granted by this closure.
 
 ## Capability Boundary
 

@@ -33,5 +33,8 @@ secret, prohibited-pattern, whitespace, and QG-M1.
 
 Findings: Critical 0; Major 1 (`B3-MAJ-01`) RESOLVED; Minor 0.
 
-Human QG-11 readiness: READY. QG-12 delivery is not yet performed by this
-review record.
+Human QG-11: PASS. QG-12 bounded delivery: PASS. Delivery commit
+`9e2749f1534bca21131d0fd38fe6b963e41f38de` is verified at the governed remote
+HEAD with divergence `0/0` and an exact 63-file boundary. PATCH-036 is DONE /
+CLOSED. Historical review/remediation evidence and every deferred boundary
+remain preserved; this record grants no PATCH-037 authority.
