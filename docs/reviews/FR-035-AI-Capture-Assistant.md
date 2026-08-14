@@ -44,6 +44,13 @@ Major findings: 4 total — `B2-MAJ-01`, `B2-MAJ-02`, `FR035-MAJ-01`, and
 
 Minor findings: 0.
 
-QG-12 delivery readiness: READY.
+QG-12 bounded delivery: PASS / COMPLETE.
 
-Delivery/closure: NOT YET PERFORMED.
+Delivery commit: `ec8a0bc92c63d18d0d8d4831e6fa3814ac5118fe`.
+
+Remote verification: PASS — local and remote HEAD matched after push;
+divergence `0/0`.
+
+Post-delivery governance closure: COMPLETE. Final PATCH-035 status: `DONE /
+CLOSED`. Historical failure/remediation/re-review evidence and all deferred
+boundaries remain preserved. No PATCH-036 or later authority is granted.

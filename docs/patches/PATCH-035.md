@@ -14,8 +14,10 @@
 | Batches 1–3 | ACCEPTED / COMPLETE |
 | Independent Final Review | PASS after focused remediation/re-review |
 | Human QG-11 | PASS |
-| QG-12 readiness | READY |
-| Delivery / closure | NOT YET PERFORMED |
+| QG-12 / bounded delivery | PASS / COMPLETE |
+| Delivery commit | `ec8a0bc92c63d18d0d8d4831e6fa3814ac5118fe` |
+| Remote verification | PASS — local/remote HEAD equal; divergence `0/0` |
+| Final status | DONE / CLOSED |
 
 ## Capability Boundary
 
@@ -61,3 +63,15 @@ Organization context, shared Audit, and current canonical Capture reads.
 No accepted source authorization may be bypassed; no provider receives context
 before authorization; no implementation may require foreign persistence access
 or new engineering authority; no provider credential is committed.
+
+## Post-Delivery Closure
+
+PATCH-035 is `DONE / CLOSED`. QG-M1, Human QG-11, QG-12 bounded delivery,
+push, and remote verification are `PASS`. Batches 1–3 remain accepted and
+complete; all four Major findings remain resolved, and the complete historical
+FAIL → remediation → re-review → PASS evidence remains preserved.
+
+Delivered V1 remains strictly the provider-neutral, ephemeral, single-Capture
+advisory capability above. Frontend/Dashboard, autonomous action, persistence,
+semantic/vector retrieval, expanded context, and all other deferred scope were
+not delivered. This closure grants no authority to PATCH-036 or later work.
