@@ -29,6 +29,7 @@ from app.api.v1.routers.engineering_knowledge_graph import (
 from app.api.v1.routers.organizational_memory import (
     router as organizational_memory_router,
 )
+from app.api.v1.routers.ai_capture_assistant import router as ai_capture_assistant_router
 
 from app.exceptions.handlers import register_exception_handlers
 
@@ -57,6 +58,7 @@ app.include_router(engineering_journal_router)
 app.include_router(technical_report_router)
 app.include_router(engineering_knowledge_graph_router)
 app.include_router(organizational_memory_router)
+app.include_router(ai_capture_assistant_router)
 
 
 @app.get("/")

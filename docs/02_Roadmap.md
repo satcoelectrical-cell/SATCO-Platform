@@ -20,26 +20,26 @@ The goal is Engineering Assistance.
 
 Current Roadmap Position:
 
-PATCH-034 implementation and governance validation complete within active
-Phase 2 Engineering Intelligence delivery; QG-12 delivery readiness pending.
+PATCH-035 AI Capture Assistant implementation and Independent Final Review are
+complete within active Phase 2 Engineering Intelligence delivery; QG-12
+bounded delivery is ready and pending execution.
 
 Latest Completed Capability:
 
-PATCH-033 — Engineering Knowledge Graph Integration — DONE / CLOSED.
-PATCH-034 is implementation-complete but is not delivered or closed.
+PATCH-034 — Engineering Organizational Memory — DONE / CLOSED.
 
 Next Conceptual Capability:
 
-PATCH-034 — Engineering Organizational Memory — ARCHITECTURE / DESIGN /
-IMPLEMENTATION COMPLETE; INDEPENDENT FINAL REVIEW AND HUMAN QG-11 PASS; QG-12
-DELIVERY READINESS PENDING. PATCH-030 and PATCH-031 remain intentionally
-unregistered PATCH identifiers; their existing EDS identifiers retain their
-separate historical meanings.
+PATCH-035 — AI Capture Assistant — ARCHITECTURE / DESIGN / IMPLEMENTATION
+COMPLETE; INDEPENDENT FINAL REVIEW AND HUMAN QG-11 PASS; QG-12 DELIVERY READY.
+PATCH-030 and PATCH-031 remain
+intentionally unregistered PATCH identifiers; their existing EDS identifiers
+retain their separate historical meanings.
 
 Executable PATCH:
 
-No executable PATCH is available. PATCH-034 delivery and closure authority
-remain not granted.
+PATCH-035 implementation batches are complete; bounded delivery and closure
+remain pending.
 
 ---
 

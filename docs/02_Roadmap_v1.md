@@ -185,10 +185,14 @@ all migration, atomicity, security, focused, and regression tests pass.
 
 ### PATCH-028 through PATCH-041 — Registry Status
 
-PATCH-034 architecture, design, implementation, Independent Final Review, and
-Human QG-11 are complete. QG-12 delivery readiness, delivery, and closure
-remain pending. Other identifiers retain their separately governed registry
-status.
+The authoritative PATCH registry remains the source of truth for this range.
+Completed capabilities retain their recorded closure status. Technical Report
+is PATCH-032, Engineering Knowledge Graph Integration is PATCH-033, and
+Engineering Organizational Memory is PATCH-034 and AI Capture Assistant is
+PATCH-035. PATCH-034 is DONE/CLOSED. PATCH-035 architecture, design,
+implementation, Independent Final Review, and Human QG-11 are complete; QG-12
+delivery is ready and pending. Every other unallocated identifier remains
+unassigned.
 
 | Identifier | Registry status | Roadmap scope |
 |---|---|---|
@@ -198,8 +202,8 @@ status.
 | PATCH-031 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-032 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-033 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
-| PATCH-034 | IMPLEMENTATION COMPLETE — FINAL REVIEW / QG-11 PASS — QG-12 DELIVERY READINESS PENDING | Engineering Organizational Memory; delivery and closure authority NOT GRANTED |
-| PATCH-035 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
+| PATCH-034 | DONE / CLOSED | Engineering Organizational Memory |
+| PATCH-035 | IMPLEMENTATION COMPLETE — FINAL REVIEW / QG-11 PASS — QG-12 READY | AI Capture Assistant; provider-neutral ephemeral advisory Capture refinement; delivery/closure pending |
 | PATCH-036 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-037 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-038 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
