@@ -2,9 +2,12 @@
 
 ## Governance Status
 
+DONE / CLOSED.
+
 Architecture/QG-M1, EDS, IDS, Implementation Plan, IRR, Batches 1–3,
-Independent Final Review, and Human QG-11 are PASS / ACCEPTED / COMPLETE.
-QG-12 bounded delivery is READY. Delivery and closure are pending.
+Independent Final Review, Human QG-11, and QG-12 are PASS / ACCEPTED /
+COMPLETE. Delivery `8062d49e497f22fef44f4f96b08068683ac3a9bc` is verified at
+the governed remote with divergence `0/0`. No PATCH-038 authority is granted.
 
 ## V1 Capability Boundary
 

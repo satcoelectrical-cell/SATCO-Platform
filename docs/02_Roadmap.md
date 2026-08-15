@@ -20,26 +20,23 @@ The goal is Engineering Assistance.
 
 Current Roadmap Position:
 
-PATCH-037 Engineering Command Center Productization implementation and
-Independent Final Review are complete; Human QG-11 is PASS and QG-12 bounded
-delivery is ready.
+PATCH-037 SATCO Engineering Command Center Productization is DONE / CLOSED;
+QG-M1, Human QG-11, QG-12, push, and remote verification are PASS.
 
 Latest Completed Capability:
 
-PATCH-036 — SATCO Web Application & Engineering Dashboard — DONE / CLOSED.
+PATCH-037 — SATCO Engineering Command Center Productization — DONE / CLOSED.
 
 Next Conceptual Capability:
 
-PATCH-037 — SATCO Engineering Command Center Productization — ARCHITECTURE /
-DESIGN / IMPLEMENTATION COMPLETE; FINAL REVIEW AND HUMAN QG-11 PASS; QG-12
-READY.
+PATCH-038 remains unregistered and has not begun.
 PATCH-030 and PATCH-031 remain
 intentionally unregistered PATCH identifiers; their existing EDS identifiers
 retain their separate historical meanings.
 
 Executable PATCH:
 
-PATCH-037 implementation is complete; bounded delivery and closure remain.
+No later PATCH is executable under PATCH-037 authority.
 
 ---
 
