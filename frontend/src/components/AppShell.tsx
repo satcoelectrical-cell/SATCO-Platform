@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bot, BookOpenText, BriefcaseBusiness, ChevronRight, FolderKanban, LayoutDashboard, LogOut, Menu, PanelLeftClose, X } from "lucide-react";
+import { Bot, BookOpenText, BriefcaseBusiness, ChevronRight, FolderKanban, LayoutDashboard, LockKeyhole, LogOut, Menu, PanelLeftClose, X } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 
@@ -20,6 +20,6 @@ export function AppShell() {
       <div className="sidebar-footer"><span className="environment-dot" />Protected engineering environment<button className="signout" onClick={auth.logout}><LogOut size={17} />Sign out</button></div>
     </aside>
     {open && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setOpen(false)} />}
-    <div className="app-column"><header className="topbar"><button className="icon-button menu-button" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu /></button><div className="context"><span>Current workspace</span><strong>{current?.[1] ?? "SATCO"}</strong></div><div className="trust-indicator"><span />Authenticated · Organization context</div></header><main id="main-content"><Outlet /></main></div>
+    <div className="app-column"><header className="topbar"><button className="icon-button menu-button" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu /></button><div className="context"><span>SATCO / Engineering Command Center</span><strong>{current?.[1] ?? "SATCO"}</strong></div><div className="topbar-rule" /><div className="trust-indicator"><LockKeyhole size={14} />Authenticated · Organization context · server-derived</div></header><main id="main-content"><Outlet /></main></div>
   </div>;
 }

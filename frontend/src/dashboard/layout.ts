@@ -5,9 +5,9 @@ export interface WidgetLayout { id: WidgetId; size: WidgetSize; hidden: boolean 
 export interface DashboardLayout { version: 1; widgets: WidgetLayout[] }
 export const LAYOUT_KEY = "satco.dashboard.layout.v1";
 export const defaultLayout: DashboardLayout = { version: 1, widgets: [
-  { id: "projects", size: "standard", hidden: false }, { id: "engineering-work", size: "standard", hidden: false },
-  { id: "reports", size: "compact", hidden: false }, { id: "memory", size: "compact", hidden: false },
-  { id: "assistant", size: "compact", hidden: false },
+  { id: "engineering-work", size: "wide", hidden: false }, { id: "projects", size: "wide", hidden: false },
+  { id: "assistant", size: "standard", hidden: false }, { id: "reports", size: "compact", hidden: false },
+  { id: "memory", size: "compact", hidden: false },
 ] };
 
 export function validateLayout(value: unknown): DashboardLayout {
