@@ -213,7 +213,7 @@ unassigned.
 | PATCH-037 | DONE / CLOSED | Engineering Command Center Productization; delivery `8062d49e497f22fef44f4f96b08068683ac3a9bc`; QG-M1/QG-11/QG-12 and remote verification PASS |
 | PATCH-038 | DONE / CLOSED | Customer-to-Capture Engineering Work Bootstrap; delivery `b2b7b102be4e957d106b3138dd6f14b5488eb6ff`; closure `b5bf1e1c22f262b1aa3cf0be3a12a70e6413e998`; QG-M1/QG-11/QG-12 and remote verification PASS |
 | PATCH-039 | DONE / CLOSED | Technical Report Authoring & Human Acceptance Experience; delivery `80d006e5232e154502a36baf46b9b40be7c3504c`; QG-M1/QG-11/QG-12 and remote verification PASS |
-| PATCH-040 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
+| PATCH-040 | QG-12 delivery pending | Governed Organizational Memory Admission & Reuse Experience; implementation, Independent Final Review, and Human QG-11 PASS |
 | PATCH-041 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 
 ## 6. Commercial Release Criteria

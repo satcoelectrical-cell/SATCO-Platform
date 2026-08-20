@@ -1,4 +1,4 @@
-import type { AdviceResponse, ApiResult, Capture, Customer, JournalWorkspace, MemoryPage, Paginated, Project, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, Workspace } from "./types";
+import type { AdviceResponse, ApiResult, Capture, Customer, JournalWorkspace, MemoryAdmissionResult, MemoryDetailResult, MemoryPage, Paginated, Project, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, Workspace } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const TOKEN_KEY = "satco.auth.access.v1";
@@ -26,12 +26,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResu
   } catch { return { state: "unavailable" }; }
 }
 
-async function closedResult<T extends { outcome: string }>(path: string): Promise<ApiResult<T>> {
-  const result = await request<T>(path);
+async function closedResult<T extends { outcome: string }>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
+  const result = await request<T>(path, init);
   if (result.state !== "success") return result;
   if (result.data.outcome === "protected_not_found") return { state: "protected" };
   if (result.data.outcome === "invalid_request") return { state: "invalid" };
   if (result.data.outcome === "unavailable") return { state: "unavailable" };
+  if (["version_conflict", "idempotency_conflict", "duplicate_source", "invalid_standing"].includes(result.data.outcome)) return { state: "conflict" };
   return result;
 }
 
@@ -64,5 +65,7 @@ export const api = {
   reviseReport: (id: string, payload: { expected_version: number; expected_draft_revision_id: string; content: ReportContent; qualification: ReportQualification; provenance: ReportProvenance[]; rationale: string }) => request<TechnicalReportDraft>(`/technical-reports/${encodeURIComponent(id)}/draft-revisions`, { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
   acceptReport: (id: string, payload: { expected_version: number; exact_draft_revision_id: string; confirmed: true; rationale: string }) => request<TechnicalReportAccepted>(`/technical-reports/${encodeURIComponent(id)}/acceptance`, { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
   memory: (workspaceId: number, projectId?: number) => closedResult<MemoryPage>(`/organizational-memory?workspace_id=${workspaceId}${projectId ? `&project_id=${projectId}` : ""}&page_size=20`),
+  memoryDetail: (id: string) => closedResult<MemoryDetailResult>(`/organizational-memory/${encodeURIComponent(id)}?include_provenance=true&reuse_intent=true`),
+  admitMemory: (payload: { report_id: string; accepted_aggregate_version: number; accepted_snapshot_digest: string; workspace_id: number; project_id: number | null; admission_rationale: string; authority_rationale: string; reuse_restrictions: string[] }) => closedResult<MemoryAdmissionResult>("/organizational-memory/admissions", { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ ...payload, audience_actor_ids: [] }) }),
   advice: (payload: { capture_id: string; project_id: number; workspace_id: number | null; human_instruction: string }) => request<AdviceResponse>("/engineering-copilot/capture-advice", { method: "POST", body: JSON.stringify(payload) }),
 };

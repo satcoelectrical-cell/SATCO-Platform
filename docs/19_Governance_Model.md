@@ -595,6 +595,7 @@ authorize implementation.
 | PATCH-037 | SATCO Engineering Command Center Productization | `docs/patches/PATCH-037.md` | DONE / CLOSED — delivery `8062d49e497f22fef44f4f96b08068683ac3a9bc`; QG-M1/QG-11/QG-12, push, and remote verification PASS; divergence 0/0 |
 | PATCH-038 | Customer-to-Capture Engineering Work Bootstrap | `docs/patches/PATCH-038.md` | DONE / CLOSED — delivery `b2b7b102be4e957d106b3138dd6f14b5488eb6ff`; governance closure `b5bf1e1c22f262b1aa3cf0be3a12a70e6413e998`; QG-M1/QG-11/QG-12 and remote verification PASS |
 | PATCH-039 | Technical Report Authoring & Human Acceptance Experience | `docs/patches/PATCH-039.md` | DONE / CLOSED — delivery `80d006e5232e154502a36baf46b9b40be7c3504c`; QG-M1/QG-11/QG-12 and remote verification PASS |
+| PATCH-040 | Governed Organizational Memory Admission & Reuse Experience | `docs/patches/PATCH-040.md` | Implementation and Independent Final Review complete; QG-M1 and Human QG-11 PASS; QG-12 delivery pending |
 
 PATCH-030 and PATCH-031 are intentionally unregistered PATCH identifiers. The
 repository contains the separate Draft

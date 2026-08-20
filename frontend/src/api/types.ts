@@ -40,9 +40,15 @@ export interface ReportSourceCandidate { capture_id: string; project_id: number;
 export interface ReportSourceCandidatePage { items: ReportSourceCandidate[]; total: number; page: number; size: number }
 export interface MemorySummary {
   memory_id: string; version: number; standing: "active"; source_report_id: string;
-  purpose: string; workspace_id: number; project_id: number | null; admitted_at: string; updated_at: string;
+  source_accepted_version: number; purpose: string; organization_id: string; workspace_id: number; project_id: number | null;
+  admitted_by_id: number; admitted_at: string; updated_at: string;
 }
 export interface MemoryPage { outcome: string; page?: { items: MemorySummary[]; visible_total: number; next_continuation: string | null } }
+export interface MemorySafeProvenance { entry_id: string; ordinal: number; source_class: "canonical_material"; source_type: string; owning_capability: string; is_material: true; reliance_role: string; locator_digest: string; source_integrity_algorithm: "sha256"; source_integrity_digest: string }
+export interface MemoryProjection { projection_contract: "organizational_memory.accepted_report.v1"; report_id: string; purpose: string; organization_id: string; workspace_id: number; project_id: number | null; content: ReportContent; qualification: ReportQualification; accepted_draft_revision_id: string; accepted_draft_revision_number: number; accepted_aggregate_version: number; accepted_by_id: number; accepted_at: string; predecessor_report_id: string | null }
+export interface MemoryDetail { summary: MemorySummary; projection: MemoryProjection; admission_rationale: string; reuse_restrictions: string[]; safe_provenance: MemorySafeProvenance[] }
+export interface MemoryDetailResult { outcome: string; item?: MemoryDetail }
+export interface MemoryAdmissionResult { outcome: string; memory_id?: string; version?: number; standing?: "active" }
 export interface JournalWorkspace { view: string; availability: string; result_state: string; view_content: unknown }
 export interface AdviceProposal {
   advisory: true; suggested_text: string; observations: string[]; assumptions: string[];

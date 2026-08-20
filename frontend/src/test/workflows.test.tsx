@@ -5,7 +5,7 @@ import { MemoryPage } from "../pages/KnowledgePages";
 import { ReportsPage } from "../pages/ReportPages";
 import { ProjectsPage, ProjectWorkspacePage } from "../pages/ProjectsPage";
 
-const { apiMock } = vi.hoisted(() => ({ apiMock: { customers: vi.fn(), createCustomer: vi.fn(), createProject: vi.fn(), updateProject: vi.fn(), projects: vi.fn(), project: vi.fn(), workspaces: vi.fn(), createWorkspace: vi.fn(), captures: vi.fn(), createCapture: vi.fn(), reports: vi.fn(), reportSources: vi.fn(), report: vi.fn(), createReport: vi.fn(), reviseReport: vi.fn(), acceptReport: vi.fn(), memory: vi.fn() } }));
+const { apiMock } = vi.hoisted(() => ({ apiMock: { customers: vi.fn(), createCustomer: vi.fn(), createProject: vi.fn(), updateProject: vi.fn(), projects: vi.fn(), project: vi.fn(), workspaces: vi.fn(), createWorkspace: vi.fn(), captures: vi.fn(), createCapture: vi.fn(), reports: vi.fn(), reportSources: vi.fn(), report: vi.fn(), createReport: vi.fn(), reviseReport: vi.fn(), acceptReport: vi.fn(), admitMemory: vi.fn(), memory: vi.fn(), memoryDetail: vi.fn() } }));
 vi.mock("../api/client", () => ({ api: apiMock }));
 const project = { id: 7, project_code: "SAT-007", name: "Substation Modernization", description: "Protection and control renewal.", customer: { id: 2, name: "Grid Operations" }, status: "in_progress", priority: "high", owner: null, primary_assignee: null, progress: 42, target_completion_date: null, updated_at: "2026-08-14T00:00:00Z" };
 
@@ -56,6 +56,6 @@ it("loads bounded Technical Reports through authorized selectors without typed I
   const user = userEvent.setup(); render(<MemoryRouter><ReportsPage /></MemoryRouter>); await user.selectOptions(await screen.findByLabelText("Project"), "7"); await user.selectOptions(await screen.findByLabelText("Engineering Workspace"), "9"); expect(await screen.findByText("No reports yet")).toBeVisible(); expect(apiMock.reports).toHaveBeenCalledWith(9, 7); expect(screen.queryByLabelText("Project ID")).not.toBeInTheDocument();
 });
 
-it("renders protected Memory as one neutral state with no count", async () => {
-  apiMock.memory.mockResolvedValue({ state: "protected" }); const user = userEvent.setup(); render(<MemoryRouter><MemoryPage /></MemoryRouter>); await user.type(screen.getByLabelText("Workspace ID"), "9"); await user.click(screen.getByRole("button", { name: "Load context" })); expect(await screen.findByText("Not available")).toBeVisible(); expect(screen.queryByText(/0 records|denied|forbidden/i)).not.toBeInTheDocument();
+it("renders protected Memory through contextual selectors as one neutral state with no count", async () => {
+  apiMock.projects.mockResolvedValue({ state: "success", data: { items: [project] } }); apiMock.workspaces.mockResolvedValue({ state: "success", data: { items: [{ id: 9, display_name: "Electrical Engineering" }], total: 1 } }); apiMock.memory.mockResolvedValue({ state: "protected" }); const user = userEvent.setup(); render(<MemoryRouter><MemoryPage /></MemoryRouter>); await user.selectOptions(await screen.findByLabelText("Project"), "7"); await user.selectOptions(await screen.findByLabelText("Engineering Workspace"), "9"); expect(await screen.findByText("Not available")).toBeVisible(); expect(screen.queryByText(/0 records|denied|forbidden/i)).not.toBeInTheDocument(); expect(screen.queryByLabelText(/workspace id|project id/i)).not.toBeInTheDocument();
 });

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ReportsPage } from "../pages/ReportPages";
 
-const { apiMock } = vi.hoisted(() => ({ apiMock: { projects: vi.fn(), workspaces: vi.fn(), reports: vi.fn(), reportSources: vi.fn(), report: vi.fn(), createReport: vi.fn(), reviseReport: vi.fn(), acceptReport: vi.fn() } }));
+const { apiMock } = vi.hoisted(() => ({ apiMock: { projects: vi.fn(), workspaces: vi.fn(), reports: vi.fn(), reportSources: vi.fn(), report: vi.fn(), createReport: vi.fn(), reviseReport: vi.fn(), acceptReport: vi.fn(), admitMemory: vi.fn() } }));
 vi.mock("../api/client", () => ({ api: apiMock }));
 
 const organization = "7e7c9d7a-7693-4f75-9bc5-3ef7bf528281";
@@ -83,4 +83,14 @@ it("renders accepted authority from the immutable snapshot only", async () => {
   expect(await screen.findByRole("heading", { name: "Immutable accepted content" })).toBeVisible();
   expect(screen.queryByLabelText("Human revision rationale")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Human acceptance rationale")).not.toBeInTheDocument();
+});
+
+it("requires explicit Human Memory admission and uses only the exact accepted server-bound source", async () => {
+  apiMock.report.mockResolvedValue({ state: "success", data: accepted });
+  apiMock.admitMemory.mockResolvedValue({ state: "success", data: { outcome: "success", memory_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", version: 1, standing: "active" } });
+  const user = userEvent.setup(); render(<MemoryRouter initialEntries={[`/reports/${reportId}?project_id=7&workspace_id=9`]}><Routes><Route path="/reports/:reportId" element={<ReportsPage />} /></Routes></MemoryRouter>);
+  const button = await screen.findByRole("button", { name: "Admit exact accepted Report" }); expect(button).toBeDisabled();
+  await user.type(screen.getByLabelText("Human admission rationale"), "Preserve verified terminal finding for consultation"); await user.type(screen.getByLabelText("Human authority rationale"), "I own this accepted report and approve bounded admission"); await user.click(screen.getByLabelText(/explicitly admit this exact accepted report/i)); await user.click(button);
+  await waitFor(() => expect(apiMock.admitMemory).toHaveBeenCalledWith({ report_id: reportId, accepted_aggregate_version: 2, accepted_snapshot_digest: "b".repeat(64), workspace_id: 9, project_id: 7, admission_rationale: "Preserve verified terminal finding for consultation", authority_rationale: "I own this accepted report and approve bounded admission", reuse_restrictions: [] }));
+  expect(screen.queryByLabelText(/report id|workspace id|project id|organization id/i)).not.toBeInTheDocument(); expect(await screen.findByRole("link", { name: "Open governed Memory detail" })).toHaveAttribute("href", expect.stringContaining("/memory/eeeeeeee"));
 });

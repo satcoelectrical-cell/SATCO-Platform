@@ -43,7 +43,7 @@ function ReportsWidget({ data }: { data: CommandCenterData }) {
 
 function MemoryWidget({ data }: { data: CommandCenterData }) {
   if (!data.memory.length) return <SourceEmpty state={data.sourceStates.memory} title="No visible active memory" detail="Authorized Human-admitted knowledge will appear here." />;
-  return <div className="intel-list">{data.memory.map((memory) => <Link to="/memory" className="intel-row" key={memory.memory_id}><span className="intel-icon memory"><ShieldCheck size={16} /></span><div><strong>{memory.purpose}</strong><span>Active · admitted {formatDate(memory.admitted_at)}</span></div><ChevronRight size={16} /></Link>)}<Link to="/memory" className="panel-link">Open Organizational Memory <ArrowUpRight size={15} /></Link></div>;
+  return <div className="intel-list">{data.memory.map((memory) => <Link to={`/memory/${memory.memory_id}?project_id=${memory.project_id ?? ""}&workspace_id=${memory.workspace_id}`} className="intel-row" key={memory.memory_id}><span className="intel-icon memory"><ShieldCheck size={16} /></span><div><strong>{memory.purpose}</strong><span>Active · admitted {formatDate(memory.admitted_at)}</span></div><ChevronRight size={16} /></Link>)}<Link to="/memory" className="panel-link">Open Organizational Memory <ArrowUpRight size={15} /></Link></div>;
 }
 
 function AssistantWidget({ data }: { data: CommandCenterData }) {
