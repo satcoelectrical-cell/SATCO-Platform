@@ -45,6 +45,7 @@ it("creates Workspace and Capture then exposes contextual AI navigation", async 
   const user = userEvent.setup(); render(<MemoryRouter initialEntries={["/projects/7"]}><Routes><Route path="/projects/:projectId" element={<ProjectWorkspacePage />} /></Routes></MemoryRouter>);
   await user.selectOptions(await screen.findByLabelText("Workspace"), "9"); await user.type(screen.getByLabelText("Capture content"), "Observed intermittent relay chatter."); await user.click(screen.getByRole("button", { name: /create capture/i }));
   expect(apiMock.createCapture).toHaveBeenCalledWith(expect.objectContaining({ project_id: 7, workspace_id: 9, source_kind: "observation" }));
+  expect(await screen.findByRole("link", { name: /create technical report from observation/i })).toHaveAttribute("href", "/reports?project_id=7&workspace_id=9&capture_id=00000000-0000-0000-0000-000000000009");
   expect(await screen.findByRole("link", { name: /open ai advice/i })).toHaveAttribute("href", expect.stringContaining("capture_id=00000000"));
 });
 

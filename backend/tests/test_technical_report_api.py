@@ -1,6 +1,7 @@
 """Focused S15 transport and prohibited-route evidence for PATCH-032."""
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -14,6 +15,17 @@ from app.api.v1.routers import technical_reports as technical_report_router
 from app.api.v1.routers.technical_reports import (
     TechnicalReportApplication, get_technical_report_application,
     _provenance_dto,
+)
+from app.api.v1.routers.engineering_experience_captures import (
+    EngineeringExperienceCaptureApplication,
+    get_engineering_experience_capture_application,
+)
+from app.enums.engineering_experience_capture import (
+    EngineeringExperienceCaptureLifecycle,
+    EngineeringExperienceSourceKind,
+)
+from app.models.engineering_experience_capture_command import (
+    EngineeringExperienceCaptureActor,
 )
 from app.main import app
 from app.models.technical_report import TechnicalReport
@@ -114,6 +126,56 @@ def test_exact_approved_route_surface_and_prohibited_routes():
         for suffix in ("publish", "approve", "review", "supersede", "archive"):
             assert client.post(f"/technical-reports/{identifier}/{suffix}").status_code == 404
     finally: app.dependency_overrides.clear()
+
+
+def test_capture_candidate_static_route_precedes_report_uuid_route_and_returns_authorized_source():
+    capture_id = UUID("1d1b2b20-4ce2-4568-821b-1f935d92eaa2")
+
+    class CaptureService:
+        def list_workspace(self, workspace_id, filters, page, size, actor):
+            assert (workspace_id, page, size) == (1, 1, 20)
+            assert filters.lifecycle is EngineeringExperienceCaptureLifecycle.CAPTURED
+            assert actor.organization_id == ACTOR.organization_id
+            return SimpleNamespace(
+                items=[SimpleNamespace(
+                    id=capture_id,
+                    organization_id=ACTOR.organization_id,
+                    project_id=11,
+                    workspace_id=1,
+                    discipline="electrical",
+                    engineering_object_id=None,
+                    source_kind=EngineeringExperienceSourceKind.OBSERVATION,
+                    original_content="Observed abnormal terminal temperature rise.",
+                    source_reference=None,
+                    creator_id=ACTOR.actor_id,
+                    lifecycle=EngineeringExperienceCaptureLifecycle.CAPTURED,
+                    version=1,
+                    created_at=datetime(2026, 8, 20, 10, 47, tzinfo=timezone.utc),
+                )],
+                total=1,
+                page=page,
+                size=size,
+            )
+
+    capture_app = EngineeringExperienceCaptureApplication(
+        CaptureService(),
+        EngineeringExperienceCaptureActor(ACTOR.actor_id, ACTOR.organization_id),
+    )
+    app.dependency_overrides[get_engineering_experience_capture_application] = (
+        lambda: capture_app
+    )
+    client = TestClient(app)
+    try:
+        response = client.get(
+            "/technical-reports/capture-source-candidates",
+            params={"project_id": 11, "workspace_id": 1, "page": 1, "size": 20},
+        )
+        assert response.status_code == 200
+        assert response.json()["items"][0]["capture_id"] == str(capture_id)
+        assert response.json()["items"][0]["project_id"] == 11
+        assert response.json()["items"][0]["workspace_id"] == 1
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_create_get_list_lineage_and_ai_transport_mapping():

@@ -29,6 +29,9 @@ it("creates a Human-authored draft with server-composed Capture provenance", asy
   apiMock.createReport.mockResolvedValue({ state: "success", data: draft });
   const user = userEvent.setup();
   render(<MemoryRouter initialEntries={["/reports?project_id=7&workspace_id=9&capture_id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]}><Routes><Route path="/reports" element={<ReportsPage />} /><Route path="/reports/:reportId" element={<ReportsPage />} /></Routes></MemoryRouter>);
+  await waitFor(() => expect(apiMock.reportSources).toHaveBeenCalledWith(7, 9));
+  expect(await screen.findByRole("radio")).toBeChecked();
+  expect(screen.queryByLabelText(/Capture ID/i)).not.toBeInTheDocument();
   await user.type(await screen.findByLabelText("Engineering scope"), content.engineering_scope);
   await user.type(screen.getByLabelText("Technical content"), content.technical_content);
   await user.type(screen.getByLabelText("Uncertainty"), content.uncertainty);
