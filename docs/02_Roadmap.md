@@ -20,25 +20,24 @@ The goal is Engineering Assistance.
 
 Current Roadmap Position:
 
-PATCH-038 Customer-to-Capture Engineering Work Bootstrap is DONE / CLOSED;
-QG-M1, Human QG-11, QG-12, push, and remote verification are PASS.
+PATCH-039 Technical Report Authoring & Human Acceptance Experience is DONE /
+CLOSED; QG-M1, Human QG-11, QG-12, push, and remote verification are PASS.
 
 Latest Completed Capability:
 
-PATCH-038 — Customer-to-Capture Engineering Work Bootstrap — DONE / CLOSED.
+PATCH-039 — Technical Report Authoring & Human Acceptance Experience — DONE /
+CLOSED.
 
 Next Registered Capability:
 
-PATCH-039 — Technical Report Authoring & Human Acceptance Experience —
-IMPLEMENTATION COMPLETE / DELIVERY PENDING. Architecture/EDS/IDS/Plan/IRR,
-Batches 1–4, Independent Final Review, Human QG-11, and QG-M1 are PASS.
+None. PATCH-040 is not registered or authorized.
 PATCH-030 and PATCH-031 remain
 intentionally unregistered PATCH identifiers; their existing EDS identifiers
 retain their separate historical meanings.
 
 Executable PATCH:
 
-PATCH-039 — Technical Report Authoring & Human Acceptance Experience.
+None.
 
 ---
 

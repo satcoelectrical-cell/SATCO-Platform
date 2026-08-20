@@ -14,8 +14,8 @@
 | Batches 1–4 | ACCEPTED / COMPLETE |
 | Independent Final Implementation Review | PASS |
 | Human QG-11 | PASS |
-| QG-12 / delivery | PENDING |
-| PATCH status | IMPLEMENTATION COMPLETE / DELIVERY PENDING |
+| QG-12 / delivery | PASS — delivery `80d006e5232e154502a36baf46b9b40be7c3504c`; remote verification PASS; divergence 0/0 |
+| PATCH status | DONE / CLOSED |
 
 ## Product Outcome
 
