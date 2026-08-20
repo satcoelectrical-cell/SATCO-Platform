@@ -412,3 +412,23 @@ class TechnicalReportLineageResponse(StrictTechnicalReportSchema):
     subject: TechnicalReportSummary
     predecessor: TechnicalReportSummary | None
     successors: TechnicalReportListResponse
+
+
+class TechnicalReportCaptureSourceCandidate(StrictTechnicalReportSchema):
+    """Display-safe Capture choice plus server-composed canonical provenance."""
+
+    capture_id: UUID
+    project_id: PositiveIdentifier
+    workspace_id: PositiveIdentifier
+    source_kind: EngineeringExperienceSourceKind
+    version: PositiveVersion
+    created_at: AwareDatetime
+    preview: Annotated[str, Field(min_length=1, max_length=240)]
+    provenance: TechnicalReportProvenanceSchema
+
+
+class TechnicalReportCaptureSourceCandidateList(StrictTechnicalReportSchema):
+    items: list[TechnicalReportCaptureSourceCandidate] = Field(max_length=20)
+    total: int = Field(ge=0)
+    page: int = Field(ge=1)
+    size: int = Field(ge=1, le=20)

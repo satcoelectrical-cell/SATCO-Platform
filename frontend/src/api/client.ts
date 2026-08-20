@@ -1,4 +1,4 @@
-import type { AdviceResponse, ApiResult, Capture, Customer, JournalWorkspace, MemoryPage, Paginated, Project, TechnicalReport, Workspace } from "./types";
+import type { AdviceResponse, ApiResult, Capture, Customer, JournalWorkspace, MemoryPage, Paginated, Project, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, Workspace } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const TOKEN_KEY = "satco.auth.access.v1";
@@ -19,6 +19,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResu
     if (response.status === 401) { authSession.clear(); return { state: "protected" }; }
     if (response.status === 403 || response.status === 404) return { state: "protected" };
     if (response.status === 400 || response.status === 422) return { state: "invalid" };
+    if (response.status === 409) return { state: "conflict" };
     if (response.status === 503) return { state: "unavailable" };
     if (!response.ok) return { state: "error" };
     return { state: "success", data: await response.json() as T };
@@ -57,6 +58,11 @@ export const api = {
   createCapture: (payload: { project_id: number; workspace_id: number; source_kind: string; original_content: string; source_reference?: string | null }) => request<Capture>("/engineering-experience-captures", { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ ...payload, engineering_object_id: null }) }),
   journal: (projectId?: number) => request<JournalWorkspace>(`/api/v1/engineering-journal${projectId ? `?project_id=${projectId}` : ""}`),
   reports: (workspaceId: number, projectId?: number) => request<{ items: TechnicalReport[]; total: number }>(`/technical-reports?workspace_id=${workspaceId}${projectId ? `&project_id=${projectId}` : ""}&page=1&size=20`),
+  report: (id: string) => request<TechnicalReportDetail>(`/technical-reports/${encodeURIComponent(id)}`),
+  reportSources: (projectId: number, workspaceId: number) => request<ReportSourceCandidatePage>(`/technical-reports/capture-source-candidates?project_id=${projectId}&workspace_id=${workspaceId}&page=1&size=20`),
+  createReport: (payload: { workspace_id: number; project_id: number; purpose: string; content: ReportContent; qualification: ReportQualification; provenance: ReportProvenance[] }) => request<TechnicalReportDraft>("/technical-reports", { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
+  reviseReport: (id: string, payload: { expected_version: number; expected_draft_revision_id: string; content: ReportContent; qualification: ReportQualification; provenance: ReportProvenance[]; rationale: string }) => request<TechnicalReportDraft>(`/technical-reports/${encodeURIComponent(id)}/draft-revisions`, { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
+  acceptReport: (id: string, payload: { expected_version: number; exact_draft_revision_id: string; confirmed: true; rationale: string }) => request<TechnicalReportAccepted>(`/technical-reports/${encodeURIComponent(id)}/acceptance`, { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
   memory: (workspaceId: number, projectId?: number) => closedResult<MemoryPage>(`/organizational-memory?workspace_id=${workspaceId}${projectId ? `&project_id=${projectId}` : ""}&page_size=20`),
   advice: (payload: { capture_id: string; project_id: number; workspace_id: number | null; human_instruction: string }) => request<AdviceResponse>("/engineering-copilot/capture-advice", { method: "POST", body: JSON.stringify(payload) }),
 };

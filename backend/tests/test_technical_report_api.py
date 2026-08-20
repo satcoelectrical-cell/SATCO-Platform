@@ -95,6 +95,7 @@ def _client():
 def test_exact_approved_route_surface_and_prohibited_routes():
     expected = {
         ("/technical-reports", "post"), ("/technical-reports", "get"),
+        ("/technical-reports/capture-source-candidates", "get"),
         ("/technical-reports/{report_id}", "get"),
         ("/technical-reports/{report_id}/draft-revisions", "post"),
         ("/technical-reports/{report_id}/acceptance", "post"),

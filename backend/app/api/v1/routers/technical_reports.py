@@ -41,6 +41,12 @@ from app.schemas.technical_report import (
     TechnicalReportReviseDraftRequest, TechnicalReportSummary,
 )
 from app.services.technical_report_service import TechnicalReportService
+from app.adapters.technical_report_capture_source import TechnicalReportCaptureSourceAdapter
+from app.api.v1.routers.engineering_experience_captures import (
+    EngineeringExperienceCaptureApplication,
+    get_engineering_experience_capture_application,
+)
+from app.schemas.technical_report import TechnicalReportCaptureSourceCandidateList
 
 
 _MAPPINGS = (
@@ -183,6 +189,28 @@ def create_report(data: TechnicalReportCreateRequest, correlation_id: Correlatio
         _qualification(data.qualification), _provenance(data.provenance),
     )
     return _detail(app.service.create_draft(command).report)
+
+
+@router.get(
+    "/technical-reports/capture-source-candidates",
+    response_model=TechnicalReportCaptureSourceCandidateList,
+)
+def list_capture_source_candidates(
+    project_id: int = Query(..., gt=0),
+    workspace_id: int = Query(..., gt=0),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=20),
+    capture_app: EngineeringExperienceCaptureApplication = Depends(
+        get_engineering_experience_capture_application
+    ),
+):
+    return TechnicalReportCaptureSourceAdapter(capture_app.service).list_candidates(
+        actor=capture_app.actor,
+        project_id=project_id,
+        workspace_id=workspace_id,
+        page=page,
+        size=size,
+    )
 
 
 @router.get("/technical-reports/{report_id}",

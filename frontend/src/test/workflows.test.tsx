@@ -1,10 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { MemoryPage, ReportsPage } from "../pages/KnowledgePages";
+import { MemoryPage } from "../pages/KnowledgePages";
+import { ReportsPage } from "../pages/ReportPages";
 import { ProjectsPage, ProjectWorkspacePage } from "../pages/ProjectsPage";
 
-const { apiMock } = vi.hoisted(() => ({ apiMock: { customers: vi.fn(), createCustomer: vi.fn(), createProject: vi.fn(), updateProject: vi.fn(), projects: vi.fn(), project: vi.fn(), workspaces: vi.fn(), createWorkspace: vi.fn(), captures: vi.fn(), createCapture: vi.fn(), reports: vi.fn(), memory: vi.fn() } }));
+const { apiMock } = vi.hoisted(() => ({ apiMock: { customers: vi.fn(), createCustomer: vi.fn(), createProject: vi.fn(), updateProject: vi.fn(), projects: vi.fn(), project: vi.fn(), workspaces: vi.fn(), createWorkspace: vi.fn(), captures: vi.fn(), createCapture: vi.fn(), reports: vi.fn(), reportSources: vi.fn(), report: vi.fn(), createReport: vi.fn(), reviseReport: vi.fn(), acceptReport: vi.fn(), memory: vi.fn() } }));
 vi.mock("../api/client", () => ({ api: apiMock }));
 const project = { id: 7, project_code: "SAT-007", name: "Substation Modernization", description: "Protection and control renewal.", customer: { id: 2, name: "Grid Operations" }, status: "in_progress", priority: "high", owner: null, primary_assignee: null, progress: 42, target_completion_date: null, updated_at: "2026-08-14T00:00:00Z" };
 
@@ -47,9 +48,11 @@ it("creates Workspace and Capture then exposes contextual AI navigation", async 
   expect(await screen.findByRole("link", { name: /open ai advice/i })).toHaveAttribute("href", expect.stringContaining("capture_id=00000000"));
 });
 
-it("loads bounded Technical Reports only after explicit Workspace context", async () => {
-  apiMock.reports.mockResolvedValue({ state: "success", data: { items: [{ id: "00000000-0000-0000-0000-000000000010", workspace_id: 9, project_id: 7, purpose: "design_basis", lifecycle: "accepted", version: 3, is_preliminary: false, updated_at: "2026-08-14T00:00:00Z" }], total: 1 } });
-  const user = userEvent.setup(); render(<MemoryRouter><ReportsPage /></MemoryRouter>); await user.type(screen.getByLabelText("Project ID"), "7"); await user.type(screen.getByLabelText("Workspace ID"), "9"); await user.click(screen.getByRole("button", { name: "Load context" })); expect(await screen.findByText("Report 00000000")).toBeVisible(); expect(apiMock.reports).toHaveBeenCalledWith(9, 7);
+it("loads bounded Technical Reports through authorized selectors without typed IDs", async () => {
+  apiMock.projects.mockResolvedValue({ state: "success", data: { items: [project], total: 1, page: 1, size: 20 } });
+  apiMock.workspaces.mockResolvedValue({ state: "success", data: { items: [{ id: 9, project_id: 7, display_name: "Electrical Engineering" }], total: 1 } });
+  apiMock.reports.mockResolvedValue({ state: "success", data: { items: [], total: 0 } }); apiMock.reportSources.mockResolvedValue({ state: "success", data: { items: [], total: 0, page: 1, size: 20 } });
+  const user = userEvent.setup(); render(<MemoryRouter><ReportsPage /></MemoryRouter>); await user.selectOptions(await screen.findByLabelText("Project"), "7"); await user.selectOptions(await screen.findByLabelText("Engineering Workspace"), "9"); expect(await screen.findByText("No reports yet")).toBeVisible(); expect(apiMock.reports).toHaveBeenCalledWith(9, 7); expect(screen.queryByLabelText("Project ID")).not.toBeInTheDocument();
 });
 
 it("renders protected Memory as one neutral state with no count", async () => {

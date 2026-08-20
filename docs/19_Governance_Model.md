@@ -593,7 +593,8 @@ authorize implementation.
 | PATCH-035 | AI Capture Assistant | `docs/patches/PATCH-035.md` | DONE / CLOSED — delivery `ec8a0bc92c63d18d0d8d4831e6fa3814ac5118fe`; governance closure `01fb002186297eb5bcaa5e6d0ee835402616ee33`; QG-M1/QG-11/QG-12 and remote verification PASS |
 | PATCH-036 | SATCO Web Application & Engineering Dashboard | `docs/patches/PATCH-036.md` | DONE / CLOSED — delivery `9e2749f1534bca21131d0fd38fe6b963e41f38de`; QG-M1/QG-11/QG-12, push, and remote verification PASS; divergence 0/0 |
 | PATCH-037 | SATCO Engineering Command Center Productization | `docs/patches/PATCH-037.md` | DONE / CLOSED — delivery `8062d49e497f22fef44f4f96b08068683ac3a9bc`; QG-M1/QG-11/QG-12, push, and remote verification PASS; divergence 0/0 |
-| PATCH-038 | Customer-to-Capture Engineering Work Bootstrap | `docs/patches/PATCH-038.md` | IMPLEMENTATION COMPLETE / DELIVERY PENDING — Architecture/EDS/IDS/Plan/IRR/Batches 1–4/Final Review/Human QG-11/QG-M1 PASS; Alembic head `e03800000001`; QG-12 and closure pending |
+| PATCH-038 | Customer-to-Capture Engineering Work Bootstrap | `docs/patches/PATCH-038.md` | DONE / CLOSED — delivery `b2b7b102be4e957d106b3138dd6f14b5488eb6ff`; governance closure `b5bf1e1c22f262b1aa3cf0be3a12a70e6413e998`; QG-M1/QG-11/QG-12 and remote verification PASS |
+| PATCH-039 | Technical Report Authoring & Human Acceptance Experience | `docs/patches/PATCH-039.md` | IMPLEMENTATION COMPLETE / DELIVERY PENDING — Architecture/EDS/IDS/Plan/IRR/Batches 1–4/Final Review/Human QG-11/QG-M1 PASS |
 
 PATCH-030 and PATCH-031 are intentionally unregistered PATCH identifiers. The
 repository contains the separate Draft

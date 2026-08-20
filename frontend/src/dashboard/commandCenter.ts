@@ -1,7 +1,7 @@
 import { api } from "../api/client";
 import type { ApiResult, Capture, MemorySummary, Project, TechnicalReport, Workspace } from "../api/types";
 
-export type SourceState = "success" | "protected" | "invalid" | "unavailable" | "error" | "not_requested";
+export type SourceState = "success" | "protected" | "invalid" | "conflict" | "unavailable" | "error" | "not_requested";
 
 export interface CommandCenterData {
   projects: Project[];

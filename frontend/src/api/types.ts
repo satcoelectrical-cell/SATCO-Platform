@@ -1,4 +1,4 @@
-export type ResultState = "success" | "protected" | "invalid" | "unavailable" | "error";
+export type ResultState = "success" | "protected" | "invalid" | "conflict" | "unavailable" | "error";
 export type ApiResult<T> = { state: "success"; data: T } | { state: Exclude<ResultState, "success"> };
 
 export interface Paginated<T> { items: T[]; total: number; page: number; size: number }
@@ -24,9 +24,20 @@ export interface Capture {
   created_at: string; updated_at: string;
 }
 export interface TechnicalReport {
-  id: string; workspace_id: number; project_id: number | null; purpose: string;
-  lifecycle: string; version: number; is_preliminary: boolean; updated_at: string;
+  id: string; organization_id: string; workspace_id: number; project_id: number | null;
+  owner_id: number; purpose: string; lifecycle: "draft" | "accepted"; version: number;
+  draft_revision_id: string; is_preliminary: boolean; predecessor_report_id: string | null;
+  created_at: string; updated_at: string; allowed_actions: string[];
 }
+export interface ReportContent { engineering_scope: string; technical_content: string; assumptions: string[]; uncertainty: string; limitations: string[]; conclusions: string; recommendations: string[] }
+export interface ReportQualification { is_preliminary: boolean; evidence_deficiencies: string[]; unresolved_issues: string[]; follow_up_requirements: string[] }
+export interface ReportProvenance { entry_id: string; ordinal: number; source_class: string; source_type: string; is_material: boolean; owning_capability: string | null; reliance_role: string; verification_status: string; availability_status: string; origin_attribution: string; limitations: string[]; locator: Record<string, unknown>; integrity_algorithm: string | null; integrity_digest: string | null }
+export interface TechnicalReportDraft extends TechnicalReport { lifecycle: "draft"; content: ReportContent; qualification: ReportQualification; provenance: ReportProvenance[] }
+export interface AcceptedReportSnapshot { report_id: string; purpose: string; organization_id: string; workspace_id: number; project_id: number | null; content: ReportContent; qualification: ReportQualification; provenance: ReportProvenance[]; accepted_draft_revision_id: string; accepted_aggregate_version: number; accepted_by_id: number; accepted_at: string; predecessor_report_id: string | null; integrity_digest: string }
+export interface TechnicalReportAccepted extends TechnicalReport { lifecycle: "accepted"; accepted_snapshot: AcceptedReportSnapshot; accepted_by_id: number; accepted_at: string; accepted_draft_revision_id: string; accepted_aggregate_version: number }
+export type TechnicalReportDetail = TechnicalReportDraft | TechnicalReportAccepted;
+export interface ReportSourceCandidate { capture_id: string; project_id: number; workspace_id: number; source_kind: string; version: number; created_at: string; preview: string; provenance: ReportProvenance }
+export interface ReportSourceCandidatePage { items: ReportSourceCandidate[]; total: number; page: number; size: number }
 export interface MemorySummary {
   memory_id: string; version: number; standing: "active"; source_report_id: string;
   purpose: string; workspace_id: number; project_id: number | null; admitted_at: string; updated_at: string;

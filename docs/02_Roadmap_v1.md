@@ -190,12 +190,12 @@ Completed capabilities retain their recorded closure status. Technical Report
 is PATCH-032, Engineering Knowledge Graph Integration is PATCH-033, and
 Engineering Organizational Memory is PATCH-034, AI Capture Assistant is
 PATCH-035, and the SATCO Web Application & Engineering Dashboard is PATCH-036.
-PATCH-034 through PATCH-037 are DONE/CLOSED. PATCH-037 QG-M1, Human QG-11,
-QG-12, push, and remote verification are PASS. PATCH-038 implements the bounded
-Customer-to-Capture Engineering Work Bootstrap. Architecture, EDS, IDS, Plan,
-IRR, Batches 1–4, Independent Final Implementation Review, Human QG-11, and
-QG-M1 are PASS; implementation is complete and QG-12 delivery/closure remain
-pending. Other unallocated identifiers remain unassigned.
+PATCH-034 through PATCH-038 are DONE/CLOSED. PATCH-038 bounded delivery is
+`b2b7b102be4e957d106b3138dd6f14b5488eb6ff` and governance closure is
+`b5bf1e1c22f262b1aa3cf0be3a12a70e6413e998`; QG-M1, Human QG-11, QG-12,
+push, and remote verification are PASS. PATCH-039 is registered for the
+Technical Report Authoring & Human Acceptance Experience. Other unallocated
+identifiers remain unassigned.
 
 | Identifier | Registry status | Roadmap scope |
 |---|---|---|
@@ -209,8 +209,8 @@ pending. Other unallocated identifiers remain unassigned.
 | PATCH-035 | DONE / CLOSED | AI Capture Assistant; provider-neutral ephemeral advisory Capture refinement |
 | PATCH-036 | DONE / CLOSED | SATCO Web Application & Engineering Dashboard; delivery `9e2749f1534bca21131d0fd38fe6b963e41f38de`; QG-M1/QG-11/QG-12 and remote verification PASS |
 | PATCH-037 | DONE / CLOSED | Engineering Command Center Productization; delivery `8062d49e497f22fef44f4f96b08068683ac3a9bc`; QG-M1/QG-11/QG-12 and remote verification PASS |
-| PATCH-038 | IMPLEMENTATION COMPLETE / DELIVERY PENDING | Customer-to-Capture Engineering Work Bootstrap; Architecture/EDS/IDS/Plan/IRR/Batches 1–4/Final Review/Human QG-11/QG-M1 PASS; QG-12 and closure pending |
-| PATCH-039 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
+| PATCH-038 | DONE / CLOSED | Customer-to-Capture Engineering Work Bootstrap; delivery `b2b7b102be4e957d106b3138dd6f14b5488eb6ff`; closure `b5bf1e1c22f262b1aa3cf0be3a12a70e6413e998`; QG-M1/QG-11/QG-12 and remote verification PASS |
+| PATCH-039 | IMPLEMENTATION COMPLETE / DELIVERY PENDING | Technical Report Authoring & Human Acceptance Experience; Architecture/EDS/IDS/Plan/IRR/Batches 1–4/Final Review/Human QG-11/QG-M1 PASS |
 | PATCH-040 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 | PATCH-041 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
 

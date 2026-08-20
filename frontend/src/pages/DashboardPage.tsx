@@ -38,7 +38,7 @@ function EngineeringWorkWidget({ data }: { data: CommandCenterData }) {
 
 function ReportsWidget({ data }: { data: CommandCenterData }) {
   if (!data.reports.length) return <SourceEmpty state={data.sourceStates.reports} title="No visible reports" detail="Scoped Technical Reports will appear here." />;
-  return <div className="intel-list">{data.reports.map((report) => <Link to="/reports" className="intel-row" key={report.id}><span className="intel-icon"><FileCheck2 size={16} /></span><div><strong>{report.purpose}</strong><span>v{report.version} · {report.lifecycle} · {formatDate(report.updated_at)}</span></div><ChevronRight size={16} /></Link>)}<Link to="/reports" className="panel-link">Open Technical Reports <ArrowUpRight size={15} /></Link></div>;
+  return <div className="intel-list">{data.reports.map((report) => <Link to={`/reports/${report.id}?project_id=${report.project_id ?? ""}&workspace_id=${report.workspace_id}`} className="intel-row" key={report.id}><span className="intel-icon"><FileCheck2 size={16} /></span><div><strong>{report.purpose}</strong><span>v{report.version} · {report.lifecycle} · {formatDate(report.updated_at)}</span></div><ChevronRight size={16} /></Link>)}<Link to="/reports" className="panel-link">Open Technical Reports <ArrowUpRight size={15} /></Link></div>;
 }
 
 function MemoryWidget({ data }: { data: CommandCenterData }) {
