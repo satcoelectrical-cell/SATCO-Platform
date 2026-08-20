@@ -16,8 +16,11 @@
 | Independent Final Review | PASS |
 | Human QG-11 | PASS |
 | QG-12 | PASS |
-| Delivery | AUTHORIZED / PENDING |
-| Closure | NOT STARTED |
+| Delivery | PASS — `2baddc03ecd258bc91c2538315dc6f4ffd58843f` |
+| Remote verification | PASS — divergence `0/0` |
+| Closure | DONE / CLOSED |
+
+Final status: **DONE / CLOSED**. Batches 1–4 are ACCEPTED / COMPLETE. All Critical/Major findings are resolved; the historical FAIL → remediation → re-review chains remain preserved in standalone review artifacts. Deferred enterprise IAM, cross-Organization administration/switching, email recovery, Evidence/document intake, AI authority, and PATCH-042 remain outside the delivered V1.
 
 ## Product boundary
 
