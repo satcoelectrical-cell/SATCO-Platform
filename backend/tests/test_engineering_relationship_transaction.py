@@ -58,11 +58,8 @@ def test_create_persists_relationship_audit_outbox_and_idempotency_atomically(
     actor_user = domain["actors"]["consumer"]
     project = domain["project"]
     workspace = domain["consumer_workspace"]
-    organization = Organization()
-    db_session.add(organization)
-    db_session.flush()
-    project.organization_id = organization.id
-    db_session.flush()
+    organization = db_session.get(Organization, project.organization_id)
+    assert organization is not None
     now = datetime.now(timezone.utc)
     source = EngineeringObject(
         id=uuid4(), organization_id=organization.id,

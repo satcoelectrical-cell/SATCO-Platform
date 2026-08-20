@@ -1,9 +1,9 @@
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-
-from sqlalchemy.orm import relationship
 
 class Customer(Base):
     __tablename__ = "customers"
@@ -14,37 +14,47 @@ class Customer(Base):
         index=True
     )
 
+    organization_id = Column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey(
+            "organizations.id",
+            name="fk_customers_organization_id_organizations",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+
     name = Column(
-        String,
+        String(200),
         nullable=False
     )
 
     company = Column(
-        String,
+        String(200),
         nullable=True
     )
 
     phone = Column(
-        String,
+        String(64),
         nullable=True
     )
 
     email = Column(
-        String,
+        String(320),
         nullable=True
     )
 
     contacts = relationship(
-    "Contact",
-    back_populates="customer",
-    cascade="all, delete-orphan",
+        "Contact",
+        back_populates="customer",
     )
     
     projects = relationship(
-    "Project",
-    back_populates="customer",
-    cascade="all, delete-orphan",
+        "Project",
+        back_populates="customer",
     )
+
+    organization = relationship("Organization")
 
     created_at = Column(
         DateTime(timezone=True),

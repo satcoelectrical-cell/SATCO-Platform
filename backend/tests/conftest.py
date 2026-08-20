@@ -107,6 +107,19 @@ with owner_engine.begin() as owner_connection:
             owner_connection.exec_driver_sql(
                 f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "{table_name}" TO satco_runtime'
             )
+    if owner_connection.execute(
+        text("SELECT to_regclass('public.customers')")
+    ).scalar_one() is not None:
+        owner_connection.exec_driver_sql(
+            "REVOKE ALL ON TABLE customers FROM satco_runtime"
+        )
+        owner_connection.exec_driver_sql(
+            "GRANT SELECT, INSERT, DELETE ON TABLE customers TO satco_runtime"
+        )
+        owner_connection.exec_driver_sql(
+            "GRANT UPDATE (name, company, phone, email) "
+            "ON TABLE customers TO satco_runtime"
+        )
     for table_name in aggregate_tables:
         if owner_connection.execute(text("SELECT to_regclass(:name)"), {"name": f"public.{table_name}"}).scalar_one() is not None:
             owner_connection.exec_driver_sql(
@@ -245,9 +258,11 @@ def client(db_session):
 
 
 @event.listens_for(SqlAlchemySession, "before_flush")
-def assign_test_project_organization(session, flush_context, instances):
+def assign_test_owned_organization(session, flush_context, instances):
     organization_id = UUID("02810000-0000-4000-8000-000000000001")
     for record in session.new:
+        if isinstance(record, Customer) and record.organization_id is None:
+            record.organization_id = organization_id
         if isinstance(record, Project) and record.organization_id is None:
             record.organization_id = organization_id
 

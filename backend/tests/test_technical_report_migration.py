@@ -15,7 +15,7 @@ EXPECTED_TABLES = {
 
 
 def test_repository_head_is_patch_032() -> None:
-    assert TEST_DATABASE_REVISION == "e03400000001"
+    assert TEST_DATABASE_REVISION == "e03800000001"
 
 
 def test_technical_report_schema_matches_authorized_persistence() -> None:

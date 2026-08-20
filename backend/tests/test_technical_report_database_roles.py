@@ -169,9 +169,12 @@ def _scope(connection):
             INSERT INTO users(email, username, hashed_password, role, is_active, created_at)
             VALUES (:email, :username, 'test', 'engineer', true, now()) RETURNING id
         """), {"email": f"patch032-{token}@example.invalid", "username": f"patch032-{token}"}).scalar_one()
-        customer_id = owner.execute(text("INSERT INTO customers(name) VALUES ('PATCH-032 Test') RETURNING id")).scalar_one()
         organization_id = uuid4()
         owner.execute(text("INSERT INTO organizations(id, is_active) VALUES (:id, true)"), {"id": organization_id})
+        customer_id = owner.execute(text("""
+            INSERT INTO customers(name, organization_id)
+            VALUES ('PATCH-032 Test', :organization_id) RETURNING id
+        """), {"organization_id": organization_id}).scalar_one()
         project_id = owner.execute(text("""
             INSERT INTO projects(organization_id, project_code, name, customer_id, status, priority, owner_id, progress, created_at)
             VALUES (:organization_id, :code, 'PATCH-032 Test', :customer_id, 'new', 'medium', :owner_id, 0, now()) RETURNING id

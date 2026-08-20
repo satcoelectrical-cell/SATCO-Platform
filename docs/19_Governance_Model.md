@@ -593,6 +593,7 @@ authorize implementation.
 | PATCH-035 | AI Capture Assistant | `docs/patches/PATCH-035.md` | DONE / CLOSED — delivery `ec8a0bc92c63d18d0d8d4831e6fa3814ac5118fe`; governance closure `01fb002186297eb5bcaa5e6d0ee835402616ee33`; QG-M1/QG-11/QG-12 and remote verification PASS |
 | PATCH-036 | SATCO Web Application & Engineering Dashboard | `docs/patches/PATCH-036.md` | DONE / CLOSED — delivery `9e2749f1534bca21131d0fd38fe6b963e41f38de`; QG-M1/QG-11/QG-12, push, and remote verification PASS; divergence 0/0 |
 | PATCH-037 | SATCO Engineering Command Center Productization | `docs/patches/PATCH-037.md` | DONE / CLOSED — delivery `8062d49e497f22fef44f4f96b08068683ac3a9bc`; QG-M1/QG-11/QG-12, push, and remote verification PASS; divergence 0/0 |
+| PATCH-038 | Customer-to-Capture Engineering Work Bootstrap | `docs/patches/PATCH-038.md` | IMPLEMENTATION COMPLETE / DELIVERY PENDING — Architecture/EDS/IDS/Plan/IRR/Batches 1–4/Final Review/Human QG-11/QG-M1 PASS; Alembic head `e03800000001`; QG-12 and closure pending |
 
 PATCH-030 and PATCH-031 are intentionally unregistered PATCH identifiers. The
 repository contains the separate Draft
@@ -620,7 +621,10 @@ Architecture, EDS, IDS, Plan, IRR, implementation, Independent Final Review,
 Human QG-11, QG-12 delivery, push, and remote verification are PASS; PATCH-036
 is `DONE / CLOSED`. PATCH-037 Engineering Command Center Productization is
 also `DONE / CLOSED`; QG-M1, Human QG-11, QG-12, push, and remote verification
-are PASS. PATCH-038 remains unregistered and has not begun.
+are PASS. PATCH-038 Customer-to-Capture Engineering Work Bootstrap has PASS
+Architecture, EDS, IDS, Plan, IRR, Batches 1–4, Independent Final
+Implementation Review, Human QG-11, and QG-M1. Implementation is complete at
+Alembic head `e03800000001`; QG-12 delivery and closure remain pending.
 
 The former PATCH-022.2 through PATCH-022.10 reservations in the Draft
 PATCH-022 sequence are superseded. PATCH-022.4 through PATCH-022.10 are

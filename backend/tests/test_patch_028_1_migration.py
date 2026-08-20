@@ -167,7 +167,7 @@ def test_patch_028_1_preserves_seven_projects_and_engineer():
                 )
             ).scalar_one()
 
-        command.upgrade(alembic_config, "head")
+        command.upgrade(alembic_config, "e02810000001")
 
         with engine.connect() as connection:
             after_projects = connection.execute(

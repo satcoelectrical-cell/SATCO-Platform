@@ -1,4 +1,9 @@
+from uuid import UUID
+
 from app.models.audit_log import AuditLog
+
+
+ORGANIZATION_ID = UUID("02810000-0000-4000-8000-000000000001")
 
 
 def customer_payload(name="Customer One"):
@@ -14,6 +19,7 @@ def test_customer_crud_missing_records_and_audits(
     client,
     db_session,
     engineer_headers,
+    admin_headers,
 ):
     created = client.post(
         "/customers/",
@@ -49,13 +55,13 @@ def test_customer_crud_missing_records_and_audits(
 
     deleted = client.delete(
         f"/customers/{customer_id}",
-        headers=engineer_headers,
+        headers=admin_headers,
     )
     assert deleted.status_code == 200
 
     missing_delete = client.delete(
         "/customers/999999",
-        headers=engineer_headers,
+        headers=admin_headers,
     )
     assert missing_delete.status_code == 404
 
@@ -73,6 +79,26 @@ def test_customer_crud_missing_records_and_audits(
     assert actions == {"CREATE", "UPDATE", "DELETE"}
 
 
+def test_customer_response_and_listing_do_not_disclose_organization_id(
+    client,
+    engineer_headers,
+):
+    created = client.post(
+        "/customers/",
+        json=customer_payload("Scoped Customer"),
+        headers=engineer_headers,
+    )
+    assert created.status_code == 200
+    assert "organization_id" not in created.json()
+
+    listed = client.get("/customers/", headers=engineer_headers)
+    assert listed.status_code == 200
+    assert all(
+        "organization_id" not in item
+        for item in listed.json()["items"]
+    )
+
+
 def test_customer_detail_remains_isolated_and_functional(
     db_session,
 ):
@@ -81,12 +107,19 @@ def test_customer_detail_remains_isolated_and_functional(
     from app.services.customer_service import CustomerService
 
     customer = CustomerRepository(db_session).create(
-        CustomerCreate(**customer_payload("Detail Customer"))
+        CustomerCreate(**customer_payload("Detail Customer")),
+        organization_id=ORGANIZATION_ID,
     )
 
-    detail = CustomerService(db_session).get_detail(customer.id)
+    detail = CustomerService(db_session).get_detail(
+        customer.id,
+        organization_id=ORGANIZATION_ID,
+    )
 
     assert detail["customer"].id == customer.id
     assert detail["contacts"] == []
     assert detail["contact_count"] == 0
-    assert CustomerService(db_session).get_detail(999999) is None
+    assert CustomerService(db_session).get_detail(
+        999999,
+        organization_id=ORGANIZATION_ID,
+    ) is None

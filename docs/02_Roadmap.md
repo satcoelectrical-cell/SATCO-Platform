@@ -27,16 +27,21 @@ Latest Completed Capability:
 
 PATCH-037 — SATCO Engineering Command Center Productization — DONE / CLOSED.
 
-Next Conceptual Capability:
+Next Registered Capability:
 
-PATCH-038 remains unregistered and has not begun.
+PATCH-038 — Customer-to-Capture Engineering Work Bootstrap — IMPLEMENTATION
+COMPLETE / DELIVERY PENDING. Architecture, EDS, IDS, Plan, IRR, Batches 1–4,
+Independent Final Implementation Review, Human QG-11, and QG-M1 are PASS.
+Alembic head is `e03800000001`. QG-12 bounded delivery and closure remain
+pending.
 PATCH-030 and PATCH-031 remain
 intentionally unregistered PATCH identifiers; their existing EDS identifiers
 retain their separate historical meanings.
 
 Executable PATCH:
 
-No later PATCH is executable under PATCH-037 authority.
+None. PATCH-038 implementation is complete but delivery/closure is pending.
+PATCH-039 is not registered or authorized.
 
 ---
 

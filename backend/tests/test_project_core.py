@@ -212,10 +212,11 @@ def test_yearly_sequence_and_concurrent_project_creation():
         )
         customer_id = connection.execute(
             text(
-                "INSERT INTO customers (name) "
-                "VALUES ('Concurrency Customer') RETURNING id"
-            )
-        ).scalar_one()
+                    "INSERT INTO customers (name, organization_id) "
+                    "VALUES ('Concurrency Customer', :organization_id) RETURNING id"
+                ),
+                {"organization_id": organization_id},
+            ).scalar_one()
         starting_2027 = connection.execute(
             text(
                 "SELECT COALESCE(last_value, 0) "

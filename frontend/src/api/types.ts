@@ -3,6 +3,10 @@ export type ApiResult<T> = { state: "success"; data: T } | { state: Exclude<Resu
 
 export interface Paginated<T> { items: T[]; total: number; page: number; size: number }
 export interface Person { id: number; username: string; full_name: string | null }
+export interface Customer {
+  id: number; name: string; company: string | null; phone: string | null;
+  email: string | null; created_at: string;
+}
 export interface Project {
   id: number; project_code: string; name: string; description: string | null;
   customer: { id: number; name: string }; status: string; priority: string;

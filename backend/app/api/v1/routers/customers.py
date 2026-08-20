@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.dependencies.auth import get_current_user
-from app.models.user import User
+from app.dependencies.auth import (
+    AuthenticatedOrganizationContext,
+    get_current_user_organization_context,
+)
 
 from app import schemas
 
@@ -31,17 +33,20 @@ router = APIRouter(
 def get_customers(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    search: str | None = Query(None),
+    search: str | None = Query(None, max_length=200),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
 
     service = CustomerService(db)
 
     items, total = service.get_all(
-        page,
-        size,
-        search,
+        organization_id=context.organization_id,
+        page=page,
+        size=size,
+        search=search,
     )
 
     return schemas.PaginatedResponse[
@@ -61,14 +66,17 @@ def get_customers(
 def create_customer(
     customer: CustomerCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
 
     service = CustomerService(db)
 
     return service.create(
         customer,
-        current_user.id,
+        current_user=context.user,
+        organization_id=context.organization_id,
     )
 
 @router.put(
@@ -79,7 +87,9 @@ def update_customer(
     customer_id: int,
     customer: CustomerUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
 
     service = CustomerService(db)
@@ -87,7 +97,8 @@ def update_customer(
     result = service.update(
         customer_id,
         customer,
-        current_user.id,
+        current_user=context.user,
+        organization_id=context.organization_id,
     )
 
     if result is None:
@@ -106,14 +117,17 @@ def update_customer(
 def delete_customer(
     customer_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
 ):
 
     service = CustomerService(db)
 
     deleted = service.delete(
         customer_id,
-        current_user.id,
+        current_user=context.user,
+        organization_id=context.organization_id,
     )
 
     if not deleted:

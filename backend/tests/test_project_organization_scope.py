@@ -29,7 +29,10 @@ def test_foreign_organization_project_is_protected_and_not_searchable(
     engineer_headers,
 ):
     foreign_organization = Organization(id=uuid4(), is_active=True)
-    customer = Customer(name="Foreign Organization Customer")
+    customer = Customer(
+        organization_id=foreign_organization.id,
+        name="Foreign Organization Customer",
+    )
     db_session.add_all([foreign_organization, customer])
     db_session.flush()
     foreign_project = Project(
@@ -83,6 +86,45 @@ def test_project_transport_rejects_client_organization_id(
     assert response.status_code == 422
 
 
+def test_project_create_and_update_reject_foreign_customer(
+    client,
+    db_session,
+    engineer_headers,
+):
+    organization_id = UUID("02810000-0000-4000-8000-000000000001")
+    foreign_organization = Organization(id=uuid4(), is_active=True)
+    local_customer = Customer(
+        organization_id=organization_id,
+        name="Local Customer",
+    )
+    foreign_customer = Customer(
+        organization_id=foreign_organization.id,
+        name="Foreign Customer",
+    )
+    db_session.add_all([foreign_organization, local_customer, foreign_customer])
+    db_session.commit()
+
+    denied = client.post(
+        "/projects/",
+        json={"name": "Denied", "customer_id": foreign_customer.id},
+        headers=engineer_headers,
+    )
+    assert denied.status_code == 404
+
+    created = client.post(
+        "/projects/",
+        json={"name": "Allowed", "customer_id": local_customer.id},
+        headers=engineer_headers,
+    )
+    assert created.status_code == 200
+    changed = client.put(
+        f"/projects/{created.json()['id']}",
+        json={"customer_id": foreign_customer.id},
+        headers=engineer_headers,
+    )
+    assert changed.status_code == 404
+
+
 def test_all_dependent_project_lookups_enforce_organization_scope(
     client,
     db_session,
@@ -91,8 +133,15 @@ def test_all_dependent_project_lookups_enforce_organization_scope(
 ):
     organization_id = UUID("02810000-0000-4000-8000-000000000001")
     foreign_organization = Organization(id=uuid4(), is_active=True)
-    customer = Customer(name="Dependent Scope Customer")
-    db_session.add_all([foreign_organization, customer])
+    customer = Customer(
+        organization_id=organization_id,
+        name="Dependent Scope Customer",
+    )
+    foreign_customer = Customer(
+        organization_id=foreign_organization.id,
+        name="Foreign Dependent Scope Customer",
+    )
+    db_session.add_all([foreign_organization, customer, foreign_customer])
     db_session.flush()
     same_project = Project(
         organization_id=organization_id,
@@ -105,7 +154,7 @@ def test_all_dependent_project_lookups_enforce_organization_scope(
         organization_id=foreign_organization.id,
         project_code="SAT-PRJ-2099-9912",
         name="Foreign Organization Project",
-        customer_id=customer.id,
+        customer_id=foreign_customer.id,
         owner_id=engineer_user.id,
     )
     db_session.add_all([same_project, foreign_project])

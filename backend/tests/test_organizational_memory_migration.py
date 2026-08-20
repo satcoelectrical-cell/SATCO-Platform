@@ -35,7 +35,7 @@ TRIGGERS = {
 
 
 def test_repository_head_is_patch_034() -> None:
-    assert TEST_DATABASE_REVISION == "e03400000001"
+    assert TEST_DATABASE_REVISION == "e03800000001"
 
 
 def test_exact_schema_functions_triggers_and_indexes_exist() -> None:
@@ -423,6 +423,9 @@ def test_patch_034_downgrade_and_upgrade_restore_single_head() -> None:
         command.downgrade(alembic_config, "e03200000001")
         assert not (TABLES & set(inspect(owner_engine).get_table_names()))
     finally:
-        command.upgrade(alembic_config, "e03400000001")
+        command.upgrade(alembic_config, TEST_DATABASE_REVISION)
     with owner_engine.connect() as connection:
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "e03400000001"
+        assert (
+            connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            == TEST_DATABASE_REVISION
+        )

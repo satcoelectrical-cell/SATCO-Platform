@@ -1,4 +1,4 @@
-import type { AdviceResponse, ApiResult, Capture, JournalWorkspace, MemoryPage, Paginated, Project, TechnicalReport, Workspace } from "./types";
+import type { AdviceResponse, ApiResult, Capture, Customer, JournalWorkspace, MemoryPage, Paginated, Project, TechnicalReport, Workspace } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const TOKEN_KEY = "satco.auth.access.v1";
@@ -44,10 +44,17 @@ export async function login(username: string, password: string): Promise<ApiResu
 
 export const api = {
   me: () => request<{ user_id: string }>("/auth/me"),
+  customers: () => request<Paginated<Customer>>("/customers/?page=1&size=100"),
+  createCustomer: (payload: { name: string; company?: string | null; phone?: string | null; email?: string | null }) => request<Customer>("/customers/", { method: "POST", body: JSON.stringify(payload) }),
+  updateCustomer: (id: number, payload: Partial<Pick<Customer, "name" | "company" | "phone" | "email">>) => request<Customer>(`/customers/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   projects: () => request<Paginated<Project>>("/projects/?page=1&size=20&sort_by=updated_at&order=desc"),
+  createProject: (payload: { name: string; customer_id: number; description?: string | null; priority?: string; start_date?: string | null; target_completion_date?: string | null }) => request<Project>("/projects/", { method: "POST", body: JSON.stringify(payload) }),
+  updateProject: (id: number, payload: { name?: string; description?: string | null; customer_id?: number; priority?: string; start_date?: string | null; target_completion_date?: string | null }) => request<Project>(`/projects/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   project: (id: number) => request<Project>(`/projects/${id}`),
   workspaces: (id: number) => request<{ items: Workspace[]; total: number }>(`/projects/${id}/workspaces?page=1&size=20`),
+  createWorkspace: (projectId: number, payload: { discipline: string; description?: string | null }) => request<Workspace>(`/projects/${projectId}/workspaces`, { method: "POST", body: JSON.stringify(payload) }),
   captures: (id: number) => request<{ items: Capture[]; total: number }>(`/projects/${id}/engineering-experience-captures?page=1&size=20`),
+  createCapture: (payload: { project_id: number; workspace_id: number; source_kind: string; original_content: string; source_reference?: string | null }) => request<Capture>("/engineering-experience-captures", { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ ...payload, engineering_object_id: null }) }),
   journal: (projectId?: number) => request<JournalWorkspace>(`/api/v1/engineering-journal${projectId ? `?project_id=${projectId}` : ""}`),
   reports: (workspaceId: number, projectId?: number) => request<{ items: TechnicalReport[]; total: number }>(`/technical-reports?workspace_id=${workspaceId}${projectId ? `&project_id=${projectId}` : ""}&page=1&size=20`),
   memory: (workspaceId: number, projectId?: number) => closedResult<MemoryPage>(`/organizational-memory?workspace_id=${workspaceId}${projectId ? `&project_id=${projectId}` : ""}&page_size=20`),

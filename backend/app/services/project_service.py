@@ -111,7 +111,10 @@ class ProjectService:
         current_user: User,
         organization_id: UUID,
     ):
-        self._validate_customer(project.customer_id)
+        self._validate_customer(
+            project.customer_id,
+            organization_id=organization_id,
+        )
         owner_id = self._resolve_owner_for_create(
             project.owner_id,
             current_user,
@@ -179,7 +182,8 @@ class ProjectService:
 
         if "customer_id" in update_data:
             self._validate_customer(
-                update_data["customer_id"]
+                update_data["customer_id"],
+                organization_id=organization_id,
             )
 
         next_status = ProjectStatus(
@@ -369,9 +373,15 @@ class ProjectService:
                 "primary assignee",
             )
 
-    def _validate_customer(self, customer_id: int) -> None:
-        customer = self.customer_repository.get_by_id(
-            customer_id
+    def _validate_customer(
+        self,
+        customer_id: int,
+        *,
+        organization_id: UUID,
+    ) -> None:
+        customer = self.customer_repository.get_scoped(
+            customer_id,
+            organization_id=organization_id,
         )
         if customer is None:
             raise ProjectRelatedEntityNotFoundException(
