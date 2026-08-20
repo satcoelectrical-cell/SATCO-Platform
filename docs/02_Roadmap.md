@@ -20,9 +20,8 @@ The goal is Engineering Assistance.
 
 Current Roadmap Position:
 
-PATCH-040 Governed Organizational Memory Admission & Reuse Experience has
-completed implementation, Independent Final Review, and Human QG-11. QG-12
-bounded delivery is pending.
+PATCH-040 Governed Organizational Memory Admission & Reuse Experience is DONE /
+CLOSED; QG-M1, Human QG-11, QG-12, push, and remote verification are PASS.
 
 Latest Completed Capability:
 
@@ -31,9 +30,7 @@ CLOSED.
 
 Next Registered Capability:
 
-PATCH-040 — Governed Organizational Memory Admission & Reuse Experience —
-implementation complete; Independent Final Review and Human QG-11 PASS;
-delivery pending.
+None. PATCH-040 is DONE / CLOSED. PATCH-041 is not registered or authorized.
 PATCH-030 and PATCH-031 remain
 intentionally unregistered PATCH identifiers; their existing EDS identifiers
 retain their separate historical meanings.

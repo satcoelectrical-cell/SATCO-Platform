@@ -13,8 +13,8 @@
 | Batches 1–4 | ACCEPTED / COMPLETE |
 | Independent Final Review | PASS |
 | Human QG-11 | PASS |
-| QG-12 / delivery | READY / PENDING |
-| Closure | NOT GRANTED |
+| QG-12 / delivery | PASS — `94b428de4bd32f3a02a66a0761d38d776307a6ea` |
+| Closure | DONE / CLOSED |
 
 ## Accepted product boundary
 
@@ -31,3 +31,7 @@ Withdrawal/history administration, successor/supersession UI, named-Human audien
 ## Human product decisions
 
 The Human accepted the post-PATCH-039 discovery and fixed the preceding boundary. Standing authority permits routine governance, implementation, review, delivery, and closure gates only after their independent prerequisites pass.
+
+## Delivery and closure
+
+QG-M1, Human QG-11, QG-12, bounded delivery, push, and remote verification are PASS. Delivery commit: `94b428de4bd32f3a02a66a0761d38d776307a6ea`. PATCH-040 is **DONE / CLOSED**. Deferred boundaries and PATCH-041 non-authority remain preserved.
