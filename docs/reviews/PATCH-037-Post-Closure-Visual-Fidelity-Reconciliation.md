@@ -100,3 +100,11 @@ retain the prior flexible grid and reset returns to the new SATCO default.
 Validation: all eight frontend suites / 37 tests passed; TypeScript typecheck
 and production build passed; no fake production data or deferred feature was
 introduced; `git diff --check` passed. Findings: Critical 0; Major 0; Minor 0.
+
+## Reconciliation Delivery Closure
+
+The bounded reconciliation delivery committed the exact six-file allow-list at
+`2d0bcf5`. The governed remote verified that commit with divergence `0/0`.
+The historical PATCH-037 delivery and closure commits remain immutable; this
+record closes only the post-closure visual-fidelity reconciliation. No
+PATCH-038 authority is granted.
