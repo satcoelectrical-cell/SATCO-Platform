@@ -596,6 +596,7 @@ authorize implementation.
 | PATCH-038 | Customer-to-Capture Engineering Work Bootstrap | `docs/patches/PATCH-038.md` | DONE / CLOSED — delivery `b2b7b102be4e957d106b3138dd6f14b5488eb6ff`; governance closure `b5bf1e1c22f262b1aa3cf0be3a12a70e6413e998`; QG-M1/QG-11/QG-12 and remote verification PASS |
 | PATCH-039 | Technical Report Authoring & Human Acceptance Experience | `docs/patches/PATCH-039.md` | DONE / CLOSED — delivery `80d006e5232e154502a36baf46b9b40be7c3504c`; QG-M1/QG-11/QG-12 and remote verification PASS |
 | PATCH-040 | Governed Organizational Memory Admission & Reuse Experience | `docs/patches/PATCH-040.md` | DONE / CLOSED — delivery `94b428de4bd32f3a02a66a0761d38d776307a6ea`; QG-M1/QG-11/QG-12, push, and remote verification PASS |
+| PATCH-041 | First-Customer Organization & User Onboarding Administration | `docs/patches/PATCH-041.md` | DELIVERY AUTHORIZED / PENDING — implementation/final review complete; QG-M1/QG-11/QG-12 PASS |
 
 PATCH-030 and PATCH-031 are intentionally unregistered PATCH identifiers. The
 repository contains the separate Draft

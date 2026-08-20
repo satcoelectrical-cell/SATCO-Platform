@@ -68,6 +68,12 @@ def get_current_user(
                 detail="Inactive user",
             )
 
+        if payload.get("av", 1) != user.auth_version:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+            )
+
         return user
 
     except JWTError:

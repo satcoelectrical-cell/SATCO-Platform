@@ -11,6 +11,9 @@ class Settings(BaseSettings):
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    PLATFORM_BOOTSTRAP_KEY: str = ""
+    ACCOUNT_ACTIVATION_EXPIRE_HOURS: int = 24
+    ACCOUNT_RESET_EXPIRE_MINUTES: int = 30
 
     DATABASE_HOST: str = "localhost"
     DATABASE_PORT: int = 5432

@@ -30,7 +30,9 @@ CLOSED.
 
 Next Registered Capability:
 
-None. PATCH-040 is DONE / CLOSED. PATCH-041 is not registered or authorized.
+PATCH-041 — First-Customer Organization & User Onboarding Administration —
+implementation and Independent Final Review complete; QG-M1, QG-11, and QG-12
+PASS; exact bounded delivery is authorized and pending.
 PATCH-030 and PATCH-031 remain
 intentionally unregistered PATCH identifiers; their existing EDS identifiers
 retain their separate historical meanings.

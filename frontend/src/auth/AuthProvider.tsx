@@ -1,18 +1,23 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { api, authSession, login as loginRequest } from "../api/client";
+import type { UserProfile } from "../api/types";
 
-type AuthValue = { status: "checking" | "authenticated" | "anonymous"; login: (u: string, p: string) => Promise<boolean>; logout: () => void };
+type AuthValue = { status: "checking" | "authenticated" | "anonymous"; profile: UserProfile | null; login: (u: string, p: string) => Promise<boolean>; logout: () => void; refreshProfile: () => Promise<void> };
 const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthValue["status"]>(authSession.get() ? "checking" : "anonymous");
-  useEffect(() => { if (status === "checking") void api.me().then((r) => setStatus(r.state === "success" ? "authenticated" : "anonymous")); }, [status]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  async function refreshProfile() { const result = await api.me(); if (result.state === "success") { setProfile(result.data); setStatus("authenticated"); } else { setProfile(null); setStatus("anonymous"); } }
+  useEffect(() => { if (status === "checking") void refreshProfile(); }, [status]);
   const value = useMemo<AuthValue>(() => ({
     status,
-    login: async (u, p) => { const r = await loginRequest(u, p); const ok = r.state === "success"; setStatus(ok ? "authenticated" : "anonymous"); return ok; },
-    logout: () => { authSession.clear(); setStatus("anonymous"); },
-  }), [status]);
+    profile,
+    login: async (u, p) => { const r = await loginRequest(u, p); const ok = r.state === "success"; if (ok) await refreshProfile(); else setStatus("anonymous"); return ok; },
+    logout: () => { authSession.clear(); setProfile(null); setStatus("anonymous"); },
+    refreshProfile,
+  }), [status, profile]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

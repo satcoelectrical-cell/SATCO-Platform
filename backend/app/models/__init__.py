@@ -20,6 +20,7 @@ from .engineering_relationship_command import EngineeringRelationshipIdempotency
 from .engineering_relationship_command import EngineeringRelationshipOutbox
 from .organization import Organization
 from .organization import UserOrganizationMembership
+from .onboarding import AccountActionCredential, OnboardingIdempotency
 from .evidence import Evidence
 from .evidence_command import EvidenceOutbox
 from .evidence_command import EvidenceIdempotency

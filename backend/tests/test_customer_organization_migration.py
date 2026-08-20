@@ -13,9 +13,10 @@ from app.core.database import engine as application_engine
 LEGACY_ORGANIZATION_ID = "7e7c9d7a-7693-4f75-9bc5-3ef7bf528281"
 
 
-def test_patch_038_is_sole_repository_head_with_expected_parent() -> None:
+def test_patch_041_is_sole_repository_head_and_preserves_patch_038_parentage() -> None:
     script = ScriptDirectory.from_config(alembic_config)
-    assert script.get_heads() == ["e03800000001"]
+    assert script.get_heads() == ["e04100000001"]
+    assert script.get_revision("e04100000001").down_revision == "e03800000001"
     assert script.get_revision("e03800000001").down_revision == "e03400000001"
 
 

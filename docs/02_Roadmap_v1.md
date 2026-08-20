@@ -28,9 +28,10 @@ commercial readiness.
 
 This roadmap follows the authoritative PATCH registry. PATCH-024 and PATCH-025
 retain only their registered scopes. PATCH-026 is reserved for the Engineering
-Relationship Engine. PATCH-027 is the Evidence Foundation. PATCH-028 through
-PATCH-041 are unassigned and carry no
-roadmap reservation, scope, approval, or implementation authority.
+Relationship Engine. PATCH-027 is the Evidence Foundation. Completed PATCHes
+retain their authoritative registry state. PATCH-041 is the registered bounded
+first-customer Organization/User onboarding capability; unallocated identifiers
+carry no implied authority.
 
 Every PATCH shall follow the official governance workflow:
 
@@ -214,7 +215,7 @@ unassigned.
 | PATCH-038 | DONE / CLOSED | Customer-to-Capture Engineering Work Bootstrap; delivery `b2b7b102be4e957d106b3138dd6f14b5488eb6ff`; closure `b5bf1e1c22f262b1aa3cf0be3a12a70e6413e998`; QG-M1/QG-11/QG-12 and remote verification PASS |
 | PATCH-039 | DONE / CLOSED | Technical Report Authoring & Human Acceptance Experience; delivery `80d006e5232e154502a36baf46b9b40be7c3504c`; QG-M1/QG-11/QG-12 and remote verification PASS |
 | PATCH-040 | DONE / CLOSED | Governed Organizational Memory Admission & Reuse Experience; delivery `94b428de4bd32f3a02a66a0761d38d776307a6ea`; QG-M1/QG-11/QG-12 and remote verification PASS |
-| PATCH-041 | Unassigned | No registered purpose, deliverables, dependencies, or Definition of Done |
+| PATCH-041 | DELIVERY AUTHORIZED / PENDING | First-Customer Organization & User Onboarding Administration; implementation/final review complete; QG-M1/QG-11/QG-12 PASS |
 
 ## 6. Commercial Release Criteria
 

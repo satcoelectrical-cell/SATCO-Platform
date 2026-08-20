@@ -19,33 +19,28 @@ def registration_payload(**overrides):
     return payload
 
 
-def test_registration_assigns_engineer_role(client, db_session):
+def test_public_registration_is_closed(client, db_session):
     response = client.post(
         "/auth/register",
         json=registration_payload(),
     )
 
-    assert response.status_code == 200
-    assert response.json()["role"] == Role.ENGINEER.value
-
-    user = (
-        db_session.query(User)
-        .filter(User.username == "new-user")
-        .one()
-    )
-    assert user.role == Role.ENGINEER.value
+    assert response.status_code == 404
+    assert response.json() == {"outcome": "protected_not_found"}
+    assert db_session.query(User).filter(User.username == "new-user").count() == 0
 
 
-def test_registration_rejects_role_injection(client):
+def test_closed_registration_does_not_disclose_role_validation(client):
     response = client.post(
         "/auth/register",
         json=registration_payload(role="admin"),
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 404
+    assert response.json() == {"outcome": "protected_not_found"}
 
 
-def test_registration_rejects_duplicate_email(client):
+def test_closed_registration_does_not_disclose_duplicate_email(client):
     first = client.post(
         "/auth/register",
         json=registration_payload(),
@@ -55,12 +50,12 @@ def test_registration_rejects_duplicate_email(client):
         json=registration_payload(username="another-user"),
     )
 
-    assert first.status_code == 200
-    assert duplicate.status_code == 400
-    assert duplicate.json()["detail"] == "Email already exists"
+    assert first.status_code == 404
+    assert duplicate.status_code == 404
+    assert duplicate.json() == {"outcome": "protected_not_found"}
 
 
-def test_registration_rejects_duplicate_username(client):
+def test_closed_registration_does_not_disclose_duplicate_username(client):
     first = client.post(
         "/auth/register",
         json=registration_payload(),
@@ -70,9 +65,9 @@ def test_registration_rejects_duplicate_username(client):
         json=registration_payload(email="another@example.com"),
     )
 
-    assert first.status_code == 200
-    assert duplicate.status_code == 400
-    assert duplicate.json()["detail"] == "Username already exists"
+    assert first.status_code == 404
+    assert duplicate.status_code == 404
+    assert duplicate.json() == {"outcome": "protected_not_found"}
 
 
 def test_oauth2_form_login_returns_tokens(

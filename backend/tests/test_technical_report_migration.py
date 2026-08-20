@@ -1,6 +1,7 @@
 """PATCH-032 Batch 2 migration structure and rollback evidence."""
 
 from alembic import command
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 
 from conftest import TEST_DATABASE_REVISION, alembic_config, owner_engine
@@ -14,8 +15,10 @@ EXPECTED_TABLES = {
 }
 
 
-def test_repository_head_is_patch_032() -> None:
-    assert TEST_DATABASE_REVISION == "e03800000001"
+def test_repository_head_preserves_patch_032_in_current_chain() -> None:
+    script = ScriptDirectory.from_config(alembic_config)
+    assert TEST_DATABASE_REVISION == "e04100000001"
+    assert script.get_revision("e03400000001").down_revision == "e03200000001"
 
 
 def test_technical_report_schema_matches_authorized_persistence() -> None:

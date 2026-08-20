@@ -2,7 +2,7 @@
 
 from uuid import uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, String
 from sqlalchemy import Index, Integer, text
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import relationship
@@ -17,6 +17,8 @@ class Organization(Base):
     id = Column(
         PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4
     )
+    name = Column(String(200), nullable=True)
+    slug = Column(String(80), nullable=True)
     is_active = Column(
         Boolean, nullable=False, default=True, server_default="true"
     )
@@ -27,7 +29,6 @@ class Organization(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(),
         onupdate=func.now(),
     )
-
 
 class UserOrganizationMembership(Base):
     __tablename__ = "user_organization_memberships"
@@ -66,6 +67,10 @@ class UserOrganizationMembership(Base):
     updated_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now(),
         onupdate=func.now(),
+    )
+
+    version = Column(
+        Integer, nullable=False, default=1, server_default="1"
     )
 
     user = relationship("User")

@@ -25,6 +25,7 @@ def verify_password(
 
 def create_access_token(
     subject: str | Any,
+    auth_version: int = 1,
     expires_delta: timedelta | None = None,
 ) -> str:
     if expires_delta:
@@ -38,6 +39,7 @@ def create_access_token(
         "exp": expire,
         "sub": str(subject),
         "type": "access",
+        "av": auth_version,
     }
 
     return jwt.encode(
@@ -49,6 +51,7 @@ def create_access_token(
 
 def create_refresh_token(
     subject: str | Any,
+    auth_version: int = 1,
     expires_delta: timedelta | None = None,
 ) -> str:
     if expires_delta:
@@ -62,6 +65,7 @@ def create_refresh_token(
         "exp": expire,
         "sub": str(subject),
         "type": "refresh",
+        "av": auth_version,
     }
 
     return jwt.encode(

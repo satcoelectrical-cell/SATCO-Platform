@@ -1,0 +1,3 @@
+# PATCH-041 Batch 3 Authorized File Manifest
+
+Authorized CREATE/MODIFY: `frontend/src/api/types.ts`, `frontend/src/api/client.ts`, `frontend/src/auth/AuthProvider.tsx`, `frontend/src/App.tsx`, `frontend/src/components/AppShell.tsx`, `frontend/src/pages/LoginPage.tsx`, `frontend/src/pages/OnboardingPages.tsx`, `frontend/src/styles.css`, `frontend/src/test/onboarding.test.tsx`, `frontend/src/test/api.test.ts`, `frontend/src/test/shell.test.tsx`. Purpose: bootstrap, activation/reset, password change, trusted Organization identity, and first-login continuation. No member administration or domain semantics.

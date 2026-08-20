@@ -269,6 +269,10 @@ def assign_test_owned_organization(session, flush_context, instances):
 
 @event.listens_for(User, "after_insert")
 def assign_test_user_membership(mapper, connection, target):
+    # PATCH-041 activation-pending accounts are provisioned with their explicit
+    # owning Organization by the onboarding service after the User flush.
+    if target.activation_pending:
+        return
     connection.execute(
         text(
             """

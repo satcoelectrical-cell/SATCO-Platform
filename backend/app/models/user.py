@@ -61,6 +61,27 @@ class User(Base):
         default=True,
     )
 
+    activation_pending = Column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
+
+    auth_version = Column(
+        Integer,
+        default=1,
+        server_default="1",
+        nullable=False,
+    )
+
+    version = Column(
+        Integer,
+        default=1,
+        server_default="1",
+        nullable=False,
+    )
+
 
     created_at = Column(
         DateTime,

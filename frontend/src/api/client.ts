@@ -1,4 +1,4 @@
-import type { AdviceResponse, ApiResult, Capture, Customer, JournalWorkspace, MemoryAdmissionResult, MemoryDetailResult, MemoryPage, Paginated, Project, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, Workspace } from "./types";
+import type { AdviceResponse, ApiResult, Capture, Customer, IssuedCredential, JournalWorkspace, MemberList, MemoryAdmissionResult, MemoryDetailResult, MemoryPage, Paginated, Project, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, UserProfile, Workspace } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const TOKEN_KEY = "satco.auth.access.v1";
@@ -45,7 +45,15 @@ export async function login(username: string, password: string): Promise<ApiResu
 }
 
 export const api = {
-  me: () => request<{ user_id: string }>("/auth/me"),
+  me: () => request<UserProfile>("/auth/me"),
+  bootstrapOrganization: (payload: { organization_name: string; organization_slug: string; admin_username: string; admin_email: string; admin_full_name?: string }, bootstrapKey: string) => closedResult<IssuedCredential>("/platform/bootstrap/organizations", { method: "POST", headers: { "X-SATCO-Bootstrap-Key": bootstrapKey, "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
+  activateAccount: (token: string, newPassword: string) => closedResult<{ outcome: string }>("/auth/activate", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }),
+  resetAccount: (token: string, newPassword: string) => closedResult<{ outcome: string }>("/auth/reset", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }),
+  changePassword: (currentPassword: string, newPassword: string) => closedResult<{ outcome: string }>("/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }),
+  members: () => closedResult<MemberList>("/organization-admin/members"),
+  provisionMember: (payload: { username: string; email: string; full_name?: string; role: "admin" | "engineer" }) => closedResult<IssuedCredential>("/organization-admin/members", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
+  mutateMember: (userId: number, payload: { expected_version: number; role?: "admin" | "engineer"; membership_enabled?: boolean; account_active?: boolean }) => closedResult<IssuedCredential>(`/organization-admin/members/${userId}`, { method: "PATCH", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
+  issueMemberReset: (userId: number) => closedResult<IssuedCredential>(`/organization-admin/members/${userId}/reset`, { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } }),
   customers: () => request<Paginated<Customer>>("/customers/?page=1&size=100"),
   createCustomer: (payload: { name: string; company?: string | null; phone?: string | null; email?: string | null }) => request<Customer>("/customers/", { method: "POST", body: JSON.stringify(payload) }),
   updateCustomer: (id: number, payload: Partial<Pick<Customer, "name" | "company" | "phone" | "email">>) => request<Customer>(`/customers/${id}`, { method: "PUT", body: JSON.stringify(payload) }),

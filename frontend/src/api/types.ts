@@ -59,3 +59,8 @@ export interface AdviceProposal {
   generated_at: string;
 }
 export type AdviceResponse = { outcome: "success"; proposal: AdviceProposal } | { outcome: "refused"; refusal_code: string; recommended_next_step: string } | { outcome: "protected_not_found" | "invalid_request" | "disabled" | "unavailable" };
+export interface OrganizationProfile { id: string; name: string; slug: string }
+export interface UserProfile { user_id: string; username: string; full_name: string | null; role: "admin" | "engineer"; organization: OrganizationProfile }
+export interface OrganizationMember { user_id: number; username: string; email: string; full_name: string | null; role: "admin" | "engineer"; account_active: boolean; activation_pending: boolean; membership_enabled: boolean; membership_selected: boolean; version: number }
+export interface IssuedCredential { outcome: string; organization?: OrganizationProfile & { is_active: boolean }; member?: OrganizationMember; one_time_token?: string; replayed?: boolean }
+export interface MemberList { outcome: string; items: OrganizationMember[] }
