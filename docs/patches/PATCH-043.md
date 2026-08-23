@@ -4,13 +4,17 @@
 
 | Field | Value |
 |---|---|
-| Status | QG-12 PASS — exact bounded delivery authorized; not yet delivered or closed |
+| Status | DONE / CLOSED |
 | Architecture / QG-M1 | PASS / ACCEPTED |
 | EDS-043 | ACCEPTED / COMPLETE |
 | IDS-043 | ACCEPTED / COMPLETE |
 | Implementation Plan-043 | ACCEPTED / COMPLETE |
 | IRR-043 | PASS |
 | Implementation authority | COMPLETE — Batches 1–6 ACCEPTED / COMPLETE |
+| Human QG-11 | PASS |
+| QG-12 / Delivery | PASS — `a9490709a4d52f065d461c56a1b33dcac70e2351` |
+| Remote verification | PASS — divergence `0/0` |
+| Closure | DONE / CLOSED |
 | Registered after | PATCH-042 DONE / CLOSED |
 
 ## Repository-grounded discovery
@@ -220,6 +224,8 @@ focused amendments and re-review PASS are preserved. Standing Human
 Architecture, EDS, IDS and Implementation Plan acceptances are recorded in
 standalone artifacts. IRR-043 is PASS. Batches 1–6 are ACCEPTED / COMPLETE;
 Independent Final Implementation Review, Human QG-11 and QG-12 are PASS. The
-exact 120-file bounded delivery is authorized but not yet committed or pushed.
-No closure, PATCH-044, Product Completion Reconciliation or Commercial V1
-Release Certification authority is created by this record.
+exact 120-file bounded delivery commit
+`a9490709a4d52f065d461c56a1b33dcac70e2351` is pushed to the governed branch,
+remote-verified and divergence is `0/0`. PATCH-043 is DONE / CLOSED. PATCH-044
+is NOT REGISTERED; Product Completion Reconciliation is NOT STARTED and
+Commercial V1 Release Certification is NOT PERFORMED.
