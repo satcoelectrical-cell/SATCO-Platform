@@ -1,0 +1,183 @@
+services:
+  edge:
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    restart: unless-stopped
+    ports: ["80:8080", "443:8443"]
+    networks: [public, private]
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+      - /var/cache/nginx:uid=101,gid=101,mode=0700
+      - /var/run:uid=101,gid=101,mode=0755
+    security_opt: [no-new-privileges:true]
+    user: "101:101"
+    cap_drop: [ALL]
+    configs:
+      - source: nginx_main
+        target: /etc/nginx/nginx.conf
+      - source: nginx_server
+        target: /etc/nginx/conf.d/default.conf
+    secrets: [tls_cert, tls_key]
+    volumes:
+      - satco_ops_mode:/run/satco-ops:ro
+    depends_on:
+      ops-mode-init:
+        condition: service_completed_successfully
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.production
+    networks: [private]
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+      - /var/cache/nginx:uid=101,gid=101,mode=0700
+      - /var/run:uid=101,gid=101,mode=0755
+    security_opt: [no-new-privileges:true]
+    user: "101:101"
+    cap_drop: [ALL]
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.production
+    networks: [private]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    environment:
+      SATCO_ENVIRONMENT: production
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: satco_runtime
+      DATABASE_NAME: ${SATCO_DATABASE_NAME:?SATCO_DATABASE_NAME is required}
+      DATABASE_PASSWORD_FILE: /run/secrets/runtime_db_password
+      SECRET_KEY_FILE: /run/secrets/signing_secret
+      SATCO_RELEASE_MANIFEST_PATH: /run/secrets/release_manifest
+      SATCO_PUBLIC_URL: ${SATCO_PUBLIC_URL:?SATCO_PUBLIC_URL is required}
+      SATCO_TRUSTED_HOSTS: ${SATCO_TRUSTED_HOSTS:?SATCO_TRUSTED_HOSTS is required}
+      SATCO_ALLOWED_ORIGINS: ${SATCO_ALLOWED_ORIGINS:?SATCO_ALLOWED_ORIGINS is required}
+      SATCO_EXPECTED_ALEMBIC_HEAD: ${SATCO_EXPECTED_ALEMBIC_HEAD:?SATCO_EXPECTED_ALEMBIC_HEAD is required}
+      SATCO_PERSISTENCE_GUARD_VERSION: ${SATCO_PERSISTENCE_GUARD_VERSION:?SATCO_PERSISTENCE_GUARD_VERSION is required}
+      SATCO_OBJECT_HEALTH_URL: ${SATCO_OBJECT_HEALTH_URL:?SATCO_OBJECT_HEALTH_URL is required}
+      SATCO_OBJECT_HEALTH_CA_FILE: /run/secrets/object_health_ca
+      SATCO_BACKUP_POLICY_ID: ${SATCO_BACKUP_POLICY_ID:?SATCO_BACKUP_POLICY_ID is required}
+      SATCO_BACKUP_ENCRYPTION_KEY_REFERENCE: ${SATCO_BACKUP_ENCRYPTION_KEY_REFERENCE:?SATCO_BACKUP_ENCRYPTION_KEY_REFERENCE is required}
+      SATCO_MONITORING_TOKEN_FILE: /run/secrets/monitoring_token
+      SATCO_OPS_MODE_FILE: /run/satco-ops/mode.json
+      SATCO_OPS_MODE_HMAC_KEY_FILE: /run/secrets/ops_mode_hmac_key
+    secrets: [runtime_db_password, signing_secret, release_manifest, monitoring_token, object_health_ca, ops_mode_hmac_key]
+    volumes:
+      - satco_ops_mode:/run/satco-ops:ro
+    depends_on:
+      ops-mode-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+  ops-mode-init:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.production
+    command:
+      - /bin/sh
+      - -ec
+      - if [ -s "$$SATCO_OPS_MODE_FILE" ]; then exec sh /run/ops/set-ops-mode.sh reconcile; fi; exec sh /run/ops/set-ops-mode.sh normal
+    networks: [private]
+    environment:
+      SATCO_OPS_MODE_FILE: /run/satco-ops/mode.json
+      SATCO_OPS_MODE_HMAC_KEY_FILE: /run/secrets/ops_mode_hmac_key
+    configs:
+      - source: set_ops_mode_script
+        target: /run/ops/set-ops-mode.sh
+        mode: 0555
+    secrets: [ops_mode_hmac_key]
+    volumes:
+      - satco_ops_mode:/run/satco-ops
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    user: "0:0"
+    cap_drop: [ALL]
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.production
+    networks: [private]
+    command:
+      - /bin/sh
+      - -ec
+      - export ALEMBIC_DATABASE_URL="$$(cat "$$ALEMBIC_DATABASE_URL_FILE")"; SATCO_PREFLIGHT_PHASE=before sh /run/ops/preflight.sh; alembic upgrade "$$SATCO_EXPECTED_ALEMBIC_HEAD"; SATCO_PREFLIGHT_PHASE=after exec sh /run/ops/preflight.sh
+    environment:
+      ALEMBIC_DATABASE_URL_FILE: /run/secrets/migration_database_url
+      SATCO_RUNTIME_DATABASE_ROLE: satco_runtime
+      RUNTIME_DATABASE_ROLE: satco_runtime
+      MIGRATION_DATABASE_ROLE: satco
+      SATCO_RUNTIME_DB_PASSWORD_FILE: /run/secrets/runtime_db_password
+      SATCO_RELEASE_MANIFEST_PATH: /run/secrets/release_manifest
+      SATCO_PREUPGRADE_RECOVERY_SET_MANIFEST: /run/secrets/preupgrade_recovery_set
+      SATCO_EXPECTED_ALEMBIC_HEAD: ${SATCO_EXPECTED_ALEMBIC_HEAD:?SATCO_EXPECTED_ALEMBIC_HEAD is required}
+    configs:
+      - source: preflight_script
+        target: /run/ops/preflight.sh
+        mode: 0555
+    secrets: [migration_database_url, runtime_db_password, release_manifest, preupgrade_recovery_set]
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:17@sha256:a426e44bac0b759c95894d68e1a0ac03ecc20b619f498a91aae373bf06d8508d
+    networks: [private]
+    expose: ["5432"]
+    environment:
+      POSTGRES_USER: satco
+      POSTGRES_DB: ${SATCO_DATABASE_NAME:?SATCO_DATABASE_NAME is required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/schema_owner_db_password
+    secrets: [schema_owner_db_password]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U satco -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    volumes:
+      - satco_postgres:/var/lib/postgresql/data
+
+networks:
+  public: {}
+  private:
+    internal: true
+volumes:
+  satco_postgres: {}
+  satco_ops_mode: {}
+configs:
+  nginx_main:
+    file: ./ops/nginx/nginx.conf
+  nginx_server:
+    file: ./ops/nginx/default.conf
+  set_ops_mode_script:
+    file: ./ops/scripts/set-ops-mode.sh
+  preflight_script:
+    file: ./ops/scripts/preflight.sh
+secrets:
+  tls_cert:
+    file: ${SATCO_TLS_CERT_FILE:?SATCO_TLS_CERT_FILE is required}
+  tls_key:
+    file: ${SATCO_TLS_KEY_FILE:?SATCO_TLS_KEY_FILE is required}
+  runtime_db_password:
+    file: ${SATCO_RUNTIME_DB_PASSWORD_FILE:?SATCO_RUNTIME_DB_PASSWORD_FILE is required}
+  signing_secret:
+    file: ${SATCO_SIGNING_SECRET_FILE:?SATCO_SIGNING_SECRET_FILE is required}
+  release_manifest:
+    file: ${SATCO_RELEASE_MANIFEST_FILE:?SATCO_RELEASE_MANIFEST_FILE is required}
+  migration_database_url:
+    file: ${SATCO_MIGRATION_DATABASE_URL_FILE:?SATCO_MIGRATION_DATABASE_URL_FILE is required}
+  monitoring_token:
+    file: ${SATCO_MONITORING_TOKEN_FILE:?SATCO_MONITORING_TOKEN_FILE is required}
+  object_health_ca:
+    file: ${SATCO_OBJECT_HEALTH_CA_FILE:?SATCO_OBJECT_HEALTH_CA_FILE is required}
+  ops_mode_hmac_key:
+    file: ${SATCO_OPS_MODE_HMAC_KEY_FILE:?SATCO_OPS_MODE_HMAC_KEY_FILE is required}
+  schema_owner_db_password:
+    file: ${SATCO_SCHEMA_OWNER_DB_PASSWORD_FILE:?SATCO_SCHEMA_OWNER_DB_PASSWORD_FILE is required}
+  preupgrade_recovery_set:
+    file: ${SATCO_PREUPGRADE_RECOVERY_SET_MANIFEST:?SATCO_PREUPGRADE_RECOVERY_SET_MANIFEST is required}

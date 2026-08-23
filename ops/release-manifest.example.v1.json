@@ -1,0 +1,15 @@
+{
+  "release_id": "example-only-not-a-production-release",
+  "git_commit": "0000000",
+  "backend_image_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "frontend_asset_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "expected_alembic_head": "e04100000001",
+  "configuration_schema_version": "v1",
+  "migration_artifact_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "dependency_lock_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "package_lock_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "sbom_reference": "example-only",
+  "scan_evidence_reference": "example-only",
+  "signing_approver_evidence_reference": "example-only",
+  "created_at": "1970-01-01T00:00:00+00:00"
+}

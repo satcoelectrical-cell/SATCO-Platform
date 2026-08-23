@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -18,6 +18,7 @@ from app.models.engineering_context import EngineeringContextFact
 from app.models.engineering_context import EngineeringContextSourceReference
 from app.models.engineering_context import EngineeringContextSubjectReference
 from app.models.engineering_workspace import EngineeringWorkspace
+from app.models.organization import Organization
 from app.models.project import Project
 from app.models.organization import UserOrganizationMembership
 from app.models.user import User
@@ -329,6 +330,14 @@ def test_concurrent_updates_have_one_winner_and_one_audit():
     code_suffix = str(uuid4().int % 100000000).zfill(8)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     setup = session_factory()
+    test_organization_id = UUID(
+        "02810000-0000-4000-8000-000000000001"
+    )
+    if setup.get(Organization, test_organization_id) is None:
+        setup.add(
+            Organization(id=test_organization_id, is_active=True)
+        )
+        setup.flush()
     owner = User(
         email=f"context-concurrency-owner-{token}@example.com",
         username=f"context-concurrency-owner-{token}",

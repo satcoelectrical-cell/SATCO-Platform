@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SATCO release manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["release_id", "git_commit", "backend_image_digest", "frontend_asset_digest", "expected_alembic_head", "configuration_schema_version", "migration_artifact_digest", "dependency_lock_digest", "package_lock_digest", "sbom_reference", "scan_evidence_reference", "signing_approver_evidence_reference", "created_at"],
+  "properties": {
+    "release_id": {"type": "string", "minLength": 1},
+    "git_commit": {"type": "string", "minLength": 7},
+    "backend_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "frontend_asset_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "expected_alembic_head": {"type": "string", "minLength": 1},
+    "configuration_schema_version": {"type": "string", "const": "v1"},
+    "migration_artifact_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "dependency_lock_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "package_lock_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "sbom_reference": {"type": "string", "minLength": 1},
+    "scan_evidence_reference": {"type": "string", "minLength": 1},
+    "signing_approver_evidence_reference": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "format": "date-time"}
+  }
+}

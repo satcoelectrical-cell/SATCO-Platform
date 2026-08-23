@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, URL, make_url
@@ -11,11 +12,16 @@ load_dotenv()
 def runtime_database_url() -> str:
     """Build the runtime URL only from the restricted runtime inputs."""
 
+    password = os.getenv("DATABASE_PASSWORD")
+    password_file = os.getenv("DATABASE_PASSWORD_FILE")
+    if password_file:
+        password = Path(password_file).read_text(encoding="utf-8").strip()
+
     required = {
         "host": os.getenv("DATABASE_HOST"),
         "port": int(os.getenv("DATABASE_PORT", "0")),
         "username": os.getenv("DATABASE_USER"),
-        "password": os.getenv("DATABASE_PASSWORD"),
+        "password": password,
         "database": os.getenv("DATABASE_NAME"),
     }
     missing = [name for name, value in required.items() if not value]
