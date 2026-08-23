@@ -5,7 +5,7 @@
 | Gate | State |
 |---|---|
 | Registration | COMPLETE / REGISTERED |
-| Current PATCH state | IMPLEMENTATION COMPLETE — Final Review PASS; Human QG-11 PASS; QG-12 / delivery pending |
+| Current PATCH state | DONE / CLOSED |
 | Commercial V1 Boundary & Operational Architecture Discovery | COMPLETE / HUMAN-ACCEPTED |
 | PATCH Architecture | ACCEPTED / COMPLETE; QG-M1 PASS |
 | EDS-042 authority | CONSUMED; EDS-042 ACCEPTED / COMPLETE; Human Acceptance PASS |
@@ -13,9 +13,15 @@
 | Implementation Plan authority | CONSUMED; Implementation Plan-042 ACCEPTED / COMPLETE; Human Acceptance PASS |
 | IRR-042 authority | CONSUMED; IRR-042 PASS |
 | Implementation authority | CONSUMED; Batches 1–5 ACCEPTED / COMPLETE; Final Review PASS; Human QG-11 PASS |
+| QG-12 | PASS |
+| Delivery | PASS — `6abc9c4c8b1359bd4983c5caba42cc9a6bbc6895` |
+| Remote verification | PASS — divergence `0/0` |
+| Closure | DONE / CLOSED |
 
-Delivery, commit/push, PATCH closure, Commercial V1 Release Certification, and
-PATCH-043 authority remain NOT GRANTED.
+Final status: **DONE / CLOSED**. The exact 67-file delivery is pushed and
+verified. Historical Batch 2 PASS → focused FAIL (`B2-MAJ-01`) → remediation →
+focused re-review PASS remains preserved. Commercial V1 Release Certification
+is NOT PERFORMED and PATCH-043 is NOT REGISTERED.
 
 ## Purpose
 
