@@ -59,6 +59,7 @@ from app.models.technical_report_command import (
     EngineeringObjectHistoricalBasisV1,
     EngineeringRelationshipHistoricalBasisV1,
     EvidenceHistoricalBasisV1,
+    EvidenceHistoricalBasisV2,
     TechnicalReportActor,
     TechnicalReportLifecycle,
 )
@@ -74,6 +75,7 @@ class _CaptureService(Protocol):
 
 class _EvidenceService(Protocol):
     def get(self, evidence_id, actor): ...
+    def authorize_supporting_file_history(self, evidence_id, actor, historical): ...
 
 
 class _EngineeringObjectService(Protocol):
@@ -215,6 +217,14 @@ class CanonicalMemoryProvenanceAuthorizer:
                     canonical_responses[canonical_key] = response
                 if not _response_matches(item, response):
                     return ProvenanceProtectedNotFound()
+                if isinstance(basis, EvidenceHistoricalBasisV2):
+                    authorized_files = self._evidence.authorize_supporting_file_history(
+                        item.evidence_id,
+                        EvidenceActor(request.actor.actor_id, request.actor.organization_id),
+                        basis.supporting_files,
+                    )
+                    if authorized_files != basis.supporting_files:
+                        return ProvenanceProtectedNotFound()
                 resolved.append(SafeAuthorizedProvenance(
                     entry_id=digest_entry.entry_id,
                     ordinal=digest_entry.ordinal,
@@ -292,7 +302,7 @@ def _request_matches_basis(item, basis) -> bool:
             item.engineering_object_id,
         )
     if type(item) is EvidenceProvenanceAuthorization:
-        return common and isinstance(basis, EvidenceHistoricalBasisV1) and (
+        return common and isinstance(basis, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)) and (
             basis.evidence_id, basis.project_id, basis.workspace_id,
         ) == (item.evidence_id, item.project_id, item.workspace_id)
     if type(item) is EngineeringObjectProvenanceAuthorization:

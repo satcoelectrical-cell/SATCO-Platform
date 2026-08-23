@@ -5,11 +5,11 @@ import { MemoryPage } from "../pages/KnowledgePages";
 import { ReportsPage } from "../pages/ReportPages";
 import { ProjectsPage, ProjectWorkspacePage } from "../pages/ProjectsPage";
 
-const { apiMock } = vi.hoisted(() => ({ apiMock: { customers: vi.fn(), createCustomer: vi.fn(), createProject: vi.fn(), updateProject: vi.fn(), projects: vi.fn(), project: vi.fn(), workspaces: vi.fn(), createWorkspace: vi.fn(), captures: vi.fn(), createCapture: vi.fn(), reports: vi.fn(), reportSources: vi.fn(), report: vi.fn(), createReport: vi.fn(), reviseReport: vi.fn(), acceptReport: vi.fn(), admitMemory: vi.fn(), memory: vi.fn(), memoryDetail: vi.fn() } }));
+const { apiMock } = vi.hoisted(() => ({ apiMock: { customers: vi.fn(), createCustomer: vi.fn(), createProject: vi.fn(), updateProject: vi.fn(), projects: vi.fn(), project: vi.fn(), workspaces: vi.fn(), createWorkspace: vi.fn(), captures: vi.fn(), createCapture: vi.fn(), reports: vi.fn(), reportSources: vi.fn(), reportEvidenceSources: vi.fn(), report: vi.fn(), createReport: vi.fn(), reviseReport: vi.fn(), acceptReport: vi.fn(), admitMemory: vi.fn(), memory: vi.fn(), memoryDetail: vi.fn(), supportingFiles: vi.fn(), evidence: vi.fn(), uploadSupportingFile: vi.fn(), linkSupportingFiles: vi.fn(), downloadSupportingFile: vi.fn() } }));
 vi.mock("../api/client", () => ({ api: apiMock }));
 const project = { id: 7, project_code: "SAT-007", name: "Substation Modernization", description: "Protection and control renewal.", customer: { id: 2, name: "Grid Operations" }, status: "in_progress", priority: "high", owner: null, primary_assignee: null, progress: 42, target_completion_date: null, updated_at: "2026-08-14T00:00:00Z" };
 
-beforeEach(() => { for (const fn of Object.values(apiMock)) fn.mockReset(); apiMock.customers.mockResolvedValue({ state: "success", data: { items: [], total: 0, page: 1, size: 100 } }); });
+beforeEach(() => { for (const fn of Object.values(apiMock)) fn.mockReset(); apiMock.customers.mockResolvedValue({ state: "success", data: { items: [], total: 0, page: 1, size: 100 } }); apiMock.supportingFiles.mockResolvedValue({ state: "success", data: { items: [], visible_count: 0, continuation: null } }); apiMock.evidence.mockResolvedValue({ state: "success", data: { items: [], total: 0, page: 1, size: 100 } }); apiMock.reportEvidenceSources.mockResolvedValue({ state: "success", data: { items: [], total: 0, page: 1, size: 20 } }); });
 
 it("takes an engineer from the authorized Project list into a coherent workspace", async () => {
   apiMock.projects.mockResolvedValue({ state: "success", data: { items: [project], total: 1, page: 1, size: 20 } });

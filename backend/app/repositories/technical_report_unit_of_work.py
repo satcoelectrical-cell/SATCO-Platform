@@ -57,6 +57,7 @@ from app.models.technical_report_command import (
     EngineeringObjectHistoricalBasisV1,
     EngineeringRelationshipHistoricalBasisV1,
     EvidenceHistoricalBasisV1,
+    EvidenceHistoricalBasisV2,
     HistoricalBasis,
     TechnicalReportCommandResult,
     TechnicalReportDomainEvent,
@@ -65,6 +66,9 @@ from app.models.technical_report_command import (
     TechnicalReportOutboxRecord,
     historical_basis_digest,
     verify_historical_basis_digest,
+)
+from app.services.supporting_file_service import (
+    SqlAlchemySupportingFileTechnicalReportCollaborator,
 )
 from app.ports.technical_report import (
     AcceptExactDraftHistoricalAuthority,
@@ -575,6 +579,17 @@ class SqlAlchemyTechnicalReportFinalRecheckPolicy:
                     ).with_for_update().all()
                     if len(related_evidence) != len(set(evidence_ids)):
                         raise TechnicalReportHistoricalBasisIncomplete()
+            if isinstance(row, Evidence):
+                try:
+                    self.historical.supporting_files.resolve_for_evidence(
+                        evidence_id=row.id,
+                        organization_id=request.scope.organization_id,
+                        project_id=request.scope.project_id,
+                        workspace_id=request.scope.workspace_id,
+                        lock=True,
+                    )
+                except Exception as exc:
+                    raise TechnicalReportHistoricalBasisIncomplete() from exc
             self.historical.resolve(source)
 
 
@@ -583,6 +598,9 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
 
     def __init__(self, session: Session) -> None:
         self.session = session
+        self.supporting_files = SqlAlchemySupportingFileTechnicalReportCollaborator(
+            session
+        )
 
     def resolve(self, request: TechnicalReportHistoricalRequest) -> HistoricalBasis:
         if request.source_type not in _SOURCES:
@@ -605,7 +623,7 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
 
         expected_type = {
             TechnicalReportSourceType.UNIVERSAL_CAPTURE.value: CaptureHistoricalBasisV1,
-            TechnicalReportSourceType.EVIDENCE.value: EvidenceHistoricalBasisV1,
+            TechnicalReportSourceType.EVIDENCE.value: (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2),
             TechnicalReportSourceType.ENGINEERING_OBJECT.value: EngineeringObjectHistoricalBasisV1,
             TechnicalReportSourceType.ENGINEERING_RELATIONSHIP.value: EngineeringRelationshipHistoricalBasisV1,
         }.get(request.source_type)
@@ -614,12 +632,10 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
             raise TechnicalReportHistoricalBasisIncomplete("historical fallback type is incoherent")
         if fallback.organization_id != request.actor.organization_id:
             raise TechnicalReportHistoricalBasisIncomplete()
-        identity = {
-            CaptureHistoricalBasisV1: fallback.capture_id if isinstance(fallback, CaptureHistoricalBasisV1) else None,
-            EvidenceHistoricalBasisV1: fallback.evidence_id if isinstance(fallback, EvidenceHistoricalBasisV1) else None,
-            EngineeringObjectHistoricalBasisV1: fallback.engineering_object_id if isinstance(fallback, EngineeringObjectHistoricalBasisV1) else None,
-            EngineeringRelationshipHistoricalBasisV1: fallback.engineering_relationship_id if isinstance(fallback, EngineeringRelationshipHistoricalBasisV1) else None,
-        }[expected_type]
+        if isinstance(fallback, CaptureHistoricalBasisV1): identity = fallback.capture_id
+        elif isinstance(fallback, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)): identity = fallback.evidence_id
+        elif isinstance(fallback, EngineeringObjectHistoricalBasisV1): identity = fallback.engineering_object_id
+        else: identity = fallback.engineering_relationship_id
         if identity != request.source_id or fallback.source_version != request.source_version:
             raise TechnicalReportHistoricalBasisIncomplete()
         self._validate_basis(request, fallback)
@@ -644,11 +660,24 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
             or item.source_standing != EvidenceSourceStanding.CURRENT.value
         ):
             raise TechnicalReportHistoricalBasisIncomplete()
-        return EvidenceHistoricalBasisV1(
-            1, "evidence", item.id, item.version, item.organization_id,
+        base = (item.id, item.version, item.organization_id,
             item.project_id, item.workspace_id, item.lifecycle, item.source_kind,
             item.source_reference, item.source_revision, item.source_standing,
-            item.effective_at, item.supported_fact, item.creator_id,
+            item.effective_at, item.supported_fact, item.creator_id)
+        try:
+            files = self.supporting_files.resolve_for_evidence(
+                evidence_id=item.id,
+                organization_id=item.organization_id,
+                project_id=item.project_id,
+                workspace_id=item.workspace_id,
+                lock=False,
+            )
+        except Exception as exc:
+            raise TechnicalReportHistoricalBasisIncomplete() from exc
+        if not files:
+            return EvidenceHistoricalBasisV1(1, "evidence", *base)
+        return EvidenceHistoricalBasisV2(
+            2, "evidence", *base, files,
         )
 
     def _engineering_object(self, request: TechnicalReportHistoricalRequest) -> HistoricalBasis:
@@ -889,7 +918,7 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
             basis.organization_id != request.scope.organization_id
         ):
             raise TechnicalReportHistoricalBasisIncomplete()
-        project_optional = isinstance(basis, EvidenceHistoricalBasisV1)
+        project_optional = isinstance(basis, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2))
         if (
             basis.project_id not in ({None, project_id} if project_optional else {project_id})
             or basis.workspace_id not in {None, request.scope.workspace_id}
@@ -898,7 +927,7 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
         if isinstance(basis, CaptureHistoricalBasisV1):
             if basis.lifecycle != EngineeringExperienceCaptureLifecycle.CAPTURED:
                 raise TechnicalReportHistoricalBasisIncomplete()
-        elif isinstance(basis, EvidenceHistoricalBasisV1):
+        elif isinstance(basis, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)):
             if (
                 basis.lifecycle != EvidenceLifecycle.CURRENT
                 or basis.source_standing != EvidenceSourceStanding.CURRENT

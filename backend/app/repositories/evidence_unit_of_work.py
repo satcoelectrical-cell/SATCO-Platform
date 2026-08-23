@@ -11,6 +11,7 @@ from app.models.engineering_workspace import EngineeringWorkspace, EngineeringWo
 from app.models.project import Project
 from app.models.user import User
 from app.repositories.evidence_repository import SqlAlchemyEvidenceRepository
+from app.services.supporting_file_service import SqlAlchemySupportingFileEvidenceCollaborator
 
 def _json(value):
     if isinstance(value,(UUID,datetime)): return value.isoformat() if isinstance(value,datetime) else str(value)
@@ -92,7 +93,7 @@ class SqlAlchemyEvidenceValidator:
 class SqlAlchemyEvidenceUnitOfWork:
     def __init__(self,session_factory): self.session_factory=session_factory
     def __enter__(self)->Self:
-        self.session=self.session_factory(); self.evidence=SqlAlchemyEvidenceRepository(self.session); self.audit=SqlAlchemyEvidenceAuditRecorder(self.session); self.domain_events=SqlAlchemyEvidenceEventRecorder(self.session); self.idempotency=SqlAlchemyEvidenceIdempotencyStore(self.session); return self
+        self.session=self.session_factory(); self.evidence=SqlAlchemyEvidenceRepository(self.session); self.supporting_files=SqlAlchemySupportingFileEvidenceCollaborator(self.session); self.audit=SqlAlchemyEvidenceAuditRecorder(self.session); self.domain_events=SqlAlchemyEvidenceEventRecorder(self.session); self.idempotency=SqlAlchemyEvidenceIdempotencyStore(self.session); return self
     def __exit__(self,exc_type,exc_value,traceback):
         if exc_type is not None: self.rollback()
         self.session.close()

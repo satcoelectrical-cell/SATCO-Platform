@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     SATCO_PERSISTENCE_GUARD_VERSION: str = ""
     SATCO_OBJECT_HEALTH_URL: str = ""
     SATCO_OBJECT_HEALTH_CA_FILE: str = ""
+    SUPPORTING_FILE_OBJECT_ENDPOINT: str = ""
+    SUPPORTING_FILE_OBJECT_BUCKET: str = ""
+    SUPPORTING_FILE_OBJECT_REGION: str = ""
+    SUPPORTING_FILE_OBJECT_ACCESS_KEY_FILE: str = ""
+    SUPPORTING_FILE_OBJECT_SECRET_KEY_FILE: str = ""
+    SUPPORTING_FILE_SCANNER_ENDPOINT: str = ""
+    SUPPORTING_FILE_SCANNER_TOKEN_FILE: str = ""
     SATCO_BACKUP_POLICY_ID: str = ""
     SATCO_BACKUP_ENCRYPTION_KEY_REFERENCE: str = ""
     SATCO_MONITORING_TOKEN: str = ""
@@ -86,6 +93,15 @@ class Settings(BaseSettings):
             self.SATCO_MONITORING_TOKEN,
         )
 
+    def resolved_supporting_file_scanner_token(self) -> str:
+        return self._secret_from_file(self.SUPPORTING_FILE_SCANNER_TOKEN_FILE, "")
+
+    def resolved_supporting_file_object_access_key(self) -> str:
+        return self._secret_from_file(self.SUPPORTING_FILE_OBJECT_ACCESS_KEY_FILE, "")
+
+    def resolved_supporting_file_object_secret_key(self) -> str:
+        return self._secret_from_file(self.SUPPORTING_FILE_OBJECT_SECRET_KEY_FILE, "")
+
     def production_validation_errors(self) -> list[str]:
         """Return safe categories only; callers must not expose raw configuration."""
 
@@ -120,6 +136,28 @@ class Settings(BaseSettings):
             errors.append("ops_mode")
         if len(self.resolved_monitoring_token()) < 32:
             errors.append("monitoring_principal")
+        try:
+            scanner_token = self.resolved_supporting_file_scanner_token()
+        except OSError:
+            scanner_token = ""
+        if (
+            not self.SUPPORTING_FILE_SCANNER_ENDPOINT.startswith("https://")
+            or len(scanner_token) < 32
+        ):
+            errors.append("supporting_file_scanner")
+        try:
+            object_access_key = self.resolved_supporting_file_object_access_key()
+            object_secret_key = self.resolved_supporting_file_object_secret_key()
+        except OSError:
+            object_access_key = object_secret_key = ""
+        if (
+            not self.SUPPORTING_FILE_OBJECT_ENDPOINT.startswith("https://")
+            or not self.SUPPORTING_FILE_OBJECT_BUCKET
+            or not self.SUPPORTING_FILE_OBJECT_REGION
+            or not object_access_key
+            or len(object_secret_key) < 16
+        ):
+            errors.append("supporting_file_object_store")
         if self.SATCO_BOOTSTRAP_ENABLED:
             bootstrap = self.resolved_bootstrap_key()
             if len(bootstrap) < 32 or not self.SATCO_BOOTSTRAP_WINDOW_END:

@@ -47,6 +47,7 @@ from app.models.organizational_memory_command import (
     MemoryProvenanceAuthorizationRequest,
     MemoryScope,
     ProvenanceAuthorized,
+    ProvenanceProtectedNotFound,
     admission_material_from_snapshot,
     canonical_json as memory_canonical_json,
 )
@@ -56,6 +57,7 @@ from app.models.technical_report_command import (
     EngineeringObjectHistoricalBasisV1,
     EngineeringRelationshipHistoricalBasisV1,
     EvidenceHistoricalBasisV1,
+    EvidenceHistoricalBasisV2,
     PreliminaryQualification,
     TechnicalReportAcceptedSnapshot,
     TechnicalReportContent,
@@ -64,6 +66,7 @@ from app.models.technical_report_command import (
     ExternalHumanLocator,
     canonical_json,
 )
+from app.models.supporting_file_command import SupportingFileHistoricalBasisV1
 from app.services.technical_report_service import TechnicalReportService
 from app.services.engineering_experience_capture_service import (
     EngineeringExperienceCaptureService,
@@ -105,6 +108,20 @@ class RecordingService:
     def get_report(self, *args): return self._call(*args)
     def read_authorized_detail(self, **kwargs): return self._call(**kwargs)
     def get(self, *args): return self._call(*args)
+
+
+class EvidenceV2Service:
+    def __init__(self, response, historical):
+        self.response = response
+        self.historical = historical
+        self.history_calls = []
+
+    def get(self, *_):
+        return self.response
+
+    def authorize_supporting_file_history(self, evidence_id, actor, historical):
+        self.history_calls.append((evidence_id, actor, historical))
+        return self.historical
 
 
 def _entry(locator, ordinal, source_type, owner):
@@ -270,6 +287,45 @@ def test_accepted_source_preserves_exact_identity_scope_version_and_digests():
         memory_canonical_json(projection)
     ).hexdigest()
     assert len(service.calls) == 1
+
+
+def test_evidence_v2_nested_files_are_independently_authorized_all_or_nothing():
+    snapshot, locators = accepted_fixture()
+    old = locators[1]
+    file_basis = SupportingFileHistoricalBasisV1(
+        1, "supporting_file", uuid4(), 2, old.organization_id,
+        old.project_id, None, "calculation.pdf", "application/pdf", 512,
+        "sha256", "a" * 64, 7, NOW, None,
+    )
+    evidence = EvidenceHistoricalBasisV2(
+        2, "evidence", old.evidence_id, old.source_version,
+        old.organization_id, old.project_id, old.workspace_id,
+        old.lifecycle, old.source_kind, old.source_reference,
+        old.source_revision, old.source_standing, old.effective_at,
+        old.supported_fact, old.creator_id, (file_basis,),
+    )
+    provenance = list(snapshot.provenance)
+    provenance[1] = _entry(
+        evidence, 1, TechnicalReportSourceType.EVIDENCE,
+        TechnicalReportOwningCapability.EVIDENCE,
+    )
+    snapshot = replace(snapshot, provenance=tuple(provenance))
+    locators = (locators[0], evidence, locators[2], locators[3])
+    services = list(canonical_services(locators))
+    evidence_service = EvidenceV2Service(services[1].response, (file_basis,))
+    services[1] = evidence_service
+    adapter, _, _ = authorizer(snapshot, locators, tuple(services))
+    assert isinstance(
+        adapter.authorize_and_resolve(provenance_request(snapshot, locators)),
+        ProvenanceAuthorized,
+    )
+    assert evidence_service.history_calls[0][2] == (file_basis,)
+
+    evidence_service.historical = ()
+    assert isinstance(
+        adapter.authorize_and_resolve(provenance_request(snapshot, locators)),
+        ProvenanceProtectedNotFound,
+    )
 
 
 def test_source_adapter_calls_the_actual_technical_report_application_service():

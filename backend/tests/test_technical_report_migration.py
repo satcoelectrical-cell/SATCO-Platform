@@ -17,7 +17,7 @@ EXPECTED_TABLES = {
 
 def test_repository_head_preserves_patch_032_in_current_chain() -> None:
     script = ScriptDirectory.from_config(alembic_config)
-    assert TEST_DATABASE_REVISION == "e04100000001"
+    assert TEST_DATABASE_REVISION == "e04300000001"
     assert script.get_revision("e03400000001").down_revision == "e03200000001"
 
 
@@ -78,6 +78,12 @@ def test_technical_report_schema_matches_authorized_persistence() -> None:
 
 def test_patch_032_downgrade_and_upgrade_restore_head() -> None:
     try:
+        # Real-UoW suites intentionally commit disposable rows.  This
+        # historical chain test crosses PATCH-038, whose upgrade correctly
+        # rejects any Customer inventory other than the Human-approved legacy
+        # set.  Isolate the shared test database before exercising the chain.
+        with owner_engine.begin() as connection:
+            connection.execute(text("TRUNCATE TABLE customers CASCADE"))
         command.downgrade(alembic_config, "e02800000001")
         assert not (EXPECTED_TABLES & set(inspect(owner_engine).get_table_names()))
     finally:

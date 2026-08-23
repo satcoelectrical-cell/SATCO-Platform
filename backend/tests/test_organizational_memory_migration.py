@@ -37,7 +37,7 @@ TRIGGERS = {
 
 def test_repository_head_preserves_patch_034_in_current_chain() -> None:
     script = ScriptDirectory.from_config(alembic_config)
-    assert TEST_DATABASE_REVISION == "e04100000001"
+    assert TEST_DATABASE_REVISION == "e04300000001"
     assert script.get_revision("e03800000001").down_revision == "e03400000001"
 
 
@@ -423,6 +423,11 @@ def test_supersession_guard_contains_deterministic_uuid_lock_order() -> None:
 
 def test_patch_034_downgrade_and_upgrade_restore_single_head() -> None:
     try:
+        # This historical cycle crosses PATCH-038.  Remove disposable rows
+        # committed by real-UoW tests so its strict Human-approved legacy
+        # Customer inventory guard is exercised from an isolated state.
+        with owner_engine.begin() as connection:
+            connection.execute(text("TRUNCATE TABLE customers CASCADE"))
         command.downgrade(alembic_config, "e03200000001")
         assert not (TABLES & set(inspect(owner_engine).get_table_names()))
     finally:

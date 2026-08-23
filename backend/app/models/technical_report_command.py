@@ -50,6 +50,7 @@ from app.exceptions.technical_report import (
     TechnicalReportIntegrityMismatch,
     TechnicalReportValidationError,
 )
+from app.models.supporting_file_command import SupportingFileHistoricalBasisV1
 
 
 def _nonempty(value: str, field_name: str, maximum: int | None = None) -> str:
@@ -210,6 +211,45 @@ class EvidenceHistoricalBasisV1:
 
 
 @dataclass(frozen=True, slots=True)
+class EvidenceHistoricalBasisV2:
+    basis_schema_version: int; source_category: str; evidence_id: UUID; source_version: int
+    organization_id: UUID; project_id: int | None; workspace_id: int | None
+    lifecycle: EvidenceLifecycle; source_kind: EvidenceSourceKind; source_reference: str
+    source_revision: str; source_standing: EvidenceSourceStanding; effective_at: datetime | None
+    supported_fact: str; creator_id: int
+    supporting_files: tuple[SupportingFileHistoricalBasisV1, ...]
+    def __post_init__(self) -> None:
+        if self.basis_schema_version != 2 or self.source_category != "evidence":
+            raise TechnicalReportValidationError("invalid Evidence V2 discriminator")
+        base = EvidenceHistoricalBasisV1(
+            1, self.source_category, self.evidence_id, self.source_version,
+            self.organization_id, self.project_id, self.workspace_id,
+            self.lifecycle, self.source_kind, self.source_reference,
+            self.source_revision, self.source_standing, self.effective_at,
+            self.supported_fact, self.creator_id,
+        )
+        for name in (
+            "evidence_id", "source_version", "organization_id", "project_id",
+            "workspace_id", "lifecycle", "source_kind", "source_reference",
+            "source_revision", "source_standing", "effective_at",
+            "supported_fact", "creator_id",
+        ):
+            object.__setattr__(self, name, getattr(base, name))
+        if not 1 <= len(self.supporting_files) <= 10:
+            raise TechnicalReportValidationError("Evidence V2 requires 1..10 Supporting Files")
+        if any(not isinstance(item, SupportingFileHistoricalBasisV1) for item in self.supporting_files):
+            raise TechnicalReportValidationError("Evidence V2 Supporting File contract is invalid")
+        ordered = tuple(sorted(self.supporting_files, key=lambda item: str(item.asset_id)))
+        if self.supporting_files != ordered or len({item.asset_id for item in ordered}) != len(ordered):
+            raise TechnicalReportValidationError("Evidence V2 Supporting Files must be unique and ordered")
+        for item in ordered:
+            if item.organization_id != self.organization_id or item.project_id != self.project_id:
+                raise TechnicalReportValidationError("Evidence V2 Supporting File scope is invalid")
+            if item.workspace_id is not None and item.workspace_id != self.workspace_id:
+                raise TechnicalReportValidationError("Evidence V2 Supporting File Workspace is invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class EngineeringObjectHistoricalBasisV1:
     basis_schema_version: int; source_category: str; engineering_object_id: UUID; source_version: int
     organization_id: UUID; customer_id: int | None; project_id: int; workspace_id: int
@@ -244,8 +284,8 @@ class EngineeringRelationshipHistoricalBasisV1:
         object.__setattr__(self, "evidence_references", tuple(sorted(self.evidence_references, key=str)))
 
 
-HistoricalBasis: TypeAlias = CaptureHistoricalBasisV1 | EvidenceHistoricalBasisV1 | EngineeringObjectHistoricalBasisV1 | EngineeringRelationshipHistoricalBasisV1
-_HISTORICAL_TYPES = (CaptureHistoricalBasisV1, EvidenceHistoricalBasisV1, EngineeringObjectHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV1)
+HistoricalBasis: TypeAlias = CaptureHistoricalBasisV1 | EvidenceHistoricalBasisV1 | EvidenceHistoricalBasisV2 | EngineeringObjectHistoricalBasisV1 | EngineeringRelationshipHistoricalBasisV1
+_HISTORICAL_TYPES = (CaptureHistoricalBasisV1, EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2, EngineeringObjectHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,7 +370,7 @@ class TechnicalReportProvenanceEntry:
         if self.owning_capability is not None:
             object.__setattr__(self, "owning_capability", TechnicalReportOwningCapability(self.owning_capability))
         object.__setattr__(self, "reliance_role", _nonempty(self.reliance_role, "reliance_role")); object.__setattr__(self, "origin_attribution", _nonempty(self.origin_attribution, "origin_attribution")); object.__setattr__(self, "limitations", tuple(_nonempty(item, "limitations") for item in self.limitations))
-        expected = {TechnicalReportSourceType.UNIVERSAL_CAPTURE: (TechnicalReportOwningCapability.UNIVERSAL_CAPTURE, CaptureHistoricalBasisV1), TechnicalReportSourceType.EVIDENCE: (TechnicalReportOwningCapability.EVIDENCE, EvidenceHistoricalBasisV1), TechnicalReportSourceType.ENGINEERING_OBJECT: (TechnicalReportOwningCapability.ENGINEERING_OBJECT, EngineeringObjectHistoricalBasisV1), TechnicalReportSourceType.ENGINEERING_RELATIONSHIP: (TechnicalReportOwningCapability.ENGINEERING_RELATIONSHIP, EngineeringRelationshipHistoricalBasisV1)}
+        expected = {TechnicalReportSourceType.UNIVERSAL_CAPTURE: (TechnicalReportOwningCapability.UNIVERSAL_CAPTURE, CaptureHistoricalBasisV1), TechnicalReportSourceType.EVIDENCE: (TechnicalReportOwningCapability.EVIDENCE, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)), TechnicalReportSourceType.ENGINEERING_OBJECT: (TechnicalReportOwningCapability.ENGINEERING_OBJECT, EngineeringObjectHistoricalBasisV1), TechnicalReportSourceType.ENGINEERING_RELATIONSHIP: (TechnicalReportOwningCapability.ENGINEERING_RELATIONSHIP, EngineeringRelationshipHistoricalBasisV1)}
         if self.source_class is TechnicalReportSourceClass.CANONICAL_MATERIAL:
             if self.source_type not in expected: raise TechnicalReportHistoricalBasisIncomplete("canonical source type is invalid")
             owner, locator_type = expected[self.source_type]
@@ -436,6 +476,10 @@ _HISTORICAL_KEYS: dict[str, set[str]] = {
     "engineering_object": {field.name for field in fields(EngineeringObjectHistoricalBasisV1)},
     "engineering_relationship": {field.name for field in fields(EngineeringRelationshipHistoricalBasisV1)},
 }
+_EVIDENCE_V2_KEYS = {field.name for field in fields(EvidenceHistoricalBasisV2)}
+_SUPPORTING_FILE_V1_KEYS = {
+    field.name for field in fields(SupportingFileHistoricalBasisV1)
+}
 
 
 def historical_basis_from_payload(payload: object, source_type: str) -> HistoricalBasis:
@@ -443,7 +487,10 @@ def historical_basis_from_payload(payload: object, source_type: str) -> Historic
 
     if source_type not in _HISTORICAL_KEYS:
         raise TechnicalReportHistoricalBasisIncomplete("canonical source type is invalid")
-    value = _closed_payload(payload, _HISTORICAL_KEYS[source_type], "historical basis")
+    keys = _HISTORICAL_KEYS[source_type]
+    if source_type == "evidence" and isinstance(payload, dict) and payload.get("basis_schema_version") == 2:
+        keys = _EVIDENCE_V2_KEYS
+    value = _closed_payload(payload, keys, "historical basis")
     data = dict(value)
     try:
         if source_type == "universal_capture":
@@ -455,11 +502,35 @@ def historical_basis_from_payload(payload: object, source_type: str) -> Historic
             )
             return CaptureHistoricalBasisV1(**data)
         if source_type == "evidence":
+            is_v2 = data.get("basis_schema_version") == 2
             data.update(
                 evidence_id=_payload_uuid(data["evidence_id"], "evidence_id"),
                 organization_id=_payload_uuid(data["organization_id"], "organization_id"),
                 effective_at=_payload_optional_datetime(data["effective_at"], "effective_at"),
             )
+            if is_v2:
+                raw_files = data.get("supporting_files")
+                if not isinstance(raw_files, list):
+                    raise TypeError
+                data["supporting_files"] = tuple(
+                    SupportingFileHistoricalBasisV1(
+                        **{
+                            **closed,
+                            "asset_id": _payload_uuid(closed["asset_id"], "asset_id"),
+                            "organization_id": _payload_uuid(closed["organization_id"], "organization_id"),
+                            "uploaded_at": _payload_datetime(closed["uploaded_at"], "uploaded_at"),
+                            "predecessor_asset_id": _payload_optional_uuid(closed["predecessor_asset_id"], "predecessor_asset_id"),
+                        }
+                    )
+                    for closed in (
+                        _closed_payload(
+                            item, _SUPPORTING_FILE_V1_KEYS,
+                            "Supporting File historical basis",
+                        )
+                        for item in raw_files
+                    )
+                )
+                return EvidenceHistoricalBasisV2(**data)
             return EvidenceHistoricalBasisV1(**data)
         if source_type == "engineering_object":
             data.update(

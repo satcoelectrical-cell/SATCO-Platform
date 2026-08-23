@@ -25,6 +25,7 @@ from app.models.technical_report_command import (
     EngineeringObjectHistoricalBasisV1,
     EngineeringRelationshipHistoricalBasisV1,
     EvidenceHistoricalBasisV1,
+    EvidenceHistoricalBasisV2,
     ReviseTechnicalReportDraft,
     TechnicalReportActor,
     TechnicalReportCommandResult,
@@ -130,6 +131,7 @@ class TechnicalReportAuthorizedView:
 _CANONICAL_LOCATORS = (
     CaptureHistoricalBasisV1,
     EvidenceHistoricalBasisV1,
+    EvidenceHistoricalBasisV2,
     EngineeringObjectHistoricalBasisV1,
     EngineeringRelationshipHistoricalBasisV1,
 )
@@ -484,12 +486,10 @@ class TechnicalReportService:
         locator = entry.locator
         if not isinstance(locator, _CANONICAL_LOCATORS):
             raise TechnicalReportAuthorizationDenied()
-        identity = {
-            CaptureHistoricalBasisV1: locator.capture_id if isinstance(locator, CaptureHistoricalBasisV1) else None,
-            EvidenceHistoricalBasisV1: locator.evidence_id if isinstance(locator, EvidenceHistoricalBasisV1) else None,
-            EngineeringObjectHistoricalBasisV1: locator.engineering_object_id if isinstance(locator, EngineeringObjectHistoricalBasisV1) else None,
-            EngineeringRelationshipHistoricalBasisV1: locator.engineering_relationship_id if isinstance(locator, EngineeringRelationshipHistoricalBasisV1) else None,
-        }[type(locator)]
+        if isinstance(locator, CaptureHistoricalBasisV1): identity = locator.capture_id
+        elif isinstance(locator, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)): identity = locator.evidence_id
+        elif isinstance(locator, EngineeringObjectHistoricalBasisV1): identity = locator.engineering_object_id
+        else: identity = locator.engineering_relationship_id
         return TechnicalReportHistoricalRequest(
             actor, scope, authority, entry.source_type.value, identity, locator.source_version
         )

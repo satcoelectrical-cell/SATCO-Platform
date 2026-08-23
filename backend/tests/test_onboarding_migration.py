@@ -6,11 +6,11 @@ from sqlalchemy import inspect, text
 from conftest import TEST_DATABASE_REVISION, alembic_config, engine
 
 
-def test_patch_041_is_sole_head_with_expected_parent():
+def test_patch_041_history_is_preserved_and_patch_043_is_sole_head():
     script = ScriptDirectory.from_config(alembic_config)
-    assert script.get_heads() == ["e04100000001"]
+    assert script.get_heads() == ["e04300000001"]
     assert script.get_revision("e04100000001").down_revision == "e03800000001"
-    assert TEST_DATABASE_REVISION == "e04100000001"
+    assert TEST_DATABASE_REVISION == "e04300000001"
 
 
 def test_patch_041_schema_and_legacy_backfill_are_present():

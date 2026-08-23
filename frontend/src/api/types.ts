@@ -38,6 +38,27 @@ export interface TechnicalReportAccepted extends TechnicalReport { lifecycle: "a
 export type TechnicalReportDetail = TechnicalReportDraft | TechnicalReportAccepted;
 export interface ReportSourceCandidate { capture_id: string; project_id: number; workspace_id: number; source_kind: string; version: number; created_at: string; preview: string; provenance: ReportProvenance }
 export interface ReportSourceCandidatePage { items: ReportSourceCandidate[]; total: number; page: number; size: number }
+export interface SupportingFile {
+  id: string; organization_id: string; project_id: number; workspace_id: number | null;
+  safe_filename: string; media_type: string; byte_size: number; digest_algorithm: "sha256";
+  content_digest: string; lifecycle: "quarantined" | "available" | "rejected" | "withdrawn";
+  version: number; uploader_id: number; uploaded_at: string; scanned_at: string | null;
+  predecessor_asset_id: string | null; allowed_actions: string[];
+}
+export interface SupportingFilePage { items: SupportingFile[]; visible_count: number; continuation: string | null }
+export interface EvidenceRecord {
+  id: string; organization_id: string; project_id: number | null; workspace_id: number | null;
+  lifecycle: "proposed" | "current" | "withdrawn" | "superseded"; source_kind: string;
+  source_reference: string; source_revision: string; source_standing: string;
+  effective_at: string | null; supported_fact: string; creator_id: number; version: number;
+  created_at: string; updated_at: string; allowed_actions: string[];
+}
+export interface EvidenceCandidate {
+  evidence_id: string; project_id: number; workspace_id: number | null; source_kind: string;
+  version: number; updated_at: string; preview: string; supporting_file_count: number;
+  provenance: ReportProvenance;
+}
+export interface EvidenceCandidatePage { items: EvidenceCandidate[]; total: number; page: number; size: number }
 export interface MemorySummary {
   memory_id: string; version: number; standing: "active"; source_report_id: string;
   source_accepted_version: number; purpose: string; organization_id: string; workspace_id: number; project_id: number | null;

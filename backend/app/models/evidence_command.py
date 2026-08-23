@@ -28,6 +28,15 @@ class CreateEvidence:
 class TransitionEvidenceLifecycle:
     metadata:EvidenceMetadata; evidence_id:UUID; expected_version:int; lifecycle:EvidenceLifecycle; replacement_evidence_id:UUID|None=None
 @dataclass(frozen=True, slots=True)
+class LinkEvidenceSupportingFiles:
+    metadata: EvidenceMetadata
+    evidence_id: UUID
+    expected_version: int
+    asset_ids: tuple[UUID, ...]
+    def __post_init__(self):
+        if not 1 <= len(self.asset_ids) <= 10 or len(set(self.asset_ids)) != len(self.asset_ids) or self.asset_ids != tuple(sorted(self.asset_ids, key=str)):
+            raise ValueError("Supporting File identities must be 1..10 unique and ordered")
+@dataclass(frozen=True, slots=True)
 class EvidenceEvent:
     event_id:UUID; event_type:str; evidence_id:UUID; aggregate_version:int; occurred_at:datetime; actor_id:int; correlation_id:UUID; causation_id:UUID; organization_id:UUID; payload:Mapping[str,Scalar]
 @dataclass(frozen=True, slots=True)

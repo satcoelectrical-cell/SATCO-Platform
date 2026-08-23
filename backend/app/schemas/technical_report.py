@@ -26,11 +26,14 @@ from app.models.technical_report_command import (
     EngineeringObjectHistoricalBasisV1,
     EngineeringRelationshipHistoricalBasisV1,
     EvidenceHistoricalBasisV1,
+    EvidenceHistoricalBasisV2,
     ContextualLocator,
     ExternalHumanLocator,
     StandardLocator,
     TechnicalReportProvenanceEntry,
 )
+from app.models.supporting_file_command import SupportingFileHistoricalBasisV1
+from app.enums.supporting_file import SupportingFileMediaType
 
 
 PositiveIdentifier = Annotated[int, Field(gt=0)]
@@ -114,8 +117,29 @@ class CaptureHistoricalBasisSchema(StrictTechnicalReportSchema):
         return CaptureHistoricalBasisV1(**self.model_dump())
 
 
-class EvidenceHistoricalBasisSchema(StrictTechnicalReportSchema):
+class SupportingFileHistoricalBasisSchema(StrictTechnicalReportSchema):
     basis_schema_version: Literal[1]
+    source_category: Literal["supporting_file"]
+    asset_id: UUID
+    asset_version: PositiveVersion
+    organization_id: UUID
+    project_id: PositiveIdentifier
+    workspace_id: PositiveIdentifier | None
+    safe_filename: Annotated[str, Field(min_length=1, max_length=255)]
+    media_type: SupportingFileMediaType
+    byte_size: Annotated[int, Field(ge=1, le=26_214_400)]
+    digest_algorithm: Literal["sha256"]
+    content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    uploader_id: PositiveIdentifier
+    uploaded_at: AwareDatetime
+    predecessor_asset_id: UUID | None
+
+    def to_domain(self) -> SupportingFileHistoricalBasisV1:
+        return SupportingFileHistoricalBasisV1(**self.model_dump())
+
+
+class EvidenceHistoricalBasisSchema(StrictTechnicalReportSchema):
+    basis_schema_version: Literal[1, 2]
     source_category: Literal["evidence"]
     evidence_id: UUID
     source_version: PositiveVersion
@@ -130,9 +154,26 @@ class EvidenceHistoricalBasisSchema(StrictTechnicalReportSchema):
     effective_at: AwareDatetime | None
     supported_fact: Annotated[str, Field(min_length=1, max_length=2000)]
     creator_id: PositiveIdentifier
+    supporting_files: tuple[SupportingFileHistoricalBasisSchema, ...] = ()
 
-    def to_domain(self) -> EvidenceHistoricalBasisV1:
-        return EvidenceHistoricalBasisV1(**self.model_dump())
+    @model_validator(mode="after")
+    def exact_version_shape(self):
+        if self.basis_schema_version == 1 and self.supporting_files:
+            raise ValueError("Evidence V1 cannot contain Supporting Files")
+        if self.basis_schema_version == 2:
+            ids = tuple(item.asset_id for item in self.supporting_files)
+            if not 1 <= len(ids) <= 10 or ids != tuple(sorted(set(ids), key=str)):
+                raise ValueError("Evidence V2 requires an exact ordered Supporting File set")
+        return self
+
+    def to_domain(self) -> EvidenceHistoricalBasisV1 | EvidenceHistoricalBasisV2:
+        values = self.model_dump(exclude={"supporting_files"})
+        if self.basis_schema_version == 1:
+            return EvidenceHistoricalBasisV1(**values)
+        return EvidenceHistoricalBasisV2(
+            **values,
+            supporting_files=tuple(item.to_domain() for item in self.supporting_files),
+        )
 
 
 class EngineeringObjectHistoricalBasisSchema(StrictTechnicalReportSchema):
@@ -429,6 +470,27 @@ class TechnicalReportCaptureSourceCandidate(StrictTechnicalReportSchema):
 
 class TechnicalReportCaptureSourceCandidateList(StrictTechnicalReportSchema):
     items: list[TechnicalReportCaptureSourceCandidate] = Field(max_length=20)
+    total: int = Field(ge=0)
+    page: int = Field(ge=1)
+    size: int = Field(ge=1, le=20)
+
+
+class TechnicalReportEvidenceSourceCandidate(StrictTechnicalReportSchema):
+    """Display-safe Evidence choice plus server-composed canonical provenance."""
+
+    evidence_id: UUID
+    project_id: PositiveIdentifier
+    workspace_id: PositiveIdentifier | None
+    source_kind: EvidenceSourceKind
+    version: PositiveVersion
+    updated_at: AwareDatetime
+    preview: Annotated[str, Field(min_length=1, max_length=240)]
+    supporting_file_count: int = Field(ge=0, le=10)
+    provenance: TechnicalReportProvenanceSchema
+
+
+class TechnicalReportEvidenceSourceCandidateList(StrictTechnicalReportSchema):
+    items: list[TechnicalReportEvidenceSourceCandidate] = Field(max_length=20)
     total: int = Field(ge=0)
     page: int = Field(ge=1)
     size: int = Field(ge=1, le=20)

@@ -33,3 +33,4 @@ from .technical_report import TechnicalReportProvenanceRecord
 from .technical_report import TechnicalReportRecord
 from .technical_report_command import TechnicalReportIdempotencyRecord
 from .technical_report_command import TechnicalReportOutboxRecord
+from .supporting_file import EvidenceSupportingFileLink, SupportingFileAsset, SupportingFileUploadReservation

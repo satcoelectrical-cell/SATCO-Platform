@@ -61,12 +61,19 @@ services:
       SATCO_PERSISTENCE_GUARD_VERSION: ${SATCO_PERSISTENCE_GUARD_VERSION:?SATCO_PERSISTENCE_GUARD_VERSION is required}
       SATCO_OBJECT_HEALTH_URL: ${SATCO_OBJECT_HEALTH_URL:?SATCO_OBJECT_HEALTH_URL is required}
       SATCO_OBJECT_HEALTH_CA_FILE: /run/secrets/object_health_ca
+      SUPPORTING_FILE_OBJECT_ENDPOINT: ${SUPPORTING_FILE_OBJECT_ENDPOINT:?SUPPORTING_FILE_OBJECT_ENDPOINT is required}
+      SUPPORTING_FILE_OBJECT_BUCKET: ${SUPPORTING_FILE_OBJECT_BUCKET:?SUPPORTING_FILE_OBJECT_BUCKET is required}
+      SUPPORTING_FILE_OBJECT_REGION: ${SUPPORTING_FILE_OBJECT_REGION:?SUPPORTING_FILE_OBJECT_REGION is required}
+      SUPPORTING_FILE_OBJECT_ACCESS_KEY_FILE: /run/secrets/supporting_file_object_access_key
+      SUPPORTING_FILE_OBJECT_SECRET_KEY_FILE: /run/secrets/supporting_file_object_secret_key
+      SUPPORTING_FILE_SCANNER_ENDPOINT: ${SUPPORTING_FILE_SCANNER_ENDPOINT:?SUPPORTING_FILE_SCANNER_ENDPOINT is required}
+      SUPPORTING_FILE_SCANNER_TOKEN_FILE: /run/secrets/supporting_file_scanner_token
       SATCO_BACKUP_POLICY_ID: ${SATCO_BACKUP_POLICY_ID:?SATCO_BACKUP_POLICY_ID is required}
       SATCO_BACKUP_ENCRYPTION_KEY_REFERENCE: ${SATCO_BACKUP_ENCRYPTION_KEY_REFERENCE:?SATCO_BACKUP_ENCRYPTION_KEY_REFERENCE is required}
       SATCO_MONITORING_TOKEN_FILE: /run/secrets/monitoring_token
       SATCO_OPS_MODE_FILE: /run/satco-ops/mode.json
       SATCO_OPS_MODE_HMAC_KEY_FILE: /run/secrets/ops_mode_hmac_key
-    secrets: [runtime_db_password, signing_secret, release_manifest, monitoring_token, object_health_ca, ops_mode_hmac_key]
+    secrets: [runtime_db_password, signing_secret, release_manifest, monitoring_token, object_health_ca, supporting_file_object_access_key, supporting_file_object_secret_key, supporting_file_scanner_token, ops_mode_hmac_key]
     volumes:
       - satco_ops_mode:/run/satco-ops:ro
     depends_on:
@@ -175,6 +182,12 @@ secrets:
     file: ${SATCO_MONITORING_TOKEN_FILE:?SATCO_MONITORING_TOKEN_FILE is required}
   object_health_ca:
     file: ${SATCO_OBJECT_HEALTH_CA_FILE:?SATCO_OBJECT_HEALTH_CA_FILE is required}
+  supporting_file_object_access_key:
+    file: ${SUPPORTING_FILE_OBJECT_ACCESS_KEY_FILE:?SUPPORTING_FILE_OBJECT_ACCESS_KEY_FILE is required}
+  supporting_file_object_secret_key:
+    file: ${SUPPORTING_FILE_OBJECT_SECRET_KEY_FILE:?SUPPORTING_FILE_OBJECT_SECRET_KEY_FILE is required}
+  supporting_file_scanner_token:
+    file: ${SUPPORTING_FILE_SCANNER_TOKEN_FILE:?SUPPORTING_FILE_SCANNER_TOKEN_FILE is required}
   ops_mode_hmac_key:
     file: ${SATCO_OPS_MODE_HMAC_KEY_FILE:?SATCO_OPS_MODE_HMAC_KEY_FILE is required}
   schema_owner_db_password:

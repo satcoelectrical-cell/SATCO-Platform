@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ReportsPage } from "../pages/ReportPages";
 
-const { apiMock } = vi.hoisted(() => ({ apiMock: { projects: vi.fn(), workspaces: vi.fn(), reports: vi.fn(), reportSources: vi.fn(), report: vi.fn(), createReport: vi.fn(), reviseReport: vi.fn(), acceptReport: vi.fn(), admitMemory: vi.fn() } }));
+const { apiMock } = vi.hoisted(() => ({ apiMock: { projects: vi.fn(), workspaces: vi.fn(), reports: vi.fn(), reportSources: vi.fn(), reportEvidenceSources: vi.fn(), report: vi.fn(), createReport: vi.fn(), reviseReport: vi.fn(), acceptReport: vi.fn(), admitMemory: vi.fn(), downloadHistoricalSupportingFile: vi.fn() } }));
 vi.mock("../api/client", () => ({ api: apiMock }));
 
 const organization = "7e7c9d7a-7693-4f75-9bc5-3ef7bf528281";
@@ -23,6 +23,7 @@ beforeEach(() => {
   apiMock.reports.mockResolvedValue({ state: "success", data: { items: [], total: 0 } });
   apiMock.report.mockResolvedValue({ state: "success", data: draft });
   apiMock.reportSources.mockResolvedValue({ state: "success", data: { items: [{ capture_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", project_id: 7, workspace_id: 9, source_kind: "observation", version: 3, created_at: "2026-08-20T09:00:00Z", preview: "Observed intermittent voltage loss.", provenance }], total: 1, page: 1, size: 20 } });
+  apiMock.reportEvidenceSources.mockResolvedValue({ state: "success", data: { items: [], total: 0, page: 1, size: 20 } });
 });
 
 it("creates a Human-authored draft with server-composed Capture provenance", async () => {

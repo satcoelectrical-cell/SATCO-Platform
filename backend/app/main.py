@@ -35,6 +35,7 @@ from app.api.v1.routers.organizational_memory import (
 from app.api.v1.routers.ai_capture_assistant import router as ai_capture_assistant_router
 from app.api.v1.routers.onboarding import router as onboarding_router
 from app.api.v1.routers.operations import router as operations_router
+from app.api.v1.routers.supporting_files import router as supporting_file_router
 from app.core.config import settings
 from app.core.operations import (
     GovernedWriteBlocked,
@@ -70,7 +71,10 @@ if settings.SATCO_ENVIRONMENT == "production":
         ],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=[
+            "Authorization", "Content-Type", "Idempotency-Key",
+            "X-Correlation-ID",
+        ],
     )
 
 
@@ -110,6 +114,7 @@ app.include_router(organizational_memory_router)
 app.include_router(ai_capture_assistant_router)
 app.include_router(onboarding_router)
 app.include_router(operations_router)
+app.include_router(supporting_file_router)
 
 
 @app.get("/health/live")

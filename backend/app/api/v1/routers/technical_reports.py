@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, Query, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 
 from app.core.database import SessionLocal
@@ -41,12 +41,19 @@ from app.schemas.technical_report import (
     TechnicalReportReviseDraftRequest, TechnicalReportSummary,
 )
 from app.services.technical_report_service import TechnicalReportService
+from app.dependencies.supporting_file import SupportingFileApplication, get_supporting_file_application
+from app.exceptions.supporting_file import SupportingFileIntegrityError, SupportingFileProtectedNotFound
+from app.models.supporting_file_command import SupportingFileScope
+from app.models.technical_report_command import EvidenceHistoricalBasisV2
 from app.adapters.technical_report_capture_source import TechnicalReportCaptureSourceAdapter
 from app.api.v1.routers.engineering_experience_captures import (
     EngineeringExperienceCaptureApplication,
     get_engineering_experience_capture_application,
 )
 from app.schemas.technical_report import TechnicalReportCaptureSourceCandidateList
+from app.schemas.technical_report import TechnicalReportEvidenceSourceCandidateList
+from app.adapters.technical_report_evidence_source import TechnicalReportEvidenceSourceAdapter
+from app.dependencies.supporting_file import get_technical_report_evidence_source_adapter
 
 
 _MAPPINGS = (
@@ -78,6 +85,10 @@ class TechnicalReportRoute(APIRoute):
                 return await original(request)
             except RequestValidationError:
                 return _error(422, "TECHNICAL_REPORT_VALIDATION_ERROR")
+            except SupportingFileProtectedNotFound:
+                return JSONResponse(status_code=404, content={"outcome": "protected_not_found"})
+            except SupportingFileIntegrityError:
+                return JSONResponse(status_code=503, content={"outcome": "unavailable"})
             except TechnicalReportException as exc:
                 code = "TECHNICAL_REPORT_NOT_FOUND" if isinstance(exc, TechnicalReportAuthorizationDenied) else exc.code
                 return _error(next((status for kind, status in _MAPPINGS if isinstance(exc, kind)), 500), code)
@@ -210,6 +221,60 @@ def list_capture_source_candidates(
         workspace_id=workspace_id,
         page=page,
         size=size,
+    )
+
+
+@router.get(
+    "/technical-reports/evidence-source-candidates",
+    response_model=TechnicalReportEvidenceSourceCandidateList,
+)
+def list_evidence_source_candidates(
+    project_id: int = Query(..., gt=0),
+    workspace_id: int = Query(..., gt=0),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=20),
+    sources: TechnicalReportEvidenceSourceAdapter = Depends(
+        get_technical_report_evidence_source_adapter
+    ),
+):
+    return sources.list_candidates(
+        project_id=project_id, workspace_id=workspace_id,
+        page=page, size=size,
+    )
+
+
+@router.get("/technical-reports/{report_id}/evidence/{evidence_id}/supporting-files/{asset_id}/download")
+def download_historical_supporting_file(
+    report_id: UUID, evidence_id: UUID, asset_id: UUID,
+    app: TechnicalReportApplication = Depends(get_technical_report_application),
+    files: SupportingFileApplication = Depends(get_supporting_file_application),
+):
+    report = app.service.get_report(app.actor, report_id)
+    snapshot = report.accepted_snapshot
+    if snapshot is None:
+        raise TechnicalReportAuthorizationDenied()
+    basis = None
+    for entry in snapshot.provenance:
+        locator = entry.locator
+        if isinstance(locator, EvidenceHistoricalBasisV2) and locator.evidence_id == evidence_id:
+            basis = next((item for item in locator.supporting_files if item.asset_id == asset_id), None)
+            break
+    if basis is None:
+        raise SupportingFileProtectedNotFound()
+    asset, stream = files.service.open_historical(
+        actor_id=files.actor_id,
+        scope=SupportingFileScope(
+            files.organization_id, snapshot.project_id, snapshot.workspace_id,
+        ),
+        basis=basis,
+    )
+    return StreamingResponse(
+        stream, media_type=asset.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{asset.safe_ascii_filename}"',
+            "Content-Length": str(asset.byte_size),
+            "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store",
+        },
     )
 
 

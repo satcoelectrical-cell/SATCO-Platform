@@ -108,12 +108,17 @@ def test_exact_approved_route_surface_and_prohibited_routes():
     expected = {
         ("/technical-reports", "post"), ("/technical-reports", "get"),
         ("/technical-reports/capture-source-candidates", "get"),
+        ("/technical-reports/evidence-source-candidates", "get"),
         ("/technical-reports/{report_id}", "get"),
         ("/technical-reports/{report_id}/draft-revisions", "post"),
         ("/technical-reports/{report_id}/acceptance", "post"),
         ("/technical-reports/{report_id}/successors", "post"),
         ("/technical-reports/{report_id}/lineage", "get"),
         ("/technical-reports/{report_id}/ai-draft-proposals", "post"),
+        (
+            "/technical-reports/{report_id}/evidence/{evidence_id}/supporting-files/{asset_id}/download",
+            "get",
+        ),
     }
     actual = {(path, method) for path, item in app.openapi()["paths"].items()
               if path.startswith("/technical-reports") for method in item}

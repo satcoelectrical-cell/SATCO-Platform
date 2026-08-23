@@ -39,6 +39,7 @@ from .technical_report import TechnicalReportPurpose
 from .technical_report import TechnicalReportSourceClass
 from .technical_report import TechnicalReportSourceType
 from .technical_report import TechnicalReportVerificationStatus
+from .supporting_file import SupportingFileLifecycle, SupportingFileMediaType, SupportingFileReservationStatus, SupportingFileScanDisposition
 from app.enums.engineering_knowledge import (
     EngineeringAuthorityStanding,
     EngineeringConfidentiality,

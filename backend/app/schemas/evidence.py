@@ -28,6 +28,17 @@ class TransitionEvidenceLifecycleRequest(BaseModel):
     replacement_evidence_id: UUID | None = None
     rationale: str = Field(min_length=1)
 
+class LinkEvidenceSupportingFilesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(gt=0)
+    asset_ids: tuple[UUID, ...] = Field(min_length=1, max_length=10)
+    rationale: str = Field(min_length=1, max_length=2000)
+    @model_validator(mode="after")
+    def exact_ids(self):
+        if len(set(self.asset_ids)) != len(self.asset_ids) or self.asset_ids != tuple(sorted(self.asset_ids, key=str)):
+            raise ValueError("asset_ids must be unique and ordered")
+        return self
+
 class EvidenceFilter(BaseModel):
     model_config = ConfigDict(extra="forbid")
     workspace_id: int | None = Field(None, gt=0)

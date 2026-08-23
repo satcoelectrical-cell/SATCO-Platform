@@ -1,4 +1,4 @@
-import type { AdviceResponse, ApiResult, Capture, Customer, IssuedCredential, JournalWorkspace, MemberList, MemoryAdmissionResult, MemoryDetailResult, MemoryPage, Paginated, Project, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, UserProfile, Workspace } from "./types";
+import type { AdviceResponse, ApiResult, Capture, Customer, EvidenceCandidatePage, EvidenceRecord, IssuedCredential, JournalWorkspace, MemberList, MemoryAdmissionResult, MemoryDetailResult, MemoryPage, Paginated, Project, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, SupportingFile, SupportingFilePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, UserProfile, Workspace } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const TOKEN_KEY = "satco.auth.access.v1";
@@ -13,7 +13,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResu
   const token = authSession.get();
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (init.body && !(init.body instanceof URLSearchParams)) headers.set("Content-Type", "application/json");
+  if (init.body && !(init.body instanceof URLSearchParams) && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   try {
     const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
     if (response.status === 401) { authSession.clear(); return { state: "protected" }; }
@@ -23,6 +23,20 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResu
     if (response.status === 503) return { state: "unavailable" };
     if (!response.ok) return { state: "error" };
     return { state: "success", data: await response.json() as T };
+  } catch { return { state: "unavailable" }; }
+}
+
+async function downloadRequest(path: string): Promise<ApiResult<Blob>> {
+  const token = authSession.get();
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  try {
+    const response = await fetch(`${API_BASE}${path}`, { headers });
+    if ([401, 403, 404].includes(response.status)) return { state: "protected" };
+    if ([400, 422].includes(response.status)) return { state: "invalid" };
+    if (response.status === 503) return { state: "unavailable" };
+    if (!response.ok) return { state: "error" };
+    return { state: "success", data: await response.blob() };
   } catch { return { state: "unavailable" }; }
 }
 
@@ -69,6 +83,13 @@ export const api = {
   reports: (workspaceId: number, projectId?: number) => request<{ items: TechnicalReport[]; total: number }>(`/technical-reports?workspace_id=${workspaceId}${projectId ? `&project_id=${projectId}` : ""}&page=1&size=20`),
   report: (id: string) => request<TechnicalReportDetail>(`/technical-reports/${encodeURIComponent(id)}`),
   reportSources: (projectId: number, workspaceId: number) => request<ReportSourceCandidatePage>(`/technical-reports/capture-source-candidates?project_id=${projectId}&workspace_id=${workspaceId}&page=1&size=20`),
+  reportEvidenceSources: (projectId: number, workspaceId: number) => request<EvidenceCandidatePage>(`/technical-reports/evidence-source-candidates?project_id=${projectId}&workspace_id=${workspaceId}&page=1&size=20`),
+  supportingFiles: (projectId: number, workspaceId: number, continuation?: string) => request<SupportingFilePage>(`/projects/${projectId}/supporting-files?workspace_id=${workspaceId}&limit=20${continuation ? `&continuation=${encodeURIComponent(continuation)}` : ""}`),
+  uploadSupportingFile: (projectId: number, workspaceId: number, file: File, rationale: string) => { const body = new FormData(); body.set("project_id", String(projectId)); body.set("workspace_id", String(workspaceId)); body.set("rationale", rationale); body.set("file", file); return request<SupportingFile>("/supporting-files/uploads", { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body }); },
+  evidence: (projectId: number, workspaceId: number) => request<{ items: EvidenceRecord[]; total: number; page: number; size: number }>(`/projects/${projectId}/evidence?workspace_id=${workspaceId}&page=1&size=100`),
+  linkSupportingFiles: (evidenceId: string, expectedVersion: number, assetIds: string[], rationale: string) => request<EvidenceRecord>(`/evidence/${encodeURIComponent(evidenceId)}/supporting-files`, { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ expected_version: expectedVersion, asset_ids: [...assetIds].sort(), rationale }) }),
+  downloadSupportingFile: (assetId: string, projectId: number, workspaceId: number) => downloadRequest(`/supporting-files/${encodeURIComponent(assetId)}/download?project_id=${projectId}&workspace_id=${workspaceId}`),
+  downloadHistoricalSupportingFile: (reportId: string, evidenceId: string, assetId: string) => downloadRequest(`/technical-reports/${encodeURIComponent(reportId)}/evidence/${encodeURIComponent(evidenceId)}/supporting-files/${encodeURIComponent(assetId)}/download`),
   createReport: (payload: { workspace_id: number; project_id: number; purpose: string; content: ReportContent; qualification: ReportQualification; provenance: ReportProvenance[] }) => request<TechnicalReportDraft>("/technical-reports", { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
   reviseReport: (id: string, payload: { expected_version: number; expected_draft_revision_id: string; content: ReportContent; qualification: ReportQualification; provenance: ReportProvenance[]; rationale: string }) => request<TechnicalReportDraft>(`/technical-reports/${encodeURIComponent(id)}/draft-revisions`, { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
   acceptReport: (id: string, payload: { expected_version: number; exact_draft_revision_id: string; confirmed: true; rationale: string }) => request<TechnicalReportAccepted>(`/technical-reports/${encodeURIComponent(id)}/acceptance`, { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),

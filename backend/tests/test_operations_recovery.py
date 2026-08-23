@@ -57,8 +57,8 @@ def test_preflight_maps_governed_runtime_role_to_alembic_contract():
 def test_backup_and_restore_fail_closed_and_remove_plaintext():
     backup = (ROOT / "ops/scripts/backup.sh").read_text(encoding="utf-8")
     restore = (ROOT / "ops/scripts/restore-verify.sh").read_text(encoding="utf-8")
-    for script in (backup, restore):
-        assert "trap 'rm -f \"$plain\"' EXIT HUP INT TERM" in script
+    assert "trap 'rm -f \"$plain\" \"$object_plain\"' EXIT HUP INT TERM" in backup
+    assert "trap 'rm -f \"$plain\" \"$object_plain\" \"$database_objects\"' EXIT HUP INT TERM" in restore
     for field in (
         "deployment_id", "release_id", "configuration_id", "alembic_head",
         "encryption_key_reference", "operational_actor_id", "database_sha256",
@@ -68,6 +68,14 @@ def test_backup_and_restore_fail_closed_and_remove_plaintext():
     assert "pg_restore --exit-on-error" in restore
     assert "SELECT version_num FROM alembic_version" in restore
     assert 'payload["verification_state"] = "verified"' in restore
+    for contract in (
+        "supporting-file-object-inventory.v1", "object_inventory_sha256",
+        "object_cutoff_at", "object_count", '"object_status": "sealed"',
+    ):
+        assert contract in backup
+    assert 'p["database_cutoff_at"] == p["object_cutoff_at"]' in restore
+    assert "actual == manifest['entries']" in restore
+    assert 'payload["object_status"] = "verified"' in restore
     upgrade = (ROOT / "ops/scripts/upgrade.sh").read_text(encoding="utf-8")
     assert "restore-verify.sh" in upgrade
     assert "SATCO_PREFLIGHT_PHASE=before" in upgrade

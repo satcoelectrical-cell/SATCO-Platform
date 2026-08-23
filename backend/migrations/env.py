@@ -56,6 +56,7 @@ from app.models import engineering_experience_capture  # noqa: F401
 from app.models import engineering_experience_capture_command  # noqa: F401
 from app.models import technical_report  # noqa: F401
 from app.models import technical_report_command  # noqa: F401
+from app.models import supporting_file  # noqa: F401
 
 target_metadata = Base.metadata
 
