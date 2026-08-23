@@ -51,6 +51,15 @@ from app.enums.engineering_knowledge import (
     EngineeringRelationshipFamily,
     EngineeringResponsibilityRole,
 )
+from .project_foundation import (
+    ProjectEngineeringStage,
+    ProjectFoundationAvailability,
+    ProjectInputSourceKind,
+    ProjectInputStanding,
+    ProjectReadinessBlockerCode,
+    ProjectReadinessState,
+    ProjectScopeKind,
+)
 
 # Backward-compatible Core alias. New domain code must use a qualified export.
 RelationshipLifecycle = EngineeringContextRelationshipLifecycle

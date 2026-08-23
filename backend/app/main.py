@@ -36,6 +36,7 @@ from app.api.v1.routers.ai_capture_assistant import router as ai_capture_assista
 from app.api.v1.routers.onboarding import router as onboarding_router
 from app.api.v1.routers.operations import router as operations_router
 from app.api.v1.routers.supporting_files import router as supporting_file_router
+from app.api.v1.routers.project_foundation import router as project_foundation_router
 from app.core.config import settings
 from app.core.operations import (
     GovernedWriteBlocked,
@@ -115,6 +116,7 @@ app.include_router(ai_capture_assistant_router)
 app.include_router(onboarding_router)
 app.include_router(operations_router)
 app.include_router(supporting_file_router)
+app.include_router(project_foundation_router)
 
 
 @app.get("/health/live")

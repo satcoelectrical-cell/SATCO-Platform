@@ -115,7 +115,7 @@ def test_support_bundle_is_bounded_allow_listed_and_excludes_unknown_content(tmp
             {
                 "release_id": "r1",
                 "git_commit": "abcdef0",
-                "expected_alembic_head": "e04300000001",
+                "expected_alembic_head": "e04400000001",
                 "secret": "never",
             }
         ),

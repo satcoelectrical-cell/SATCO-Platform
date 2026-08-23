@@ -83,5 +83,16 @@ export type AdviceResponse = { outcome: "success"; proposal: AdviceProposal } | 
 export interface OrganizationProfile { id: string; name: string; slug: string }
 export interface UserProfile { user_id: string; username: string; full_name: string | null; role: "admin" | "engineer"; organization: OrganizationProfile }
 export interface OrganizationMember { user_id: number; username: string; email: string; full_name: string | null; role: "admin" | "engineer"; account_active: boolean; activation_pending: boolean; membership_enabled: boolean; membership_selected: boolean; version: number }
+export type ProjectStage = "definition" | "preparation" | "execution" | "verification" | "completion_readiness";
+export type ProjectInputStanding = "missing" | "received" | "clarification_required" | "not_applicable";
+export interface ProjectFoundationSource { kind: "supporting_file" | "evidence"; source_id: string; version: number; workspace_id: number | null }
+export interface ProjectFoundationOrderedText { id:string; ordinal:number; statement:string }
+export interface ProjectFoundationInput { id:string; title:string; description:string|null; ordinal:number; required_by_stage:ProjectStage; standing:ProjectInputStanding; source_condition:"not_required"|"authorized_current"|"source_reauthorization_required"; source:ProjectFoundationSource|null; version:number; standing_changed_at:string; updated_at:string }
+export interface ProjectFoundationBlocker { code:string; input_id:string|null; input_title:string|null }
+export interface ProjectFoundationEstablished { outcome:"success"; availability:"established"; project_id:number; version:number; purpose:string; engineering_basis:string; stage:ProjectStage; in_scope:ProjectFoundationOrderedText[]; out_of_scope:ProjectFoundationOrderedText[]; completion_criteria:ProjectFoundationOrderedText[]; inputs:ProjectFoundationInput[]; next_stage_readiness:{state:"ready"|"blocked"|"not_applicable";target_stage:ProjectStage|null;blockers:ProjectFoundationBlocker[]}; allowed_actions:string[]; established_at:string; updated_at:string }
+export interface ProjectFoundationNotEstablished { outcome:"success"; availability:"basis_not_established"; project_id:number; allowed_actions:string[] }
+export type ProjectFoundation = ProjectFoundationEstablished | ProjectFoundationNotEstablished;
+export interface ProjectFoundationSourceCandidate { kind:"supporting_file"|"evidence"; source_id:string; version:number; workspace_id:number|null; display_label:string }
+export interface ProjectFoundationSourcePage { outcome:"success"; items:ProjectFoundationSourceCandidate[]; visible_count:number }
 export interface IssuedCredential { outcome: string; organization?: OrganizationProfile & { is_active: boolean }; member?: OrganizationMember; one_time_token?: string; replayed?: boolean }
 export interface MemberList { outcome: string; items: OrganizationMember[] }
