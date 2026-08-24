@@ -4,12 +4,20 @@
 
 | Field | Value |
 |---|---|
-| Status | QG-12 PASS — BOUNDED DELIVERY AUTHORIZED; CLOSURE PENDING |
+| Status | DONE / CLOSED |
 | Architecture / QG-M1 | PASS / ACCEPTED |
 | EDS-045 | ACCEPTED / COMPLETE |
 | IDS-045 | ACCEPTED / COMPLETE |
 | Implementation authority | COMPLETE — delivery not yet granted |
 | Registered after | PATCH-044 DONE / CLOSED |
+
+## Delivery and closure
+
+- QG-M1: PASS; Human QG-11: PASS; QG-12 bounded delivery: PASS.
+- Batches 1–4: ACCEPTED / COMPLETE; no unresolved Critical or Major finding.
+- Delivery commit: `e9e5f29775d727f20a35bfaba7ff3f914c264925`.
+- Remote verification: PASS; divergence after delivery: `0/0`.
+- PATCH-046 remains unregistered. All deferred boundaries remain deferred.
 
 ## Purpose
 
