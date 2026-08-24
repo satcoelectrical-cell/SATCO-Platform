@@ -17,7 +17,7 @@ EXPECTED_TABLES = {
 
 def test_repository_head_preserves_patch_032_in_current_chain() -> None:
     script = ScriptDirectory.from_config(alembic_config)
-    assert TEST_DATABASE_REVISION == "e04500000001"
+    assert TEST_DATABASE_REVISION == "e04600000001"
     assert script.get_revision("e03400000001").down_revision == "e03200000001"
 
 

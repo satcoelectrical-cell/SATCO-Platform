@@ -102,6 +102,12 @@ export interface ExecutionDependency { predecessor_activity_id:string; dependent
 export interface ExecutionPlanEstablished { outcome:"success"; availability:"established"; project_id:number; plan_id:string; version:number; activities:ExecutionActivity[]; milestones:ExecutionMilestone[]; dependencies:ExecutionDependency[]; progress:{completed_count:number;eligible_count:number;percent:number} }
 export interface ExecutionPlanNotEstablished { outcome:"success"; availability:"plan_not_established"; project_id:number; allowed_actions:string[] }
 export type ExecutionPlan = ExecutionPlanEstablished | ExecutionPlanNotEstablished;
+export type DeliverableStanding = "planned"|"in_preparation"|"ready_for_review"|"reviewed"|"issued"|"withdrawn"|"cancelled";
+export type DeliverableRevisionStanding = "draft"|"ready_for_review"|"reviewed"|"issued"|"superseded"|"withdrawn";
+export interface DeliverableRevision { id:string;sequence:number;external_label:string;source_reference:string|null;representation_available:boolean;standing:DeliverableRevisionStanding;version:number;created_at:string;transitioned_at:string }
+export interface Deliverable { id:string;project_id:number;workspace_id:number|null;code:string;title:string;discipline:string;deliverable_type:string;purpose:string|null;external_authority:"cad"|"eplan"|"etap"|"spreadsheet"|"document"|"vendor_tool"|"other";responsible_user_id:number|null;target_date:string|null;standing:DeliverableStanding;version:number;activity_id:string|null;milestone_id:string|null;current_revision:DeliverableRevision }
+export interface DeliverableRegister { outcome:"success";items:Deliverable[];visible_count:number;continuation:string|null }
+export interface DeliverableMutation { outcome:"success";deliverable_id:string;deliverable_version:number;revision_id:string|null;revision_version:number|null;standing:DeliverableStanding|null;revision_standing:DeliverableRevisionStanding|null }
 export interface ExecutionMutation { outcome:"success"; project_id:number; plan_id:string; plan_version:number; activity_id:string|null; milestone_id:string|null; activity_version:number|null; standing:ExecutionActivityStanding|null }
 export interface IssuedCredential { outcome: string; organization?: OrganizationProfile & { is_active: boolean }; member?: OrganizationMember; one_time_token?: string; replayed?: boolean }
 export interface MemberList { outcome: string; items: OrganizationMember[] }
