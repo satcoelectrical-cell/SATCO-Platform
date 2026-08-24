@@ -21,7 +21,7 @@ def production_settings(manifest_path: str, **overrides) -> Settings:
         "SATCO_PUBLIC_URL": "https://satco.example",
         "SATCO_TRUSTED_HOSTS": "satco.example",
         "SATCO_ALLOWED_ORIGINS": "https://satco.example",
-        "SATCO_EXPECTED_ALEMBIC_HEAD": "e04400000001",
+        "SATCO_EXPECTED_ALEMBIC_HEAD": "e04500000001",
         "SATCO_PERSISTENCE_GUARD_VERSION": "v1",
         "SATCO_OBJECT_HEALTH_URL": "https://ops.internal/object-health",
         "SATCO_OBJECT_HEALTH_CA_FILE": "/private/test/monitor-ca.pem",
@@ -46,7 +46,7 @@ def manifest(path):
     path.write_text(json.dumps({
         "release_id": "r1", "git_commit": "abcdef0",
         "backend_image_digest": "sha256:" + "a" * 64, "frontend_asset_digest": "sha256:" + "b" * 64,
-        "expected_alembic_head": "e04400000001", "configuration_schema_version": "v1",
+        "expected_alembic_head": "e04500000001", "configuration_schema_version": "v1",
         "migration_artifact_digest": "sha256:" + "c" * 64, "dependency_lock_digest": "sha256:" + "d" * 64,
         "package_lock_digest": "sha256:" + "e" * 64,
         "sbom_reference": "sbom", "scan_evidence_reference": "scan",

@@ -94,5 +94,14 @@ export interface ProjectFoundationNotEstablished { outcome:"success"; availabili
 export type ProjectFoundation = ProjectFoundationEstablished | ProjectFoundationNotEstablished;
 export interface ProjectFoundationSourceCandidate { kind:"supporting_file"|"evidence"; source_id:string; version:number; workspace_id:number|null; display_label:string }
 export interface ProjectFoundationSourcePage { outcome:"success"; items:ProjectFoundationSourceCandidate[]; visible_count:number }
+export type ExecutionActivityStanding = "planned"|"ready"|"in_progress"|"blocked"|"completed"|"cancelled";
+export type ExecutionMilestoneStanding = "not_ready"|"blocked"|"achieved";
+export interface ExecutionActivity { id:string; title:string; description:string|null; ordinal:number; workspace_id:number|null; responsible_user_id:number|null; target_date:string|null; completion_basis:string; standing:ExecutionActivityStanding; version:number; blocker_rationale:string|null; updated_at:string }
+export interface ExecutionMilestone { id:string; title:string; completion_basis:string; target_date:string|null; ordinal:number; activity_ids:string[]; standing:ExecutionMilestoneStanding }
+export interface ExecutionDependency { predecessor_activity_id:string; dependent_activity_id:string }
+export interface ExecutionPlanEstablished { outcome:"success"; availability:"established"; project_id:number; plan_id:string; version:number; activities:ExecutionActivity[]; milestones:ExecutionMilestone[]; dependencies:ExecutionDependency[]; progress:{completed_count:number;eligible_count:number;percent:number} }
+export interface ExecutionPlanNotEstablished { outcome:"success"; availability:"plan_not_established"; project_id:number; allowed_actions:string[] }
+export type ExecutionPlan = ExecutionPlanEstablished | ExecutionPlanNotEstablished;
+export interface ExecutionMutation { outcome:"success"; project_id:number; plan_id:string; plan_version:number; activity_id:string|null; milestone_id:string|null; activity_version:number|null; standing:ExecutionActivityStanding|null }
 export interface IssuedCredential { outcome: string; organization?: OrganizationProfile & { is_active: boolean }; member?: OrganizationMember; one_time_token?: string; replayed?: boolean }
 export interface MemberList { outcome: string; items: OrganizationMember[] }
