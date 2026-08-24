@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | QG-12 DELIVERY READINESS PENDING |
+| Status | DONE / CLOSED |
 | Architecture / QG-M1 | PASS / ACCEPTED |
 | EDS-046 | ACCEPTED / COMPLETE |
 | IDS-046 | ACCEPTED / COMPLETE |
@@ -67,10 +67,14 @@ Architecture and QG-M1, EDS, IDS, implementation-plan and IRR independent
 review/acceptance records are in `docs/reviews/`. Batches remain subject to
 their individual manifests, review and Human acceptance before the next batch.
 
-## Final implementation readiness
+## Delivery and closure
 
 Batch 1–3 are accepted/complete. B046-ENV-01 is resolved: the original
 performance failure was reproduced only in the unrelated dirty worktree and
 passed in the clean PATCH-045-plus-PATCH-046 isolation environment. Final
-validation, independent final review and Human QG-11 are PASS. Delivery is
-pending QG-12; PATCH-046 is neither delivered nor closed by this record.
+validation, independent final review, Human QG-11 and QG-12 are PASS.
+
+The bounded 56-file delivery commit
+`f494358f37e1e70ccd46c7d35072607f36f19e08` was pushed to the governed branch.
+Remote HEAD matched local HEAD and divergence was `0/0`. PATCH-046 is
+**DONE / CLOSED**; no authority is granted to PATCH-047.
