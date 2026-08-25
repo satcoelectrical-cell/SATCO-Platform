@@ -36,4 +36,12 @@ Final validation evidence is recorded in
 evidence is **1,267 passed**, frontend evidence is **73 passed**, and
 migration, static/import, security/non-disclosure, typecheck, production build
 and exact-scope checks are PASS. Historical Batch remediation chronology is
-preserved. Human QG-11 and QG-12 are PASS; bounded delivery remains pending.
+preserved.
+
+## Delivery and closure
+
+**Human QG-11: PASS. QG-12: PASS.** The exact 70-file bounded delivery commit
+`8478ee5f0e6fe45a9c1af0e185ddab55f415f2bc` was pushed to the governed branch;
+remote HEAD matched local HEAD and divergence was `0/0`. PATCH-047 is
+**DONE / CLOSED**. Unrelated work remained unstaged; PATCH-048 remains not
+registered.

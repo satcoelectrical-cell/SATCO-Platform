@@ -4,12 +4,12 @@
 
 | Field | Value |
 |---|---|
-| Status | FINAL REVIEW / QG-11 / QG-12 PASS; DELIVERY PENDING |
+| Status | DONE / CLOSED |
 | Registered after | PATCH-046 DONE / CLOSED |
 | Architecture / QG-M1 | PASS / ACCEPTED after focused B3 target-identity reconciliation |
 | EDS-047 | ACCEPTED / COMPLETE after focused reconciliation |
 | IDS-047 | ACCEPTED / COMPLETE after focused reconciliation |
-| Implementation authority | Batch 1–4 and final validation exercised; bounded delivery pending |
+| Implementation authority | Batch 1–4 and final validation exercised; delivery and closure complete |
 
 ## Bounded capability
 
@@ -90,5 +90,13 @@ suite passed 73 tests, and typecheck, production build, static/import, scoped
 security, migration upgrade/downgrade/re-upgrade and sole-head checks are PASS.
 
 The final independent review, Human QG-11 and QG-12 delivery-readiness records
-are PASS. The exact 70-file PATCH-047 boundary is ready for bounded delivery;
-delivery and closure remain pending until their separately verified actions.
+are PASS. The exact 70-file PATCH-047 boundary was delivered in commit
+`8478ee5f0e6fe45a9c1af0e185ddab55f415f2bc`; remote verification matched local
+HEAD with divergence `0/0`.
+
+## Delivery and closure
+
+PATCH-047 is **DONE / CLOSED**. All Batch 1–4 acceptance records, historical
+remediation/re-review chronology, final review, QG-11 and QG-12 evidence are
+preserved. Unrelated work remained unstaged and untouched throughout bounded
+delivery. No authority is granted to PATCH-048, which remains not registered.
