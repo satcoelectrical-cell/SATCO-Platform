@@ -7,9 +7,9 @@ from conftest import owner_engine
 
 def test_supporting_file_history_is_preserved_under_current_e045_head():
     script = ScriptDirectory.from_config(alembic_config)
-    assert script.get_heads() == ["e04600000001"]
+    assert script.get_heads() == ["e04700000001"]
     assert script.get_revision("e04300000001").down_revision == "e04100000001"
-    assert TEST_DATABASE_REVISION == "e04600000001"
+    assert TEST_DATABASE_REVISION == "e04700000001"
 
 
 def test_migration_contains_immutable_key_and_link_seal_guards():

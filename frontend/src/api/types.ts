@@ -111,3 +111,12 @@ export interface DeliverableMutation { outcome:"success";deliverable_id:string;d
 export interface ExecutionMutation { outcome:"success"; project_id:number; plan_id:string; plan_version:number; activity_id:string|null; milestone_id:string|null; activity_version:number|null; standing:ExecutionActivityStanding|null }
 export interface IssuedCredential { outcome: string; organization?: OrganizationProfile & { is_active: boolean }; member?: OrganizationMember; one_time_token?: string; replayed?: boolean }
 export interface MemberList { outcome: string; items: OrganizationMember[] }
+export type ProjectControlKind = "risk" | "issue" | "decision" | "change";
+export type ChangeImpactTargetKind = "activity" | "milestone" | "deliverable" | "deliverable_revision" | "evidence" | "supporting_file";
+export interface ChangeImpact { id:string; change_id:string; target_kind:ChangeImpactTargetKind; target_id:string; statement:string; standing:"potential"|"confirmed"; confirmed_by_id:number|null; confirmed_at:string|null }
+export interface ProjectControl { outcome:"success"; id:string; version:number; organization_id:string; project_id:number; workspace_id:number|null; standing:string; statement:string; rationale:string|null; predecessor_id:string|null; owner_id:number|null; disposition:string|null; observed_context:string|null; alternatives:string[]; accepted_by_id:number|null; accepted_at:string|null; confirmed_by_id:number|null; confirmed_at:string|null; impacts:ChangeImpact[] }
+export interface ProjectControlList { outcome:"success"; kind:ProjectControlKind; items:ProjectControl[]; visible_count:number }
+export interface ProjectControlHistoryEntry { id:string; aggregate_version:number; event_type:string; actor_id:number; occurred_at:string }
+export interface ProjectControlHistory { outcome:"success"; kind:ProjectControlKind; control_id:string; items:ProjectControlHistoryEntry[]; visible_count:number }
+export interface ProjectControlMutation { outcome:"success"; id:string; version:number }
+export interface ChangeImpactMutation { outcome:"success"; id:string; change_id:string; standing:"potential"|"confirmed" }

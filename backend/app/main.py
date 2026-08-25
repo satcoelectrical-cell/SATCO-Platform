@@ -39,6 +39,7 @@ from app.api.v1.routers.supporting_files import router as supporting_file_router
 from app.api.v1.routers.project_foundation import router as project_foundation_router
 from app.api.v1.routers.engineering_execution_plan import router as engineering_execution_plan_router
 from app.api.v1.routers.engineering_deliverables import router as engineering_deliverable_router
+from app.api.v1.routers.project_controls import router as project_control_router
 from app.core.config import settings
 from app.core.operations import (
     GovernedWriteBlocked,
@@ -121,6 +122,7 @@ app.include_router(supporting_file_router)
 app.include_router(project_foundation_router)
 app.include_router(engineering_execution_plan_router)
 app.include_router(engineering_deliverable_router)
+app.include_router(project_control_router)
 
 
 @app.get("/health/live")

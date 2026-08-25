@@ -9,6 +9,7 @@ import { SupportingEvidencePanel } from "../components/SupportingEvidencePanel";
 import { ProjectFoundationPanel } from "../components/ProjectFoundationPanel";
 import { EngineeringExecutionPlanPanel } from "../components/EngineeringExecutionPlanPanel";
 import { EngineeringDeliverableRegisterPanel } from "../components/EngineeringDeliverableRegisterPanel";
+import { ProjectControlsPanel } from "../components/ProjectControlsPanel";
 
 function ResultBoundary<T>({ result, children, empty }: { result: ApiResult<T> | null; children: (data: T) => React.ReactNode; empty?: (data: T) => boolean }) {
   if (!result) return <LoadingState />;
@@ -92,6 +93,7 @@ export function ProjectWorkspacePage() {
     <ProjectFoundationPanel projectId={id} workspaces={workspaceItems} />
     <EngineeringExecutionPlanPanel projectId={id} project={currentProject} workspaces={workspaceItems} />
     <EngineeringDeliverableRegisterPanel projectId={id} />
+    <ProjectControlsPanel projectId={id} workspaces={workspaceItems} />
     {workspaceId ? <SupportingEvidencePanel projectId={id} workspaceId={Number(workspaceId)} /> : <EmptyState title="Select an Engineering Workspace for Supporting Evidence" detail="Supporting Files are always constrained to the current authorized Project and Workspace context." />}
     <div className="split-grid"><Surface title="Discipline Workspaces" subtitle="Canonical Project context"><ResultBoundary result={workspaces} empty={(data) => !data.items.length}>{(data) => <div className="record-list">{data.items.map((workspace) => <button type="button" className="record-button" key={workspace.id} onClick={() => setWorkspaceId(String(workspace.id))}><span className="widget-icon"><Layers3 /></span><div><strong>{workspace.display_name}</strong><span>{workspace.discipline} · Version {workspace.version}</span></div><StatusBadge value={workspace.status} /></button>)}</div>}</ResultBoundary></Surface><Surface title="Recent Captures" subtitle="Authorized engineering experience"><ResultBoundary result={captures} empty={(data) => !data.items.length}>{(data) => <div className="record-list">{data.items.slice(0, 8).map((capture) => <article key={capture.id}><span className="widget-icon"><BriefcaseBusiness /></span><div><strong>{capture.source_kind.replaceAll("_", " ")}</strong><span>{capture.discipline || "General"} · Version {capture.version}</span></div><div className="record-actions"><Link className="button secondary compact" aria-label={`Create Technical Report from ${capture.source_kind.replaceAll("_", " ")}`} to={`/reports?project_id=${id}&workspace_id=${capture.workspace_id}&capture_id=${encodeURIComponent(capture.id)}`}><FileText size={15} />Create report</Link><Link className="button secondary compact" aria-label={`Open AI advice for ${capture.source_kind.replaceAll("_", " ")}`} to={`/assistant?capture_id=${encodeURIComponent(capture.id)}&project_id=${id}&workspace_id=${capture.workspace_id}`}><Bot size={15} />AI advice</Link></div></article>)}</div>}</ResultBoundary></Surface></div></>}</ResultBoundary></div>;
 }

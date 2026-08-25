@@ -1,5 +1,6 @@
 import os
 import subprocess
+from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -37,7 +38,7 @@ def _active_validation_database_name() -> str:
 def _repository_head() -> str:
     result = subprocess.run(
         ["alembic", "heads"],
-        cwd="/app",
+        cwd=Path(__file__).resolve().parents[1],
         env=os.environ,
         check=True,
         capture_output=True,
