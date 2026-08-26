@@ -45,6 +45,10 @@ export type ProjectContextSectionState =
   | {state:"unavailable"};
 export interface ProjectContextSection { kind:ProjectContextSectionKind; state:ProjectContextSectionState; items:ProjectContextItem[] }
 export interface ProjectContextSuccess { status:"success";observation_started_at:string;observation_completed_at:string;observation_status:"complete_within_bounds"|"partial";sections:ProjectContextSection[] }
+export type CompletenessClassification="present"|"missing"|"indeterminate"|"not_disclosed"|"not_applicable";
+export interface CompletenessFinding {rule_id:string;title:string;description:string;classification:CompletenessClassification;evidence:{display_label?:string|null;section_kind?:string;item_kind?:string}[];question:{text:string}|null;checklist_item:{text:string}|null;limitation_codes:string[];source_truncated:boolean}
+export interface CompletenessObservation {assessment_status:"complete_within_bounds"|"partial";authority_class:"derived";advisory:true;authoritative:false;limitation_codes:string[];findings:CompletenessFinding[]}
+export type ProjectCompletenessResult={status:"success"|"partial_success";observation:CompletenessObservation}|{status:"protected_not_found"|"invalid_request"|"unavailable"};
 export interface ContextNodeSelector {kind:ContextNodeKind;value:string|number}
 export interface ContextNode {node_kind:ContextNodeKind;selector:string|number;navigation:{project_id:number;workspace_id:number|null};provenance:ContextProvenance;authority_class:AuthorityClassification;temporal_class:TemporalClassification;[key:string]:unknown}
 export interface ContextEdge {relationship_selector:string;relationship_kind:string|{family:string;relationship_type:string};source:ContextNodeSelector;target:ContextNodeSelector;provenance:ContextProvenance}

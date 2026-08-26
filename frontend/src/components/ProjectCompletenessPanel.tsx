@@ -1,0 +1,13 @@
+import {useEffect,useState} from "react";
+import {api} from "../api/client";
+import type {ApiResult,ProjectCompletenessResult,CompletenessObservation} from "../api/types";
+import {EmptyState,ErrorState,LoadingState,ProtectedState,StatusBadge} from "./States";
+import {Surface} from "./Page";
+export function ProjectCompletenessPanel({projectId,workspaceId}:{projectId:number;workspaceId?:number|null}){
+ const [result,setResult]=useState<ApiResult<ProjectCompletenessResult>|null>(null);const load=()=>{setResult(null);void api.projectCompleteness(projectId,workspaceId).then(setResult)};useEffect(load,[projectId,workspaceId]);
+ if(!result)return <section className="project-completeness" aria-live="polite"><LoadingState/></section>;
+ if(result.state!=="success"||result.data.status==="protected_not_found"||result.data.status==="invalid_request")return <section className="project-completeness"><ProtectedState/></section>;
+ if(result.data.status==="unavailable")return <section className="project-completeness"><ErrorState unavailable/></section>;
+ const o=(result.data as {observation:CompletenessObservation}).observation,a=o.findings.filter(f=>f.classification==="missing"||f.classification==="indeterminate");
+ return <section className="project-completeness" aria-labelledby="project-completeness-title"><Surface title="Completeness assessment" subtitle="Derived, advisory and non-authoritative"><h2 id="project-completeness-title">Project Completeness</h2><p role="status">{o.assessment_status==="partial"?"Partial bounded observation":"Bounded observation"}</p>{o.limitation_codes.length?<section aria-label="Assessment limitations"><h3>Assessment limitations</h3><ul>{o.limitation_codes.map(code=><li key={code}>{code.replaceAll("_"," ")}</li>)}</ul></section>:null}<button type="button" className="button secondary" onClick={load}>Refresh assessment</button>{!o.findings.length?<EmptyState title="No applicable rules" detail="No applicable completeness rules are visible."/>:<>{!a.length?<EmptyState title="No actionable gaps" detail="No missing or indeterminate information is visible."/>:null}<div className="completeness-list">{o.findings.map(f=><article className="completeness-finding" key={f.rule_id}><StatusBadge value={f.classification}/><h3>{f.title}</h3><p>{f.description}</p>{f.source_truncated?<p role="status">This displayed assessment is bounded by the server.</p>:null}{f.classification==="not_disclosed"?<p>Required information is not disclosed.</p>:null}{f.evidence.map((e,i)=><small key={i}>{e.display_label??e.section_kind??e.item_kind}</small>)}<ul>{f.question?<li>{f.question.text}</li>:null}{f.checklist_item?<li>{f.checklist_item.text}</li>:null}</ul></article>)}</div></>}</Surface></section>
+}

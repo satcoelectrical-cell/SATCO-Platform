@@ -41,6 +41,7 @@ from app.api.v1.routers.engineering_execution_plan import router as engineering_
 from app.api.v1.routers.engineering_deliverables import router as engineering_deliverable_router
 from app.api.v1.routers.project_controls import router as project_control_router
 from app.api.v1.routers.project_context import router as project_context_router
+from app.api.v1.routers.project_completeness import router as project_completeness_router
 from app.core.config import settings
 from app.core.operations import (
     GovernedWriteBlocked,
@@ -125,6 +126,7 @@ app.include_router(engineering_execution_plan_router)
 app.include_router(engineering_deliverable_router)
 app.include_router(project_control_router)
 app.include_router(project_context_router)
+app.include_router(project_completeness_router)
 
 
 @app.get("/health/live")
