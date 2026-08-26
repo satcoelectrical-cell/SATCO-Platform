@@ -234,6 +234,14 @@ class ProjectAuthorizedSelectionItem(ProjectSelectionDTO):
     display_name: str = Field(min_length=1, max_length=200)
 
 
+class ProjectGraphSummary(ProjectSelectionDTO):
+    """Closed Project-owner graph projection; no ORM or Human fields escape."""
+    project_id: int = Field(gt=0)
+    project_code: str = Field(min_length=1, max_length=32)
+    project_name: str = Field(min_length=1, max_length=200)
+    lifecycle_status: ProjectStatus
+
+
 class ProjectAuthorizedSelectionPage(ProjectSelectionDTO):
     """Bounded Project choices without a hidden or global total."""
 

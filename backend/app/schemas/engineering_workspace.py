@@ -165,6 +165,15 @@ class EngineeringWorkspaceResponse(BaseModel):
     allowed_actions: list[str]
 
 
+class EngineeringWorkspaceGraphSummary(BaseModel):
+    """Closed owner-authorized graph projection; excludes people and assignment data."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    workspace_id: int = Field(gt=0)
+    project_id: int = Field(gt=0)
+    discipline: Discipline
+    workspace_status: WorkspaceStatus
+
+
 class EngineeringWorkspaceListResponse(BaseModel):
     items: list[EngineeringWorkspaceResponse]
     total: int

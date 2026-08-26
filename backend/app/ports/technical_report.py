@@ -113,6 +113,29 @@ class TechnicalReportReadPage:
 
 
 @dataclass(frozen=True, slots=True)
+class AcceptedTechnicalReportSummary:
+    """Bounded owner-produced cross-domain read projection.
+
+    It deliberately omits report content, provenance, Humans and storage data.
+    """
+    report_id: UUID
+    workspace_id: int
+    project_id: int | None
+    version: int
+    accepted_digest: str
+    accepted_at: datetime
+    purpose: TechnicalReportPurpose
+
+
+@dataclass(frozen=True, slots=True)
+class AcceptedTechnicalReportSummaryPage:
+    items: tuple[AcceptedTechnicalReportSummary, ...]
+    page: int
+    size: int
+    has_more: bool
+
+
+@dataclass(frozen=True, slots=True)
 class TechnicalReportAuthorizationRequest:
     actor: TechnicalReportActor
     operation: str
@@ -265,6 +288,16 @@ class TechnicalReportRepository(Protocol):
     def list_scoped(self, criteria: TechnicalReportReadCriteria) -> TechnicalReportReadPage: ...
     def list_successors_scoped(self, predecessor_id: UUID, criteria: TechnicalReportReadCriteria) -> TechnicalReportReadPage: ...
     def provenance_for_report(self, report_id: UUID) -> tuple[TechnicalReportProvenanceEntry, ...]: ...
+    def list_graph_provenance_links(self, *, scope: TechnicalReportScope, source_kind: str, source_id: UUID, limit: int) -> tuple["TechnicalReportGraphProvenanceLink", ...]: ...
+
+@dataclass(frozen=True, slots=True)
+class TechnicalReportGraphProvenanceLink:
+    report_id: UUID
+    entry_id: UUID
+    source_kind: str
+    source_id: UUID
+    report_version: int
+    accepted_at: datetime
 
 
 class TechnicalReportAuthorizationPolicy(Protocol):

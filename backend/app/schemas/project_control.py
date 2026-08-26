@@ -25,6 +25,35 @@ class ControlSuccess(ControlSchema): outcome:Literal["success"]="success"; id:UU
 class ImpactSuccess(ControlSchema): outcome:Literal["success"]="success"; id:UUID; change_id:UUID; standing:ImpactStanding
 class ImpactRead(ControlSchema):
     id:UUID; change_id:UUID; target_kind:ImpactTargetKind; target_id:UUID; statement:str; standing:ImpactStanding; confirmed_by_id:int|None=None; confirmed_at:datetime|None=None
+class ChangeImpactGraphSummary(ControlSchema):
+    """Closed graph-safe projection; intentionally excludes text and Human identities."""
+    model_config=ConfigDict(extra="forbid", frozen=True)
+    id:UUID; change_id:UUID; project_id:int=Field(gt=0); target_kind:ImpactTargetKind; target_id:UUID; standing:ImpactStanding; impact_class:Literal["potential","human_confirmed"]
+class RiskGraphSummary(ControlSchema):
+    model_config=ConfigDict(extra="forbid", frozen=True)
+    id:UUID; project_id:int=Field(gt=0); workspace_id:int|None=Field(None,gt=0); category:str=Field(min_length=1,max_length=80); likelihood:Literal["low","medium","high"]; impact:Literal["low","medium","high"]; standing:RiskStanding; version:int=Field(gt=0)
+class IssueGraphSummary(ControlSchema):
+    model_config=ConfigDict(extra="forbid", frozen=True)
+    id:UUID; project_id:int=Field(gt=0); workspace_id:int|None=Field(None,gt=0); severity:Literal["low","medium","high"]; standing:IssueStanding; version:int=Field(gt=0)
+class DecisionGraphSummary(ControlSchema):
+    model_config=ConfigDict(extra="forbid", frozen=True)
+    id:UUID; project_id:int=Field(gt=0); workspace_id:int|None=Field(None,gt=0); standing:DecisionStanding; version:int=Field(gt=0); predecessor_id:UUID|None=None
+class ChangeGraphSummary(ControlSchema):
+    model_config=ConfigDict(extra="forbid", frozen=True)
+    id:UUID; project_id:int=Field(gt=0); workspace_id:int|None=Field(None,gt=0); standing:ChangeStanding; version:int=Field(gt=0); predecessor_id:UUID|None=None
+class ProjectControlGraphIncidentLink(ControlSchema):
+    model_config=ConfigDict(extra="forbid", frozen=True)
+    relationship:Literal["decision_successor","change_successor","change_impact","impact_target"]
+    relationship_selector:str=Field(min_length=1,max_length=200)
+    source_kind:Literal["human_decision","change","change_impact"]
+    source_id:UUID
+    target_kind:Literal["human_decision","change","change_impact","activity","milestone","deliverable","deliverable_revision","evidence","supporting_file"]
+    target_id:UUID
+    owner_version:int=Field(gt=0)
+class ProjectControlGraphIncidentPage(ControlSchema):
+    model_config=ConfigDict(extra="forbid", frozen=True)
+    items:tuple[ProjectControlGraphIncidentLink,...]=Field(max_length=91)
+    has_more:bool=False
 class ControlReadSuccess(ControlSuccess):
     organization_id:UUID; project_id:int=Field(gt=0); workspace_id:int|None=None; standing:str; statement:str; rationale:str|None=None; predecessor_id:UUID|None=None; owner_id:int|None=None; disposition:str|None=None; observed_context:str|None=None; alternatives:tuple[str,...]=(); accepted_by_id:int|None=None; accepted_at:datetime|None=None; confirmed_by_id:int|None=None; confirmed_at:datetime|None=None; impacts:tuple[ImpactRead,...]=()
 class ControlListSuccess(ControlSchema): outcome:Literal["success"]="success"; kind:Literal["risk","issue","decision","change"]; items:tuple[ControlReadSuccess,...]=Field(max_length=100); visible_count:int=Field(ge=0,le=100)

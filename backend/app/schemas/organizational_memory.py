@@ -47,6 +47,21 @@ class MemoryScopeSchema(StrictMemorySchema):
     project_id: PositiveId | None
 
 
+class OrganizationalMemoryGraphSourceLink(StrictMemorySchema):
+    memory_id: UUID
+    report_id: UUID
+    accepted_report_version: PositiveVersion
+    memory_version: PositiveVersion
+    project_id: PositiveId | None
+    workspace_id: PositiveId
+    observed_at: AwareDatetime
+
+
+class OrganizationalMemoryGraphSourcePage(StrictMemorySchema):
+    items: tuple[OrganizationalMemoryGraphSourceLink, ...] = Field(max_length=91)
+    has_more: StrictBool = False
+
+
 class AcceptedReportSourceSchema(StrictMemorySchema):
     report_id: UUID
     accepted_aggregate_version: PositiveVersion

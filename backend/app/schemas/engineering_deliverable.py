@@ -96,6 +96,44 @@ class DeliverableRevisionDTO(DeliverableSchema):
     created_at: datetime; transitioned_at: datetime
 
 
+class DeliverableRevisionGraphSummary(DeliverableSchema):
+    """Exact graph-safe revision projection with no file or Human identity."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: UUID
+    deliverable_id: UUID
+    project_id: int = Field(gt=0)
+    workspace_id: int | None = Field(None, gt=0)
+    sequence: int = Field(ge=1)
+    external_label: str | None = Field(None, max_length=80)
+    standing: DeliverableRevisionStanding
+    version: int = Field(ge=1)
+    representation_available: bool
+    external_authority: ExternalAuthoringAuthority
+    created_at: datetime
+    transitioned_at: datetime
+
+class DeliverableRepresentationGraphLink(DeliverableSchema):
+    model_config=ConfigDict(extra="forbid", frozen=True)
+    revision_id:UUID; asset_id:UUID; deliverable_id:UUID; project_id:int=Field(gt=0); workspace_id:int|None=Field(None,gt=0); revision_version:int=Field(gt=0)
+
+
+class DeliverableGraphIncidentLink(DeliverableSchema):
+    model_config=ConfigDict(extra="forbid", frozen=True)
+    relationship:Literal["deliverable_activity","deliverable_milestone","deliverable_revision","revision_representation"]
+    relationship_selector:str=Field(min_length=1,max_length=200)
+    source_kind:Literal["deliverable","deliverable_revision"]
+    source_id:UUID
+    target_kind:Literal["activity","milestone","deliverable_revision","supporting_file"]
+    target_id:UUID
+    owner_version:int=Field(gt=0)
+
+
+class DeliverableGraphIncidentPage(DeliverableSchema):
+    model_config=ConfigDict(extra="forbid", frozen=True)
+    items:tuple[DeliverableGraphIncidentLink,...]=Field(max_length=91)
+    has_more:bool=False
+
+
 class DeliverableDTO(DeliverableSchema):
     model_config = ConfigDict(extra="forbid", frozen=True)
     id: UUID; project_id: int; workspace_id: int | None; code: str; title: str; discipline: str; deliverable_type: str

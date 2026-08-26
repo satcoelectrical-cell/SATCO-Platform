@@ -18,7 +18,8 @@ from app.schemas.engineering_execution_plan import (
     ExecutionPlanInvalidResult, ExecutionPlanMutationSuccess,
     ExecutionPlanNotEstablished, ExecutionPlanProtectedResult,
     ExecutionPlanUnavailableResult, ExecutionPlanVersionConflictResult,
-    ExecutionProgressDTO,
+    ExecutionProgressDTO, ExecutionActivityGraphSummary, ExecutionMilestoneGraphSummary,
+    ExecutionGraphIncidentLink, ExecutionGraphIncidentPage,
 )
 
 
@@ -41,6 +42,59 @@ class EngineeringExecutionPlanService:
                 activities, milestones, dependencies = uow.repository.load_plan_children(plan_id=plan.id, organization_id=actor.organization_id)
                 return self._read(plan, activities, milestones, dependencies)
         except (SQLAlchemyError, ExecutionPlanUnavailable): return ExecutionPlanUnavailableResult()
+
+    def get_activity_graph_summary(self, *, actor, project_id, activity_id):
+        """Exact authorized lookup; intentionally never loads plan children."""
+        try:
+            with self.uow_factory() as uow:
+                project = self.authorization.get_project(actor=actor, project_id=project_id)
+                if project is None or not self.authorization.can_read(actor=actor, project=project): return ExecutionPlanProtectedResult()
+                plan = uow.repository.get_plan(project_id=project_id, organization_id=actor.organization_id)
+                if plan is None: return ExecutionPlanProtectedResult()
+                row = uow.repository.get_activity(activity_id=activity_id, plan_id=plan.id, organization_id=actor.organization_id)
+                if row is None or (row.workspace_id is not None and not self.authorization.validate_workspace(actor=actor, project=project, workspace_id=row.workspace_id)): return ExecutionPlanProtectedResult()
+                return ExecutionActivityGraphSummary(id=row.id, plan_id=row.plan_id, project_id=row.project_id, workspace_id=row.workspace_id, title=row.title, ordinal=row.ordinal, standing=row.standing, version=row.version, target_date=row.target_date, blocker_present=row.standing == "blocked")
+        except (SQLAlchemyError, ExecutionPlanUnavailable): return ExecutionPlanUnavailableResult()
+
+    def get_milestone_graph_summary(self, *, actor, project_id, milestone_id):
+        """Exact authorized lookup; intentionally never scans milestone children."""
+        try:
+            with self.uow_factory() as uow:
+                project = self.authorization.get_project(actor=actor, project_id=project_id)
+                if project is None or not self.authorization.can_read(actor=actor, project=project): return ExecutionPlanProtectedResult()
+                plan = uow.repository.get_plan(project_id=project_id, organization_id=actor.organization_id)
+                if plan is None: return ExecutionPlanProtectedResult()
+                row = uow.repository.get_milestone(milestone_id=milestone_id, plan_id=plan.id, organization_id=actor.organization_id)
+                if row is None: return ExecutionPlanProtectedResult()
+                linked_standings = uow.repository.get_milestone_activity_standings(milestone_id=row.id, organization_id=actor.organization_id)
+                standing = "achieved" if linked_standings and all(item == "completed" for item in linked_standings) else "blocked" if any(item == "blocked" for item in linked_standings) else "not_ready"
+                return ExecutionMilestoneGraphSummary(id=row.id, plan_id=row.plan_id, project_id=row.project_id, title=row.title, ordinal=row.ordinal, standing=standing, target_date=row.target_date)
+        except (SQLAlchemyError, ExecutionPlanUnavailable): return ExecutionPlanUnavailableResult()
+
+    def list_authorized_incident_graph_links(self, *, actor, project_id, selector_kind,
+                                             selector_id, limit=91):
+        """Canonical owner incident read for the closed execution vocabulary."""
+        if selector_kind not in {"execution_plan", "activity", "milestone"} or not 1 <= limit <= 91:
+            return ExecutionPlanInvalidResult()
+        try:
+            with self.uow_factory() as uow:
+                project = self.authorization.get_project(actor=actor, project_id=project_id)
+                if project is None or not self.authorization.can_read(actor=actor, project=project):
+                    return ExecutionPlanProtectedResult()
+                rows, has_more = uow.repository.list_graph_incident(
+                    selector_kind=selector_kind, selector_id=selector_id,
+                    project_id=project_id, organization_id=actor.organization_id,
+                    limit=limit,
+                )
+                return ExecutionGraphIncidentPage(items=tuple(
+                    ExecutionGraphIncidentLink(
+                        relationship=row[0], relationship_selector=f"{row[2]}:{row[4]}",
+                        source_kind=row[1], source_id=row[2], target_kind=row[3],
+                        target_id=row[4], owner_version=row[5],
+                    ) for row in rows
+                ), has_more=has_more)
+        except (SQLAlchemyError, ExecutionPlanUnavailable):
+            return ExecutionPlanUnavailableResult()
 
     def establish(self, *, project_id, data, actor, idempotency_key: UUID):
         return self._mutate(operation="establish_plan", project_id=project_id, actor=actor, data=data, idempotency_key=idempotency_key, handler=self._establish)

@@ -39,3 +39,9 @@ class SqlAlchemyEvidenceRepository:
                 linked_by_id=actor_id, linked_at=linked_at,
             ))
         self.session.flush()
+    def list_graph_links_for_evidence(self, *, evidence_id, organization_id, project_id, workspace_id, limit=91):
+        return self.session.query(EvidenceSupportingFileLink).filter_by(evidence_id=evidence_id,organization_id=organization_id,project_id=project_id,workspace_id=workspace_id).order_by(EvidenceSupportingFileLink.ordinal,EvidenceSupportingFileLink.asset_id).limit(limit).all()
+    def list_graph_links_for_asset(self, *, asset_id, organization_id, project_id, workspace_id, limit=91):
+        query=self.session.query(EvidenceSupportingFileLink).filter_by(asset_id=asset_id,organization_id=organization_id,project_id=project_id)
+        if workspace_id is not None: query=query.filter(EvidenceSupportingFileLink.workspace_id==workspace_id)
+        return query.order_by(EvidenceSupportingFileLink.evidence_id,EvidenceSupportingFileLink.ordinal).limit(limit).all()

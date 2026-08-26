@@ -71,3 +71,17 @@ class EvidenceListResponse(BaseModel):
     total: int = Field(ge=0)
     page: int = Field(ge=1)
     size: int = Field(ge=1)
+
+class EvidenceSupportingFileGraphLink(BaseModel):
+    """Owner-authorized relationship fact; projected only after target authorization."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    evidence_id: UUID
+    asset_id: UUID
+    project_id: int = Field(gt=0)
+    workspace_id: int | None = Field(None, gt=0)
+    evidence_version: int = Field(gt=0)
+    ordinal: int = Field(ge=0, le=9)
+
+class EvidenceSupportingFileGraphPage(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    items: tuple[EvidenceSupportingFileGraphLink, ...] = Field(max_length=91)

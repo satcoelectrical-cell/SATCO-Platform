@@ -1,4 +1,4 @@
-import type { AdviceResponse, ApiResult, Capture, ChangeImpactMutation, Customer, DeliverableMutation, DeliverableRegister, EvidenceCandidatePage, EvidenceRecord, ExecutionActivityStanding, ExecutionMutation, ExecutionPlan, IssuedCredential, JournalWorkspace, MemberList, MemoryAdmissionResult, MemoryDetailResult, MemoryPage, Paginated, Project, ProjectControl, ProjectControlHistory, ProjectControlKind, ProjectControlList, ProjectControlMutation, ProjectFoundation, ProjectFoundationInput, ProjectFoundationSourcePage, ProjectStage, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, SupportingFile, SupportingFilePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, UserProfile, Workspace } from "./types";
+import type { AdviceResponse, ApiResult, Capture, ChangeImpactMutation, ContextNode, ContextNodeKind, Customer, DeliverableMutation, DeliverableRegister, EvidenceCandidatePage, EvidenceRecord, ExecutionActivityStanding, ExecutionMutation, ExecutionPlan, IssuedCredential, JournalWorkspace, MemberList, MemoryAdmissionResult, MemoryDetailResult, MemoryPage, OneHopSuccess, Paginated, Project, ProjectContextSectionKind, ProjectContextSuccess, ProjectControl, ProjectControlHistory, ProjectControlKind, ProjectControlList, ProjectControlMutation, ProjectFoundation, ProjectFoundationInput, ProjectFoundationSourcePage, ProjectStage, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, SupportingFile, SupportingFilePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, UserProfile, Workspace } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const TOKEN_KEY = "satco.auth.access.v1";
@@ -50,6 +50,15 @@ async function closedResult<T extends { outcome: string }>(path: string, init: R
   return result;
 }
 
+async function closedStatusResult<T extends { status: string }>(path:string):Promise<ApiResult<T>> {
+  const result=await request<T>(path);
+  if(result.state!=="success") return result;
+  if(result.data.status==="protected_not_found") return {state:"protected"};
+  if(result.data.status==="invalid_request") return {state:"invalid"};
+  if(result.data.status==="unavailable") return {state:"unavailable"};
+  return result;
+}
+
 export async function login(username: string, password: string): Promise<ApiResult<true>> {
   const body = new URLSearchParams({ username, password });
   const result = await request<{ access_token: string }>("/auth/login", { method: "POST", body });
@@ -75,6 +84,9 @@ export const api = {
   createProject: (payload: { name: string; customer_id: number; description?: string | null; priority?: string; start_date?: string | null; target_completion_date?: string | null }) => request<Project>("/projects/", { method: "POST", body: JSON.stringify(payload) }),
   updateProject: (id: number, payload: { name?: string; description?: string | null; customer_id?: number; priority?: string; start_date?: string | null; target_completion_date?: string | null }) => request<Project>(`/projects/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   project: (id: number) => request<Project>(`/projects/${id}`),
+  projectContext: (id:number, workspaceId?:number|null, section?:ProjectContextSectionKind, continuation?:string) => closedStatusResult<ProjectContextSuccess>(`/projects/${id}/context?${new URLSearchParams([...(workspaceId ? [["workspace_id",String(workspaceId)]] : []),...(section ? [["section",section],["page_size","100"]] : []),...(continuation ? [["continuation",continuation]] : [])]).toString()}`),
+  contextNode: (projectId:number, kind:ContextNodeKind, selector:string|number, workspaceId?:number|null) => closedStatusResult<{status:"success";node:ContextNode}>(`/projects/${projectId}/engineering-context/nodes/${kind}/${encodeURIComponent(String(selector))}${workspaceId ? `?workspace_id=${workspaceId}`:""}`),
+  relatedContext: (projectId:number, kind:ContextNodeKind, selector:string|number, workspaceId?:number|null, continuation?:string) => closedStatusResult<OneHopSuccess>(`/projects/${projectId}/engineering-context/nodes/${kind}/${encodeURIComponent(String(selector))}/related?${new URLSearchParams([...(workspaceId ? [["workspace_id",String(workspaceId)]] : []),...(continuation ? [["continuation",continuation]] : [])]).toString()}`),
   projectFoundation: (id:number) => closedResult<ProjectFoundation>(`/projects/${id}/foundation`),
   putProjectFoundation: (id:number,payload:{expected_version:number;purpose:string;engineering_basis:string;in_scope:string[];out_of_scope:string[];completion_criteria:string[];rationale:string}) => closedResult<ProjectFoundation>(`/projects/${id}/foundation`,{method:"PUT",body:JSON.stringify(payload)}),
   createProjectInput: (id:number,payload:{expected_foundation_version:number;title:string;description:string|null;ordinal:number;required_by_stage:ProjectStage;rationale:string}) => closedResult<{outcome:"success";project_id:number;foundation_version:number;item:ProjectFoundationInput}>(`/projects/${id}/foundation/inputs`,{method:"POST",body:JSON.stringify(payload)}),

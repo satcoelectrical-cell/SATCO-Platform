@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 from app.exceptions.evidence import EvidenceInvalidTransition, EvidenceProtectedNotFound, EvidenceVersionConflict
 from app.models.evidence import Evidence
 from app.models.evidence_command import CreateEvidence, EvidenceCommandError, EvidenceMetadata, EvidenceVersionMismatch, LinkEvidenceSupportingFiles, TransitionEvidenceLifecycle
-from app.schemas.evidence import EvidenceListResponse, EvidenceResponse
+from app.schemas.evidence import EvidenceListResponse, EvidenceResponse, EvidenceSupportingFileGraphLink, EvidenceSupportingFileGraphPage
 
 def _fingerprint(command_type,data): return sha256(json.dumps({"command_type":command_type,"data":data},sort_keys=True,default=str,separators=(",",":")).encode()).hexdigest()
 def _response(item,actions=()):
@@ -70,6 +70,23 @@ class EvidenceService:
             item=uow.evidence.get_scoped(evidence_id,actor.organization_id)
             if item is None or not self.authorization.authorize(actor=actor,operation="ReadEvidence",evidence=item,project_id=item.project_id,workspace_id=item.workspace_id): raise EvidenceProtectedNotFound(evidence_id)
             return _response(item,("transition_lifecycle",))
+    def get_supporting_file_graph_links(self, *, evidence_id, actor, project_id, workspace_id):
+        """Exact bounded owner read for explicit Evidence/file relationships."""
+        with self.uow_factory() as uow:
+            item=uow.evidence.get_scoped(evidence_id,actor.organization_id)
+            if item is None or item.project_id!=project_id or (workspace_id is not None and item.workspace_id!=workspace_id) or not self.authorization.authorize(actor=actor,operation="ReadEvidence",evidence=item,project_id=item.project_id,workspace_id=item.workspace_id): raise EvidenceProtectedNotFound(evidence_id)
+            rows=uow.evidence.list_graph_links_for_evidence(evidence_id=evidence_id,organization_id=actor.organization_id,project_id=project_id,workspace_id=item.workspace_id,limit=91)
+            return EvidenceSupportingFileGraphPage(items=tuple(EvidenceSupportingFileGraphLink(evidence_id=row.evidence_id,asset_id=row.asset_id,project_id=row.project_id,workspace_id=row.workspace_id,evidence_version=row.evidence_version,ordinal=row.ordinal) for row in rows))
+    def get_evidence_graph_links_for_file(self, *, asset_id, actor, project_id, workspace_id):
+        """Bounded reverse owner read; each Evidence is independently authorized."""
+        with self.uow_factory() as uow:
+            rows=uow.evidence.list_graph_links_for_asset(asset_id=asset_id,organization_id=actor.organization_id,project_id=project_id,workspace_id=workspace_id,limit=91)
+            visible=[]
+            for row in rows:
+                item=uow.evidence.get_scoped(row.evidence_id,actor.organization_id)
+                if item is None or item.project_id!=project_id or not self.authorization.authorize(actor=actor,operation="ReadEvidence",evidence=item,project_id=item.project_id,workspace_id=item.workspace_id): continue
+                visible.append(EvidenceSupportingFileGraphLink(evidence_id=row.evidence_id,asset_id=row.asset_id,project_id=row.project_id,workspace_id=row.workspace_id,evidence_version=row.evidence_version,ordinal=row.ordinal))
+            return EvidenceSupportingFileGraphPage(items=tuple(visible))
     def list(self,*,project_id,filters,page,size,actor):
         if not self.authorization.authorize(actor=actor,operation="ListEvidence",evidence=None,project_id=project_id,workspace_id=filters.workspace_id): raise EvidenceProtectedNotFound()
         with self.uow_factory() as uow:

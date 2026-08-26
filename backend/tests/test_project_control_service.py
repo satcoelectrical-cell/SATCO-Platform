@@ -131,3 +131,27 @@ def test_duplicate_impact_and_competing_confirmation_have_one_winner(db_session)
     first=service.confirm_change_impact(impact_id=potential.id,data=ConfirmImpactCommand(expected_change_version=1,rationale="Human confirms impact"),actor=actor,idempotency_key=uuid4())
     second=service.confirm_change_impact(impact_id=potential.id,data=ConfirmImpactCommand(expected_change_version=1,rationale="Competing confirmation"),actor=actor,idempotency_key=uuid4())
     assert first.outcome=="success" and second.outcome=="invalid_request"
+def test_graph_control_summaries_are_exact_and_exclude_protected_text(db_session):
+    """The canonical owner, not Project Context, projects safe control facts."""
+    service, actor, project = domain(db_session)
+    created = {
+        "risk": service.create_risk(project_id=project.id, data=risk(), actor=actor, idempotency_key=uuid4()),
+        "issue": service.create_issue(project_id=project.id, data=issue(), actor=actor, idempotency_key=uuid4()),
+        "decision": service.create_decision(project_id=project.id, data=decision(), actor=actor, idempotency_key=uuid4()),
+        "change": service.create_change(project_id=project.id, data=change(), actor=actor, idempotency_key=uuid4()),
+    }
+    for kind, record in created.items():
+        result = service.get_control_graph_summary(kind=kind, actor=actor, project_id=project.id, control_id=record.id)
+        assert result.id == record.id
+        assert not ({"statement", "rationale", "owner_id", "accepted_by_id", "confirmed_by_id"} & set(result.model_fields))
+
+
+def test_project_control_incident_read_is_exact_for_successor_and_impact(db_session):
+    targets=Targets();service,actor,project=domain(db_session,targets)
+    first=service.create_change(project_id=project.id,data=change(),actor=actor,idempotency_key=uuid4())
+    successor=service.create_change_successor(change_id=first.id,data=change(first.id),actor=actor,idempotency_key=uuid4())
+    target_id=uuid4();impact=service.create_change_impact(data=ImpactCommand(change_id=successor.id,target_kind="activity",target_id=target_id,statement="Bounded effect",rationale="Human records",expected_version=1),actor=actor,idempotency_key=uuid4())
+    change_page=service.list_authorized_incident_graph_links(actor=actor,project_id=project.id,selector_kind="change",selector_id=successor.id)
+    assert {item.relationship for item in change_page.items}=={"change_successor","change_impact"}
+    target_page=service.list_authorized_incident_graph_links(actor=actor,project_id=project.id,selector_kind="activity",selector_id=target_id)
+    assert len(target_page.items)==1 and target_page.items[0].source_id==impact.id

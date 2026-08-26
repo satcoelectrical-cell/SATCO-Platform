@@ -15,6 +15,11 @@ class Repository:
     def get_idempotency(self,**kwargs): return next((item for item in self.replays if all(getattr(item,key)==value for key,value in kwargs.items())),None)
     def get(self,**kwargs): return None
     def get_current_revision(self,**kwargs): return None
+    def get_revision(self,**kwargs): return getattr(self,"revision",None)
+    def get_revision_by_supporting_file(self,**kwargs): return getattr(self,"revision",None)
+    def list_graph_incident(self,**kwargs):
+        row=getattr(self,"graph_row",None)
+        return (() if row is None else (row,)),False
 
 class Uow:
     def __init__(self,repo): self.repository=repo;self.committed=False;self.audit=[]
@@ -28,6 +33,7 @@ class Authorization:
     def project(self,**kwargs): return SimpleNamespace(id=7,status="active",owner_id=2,primary_assignee_id=None)
     def can_mutate(self,**kwargs): return True
     def valid_links(self,**kwargs): return True
+    def can_read(self,**kwargs): return True
 
 def request(): return CreateDeliverableRequest(code="EL-001",title="Load list",discipline="electrical",deliverable_type="schedule",purpose=None,external_authority="spreadsheet",workspace_id=None,activity_id=None,milestone_id=None,responsible_user_id=None,target_date=None,initial_external_label="A",source_reference=None,supporting_file_id=None,rationale="Register controlled external work")
 
@@ -62,3 +68,42 @@ def test_supporting_file_adapter_rechecks_trusted_scope_and_fails_closed():
         get_metadata=lambda **_kwargs: (_ for _ in ()).throw(SupportingFileProtectedNotFound())
     )))
     assert not denied.visible(actor=actor, project=project, workspace_id=9, asset_id=asset_id)
+
+
+def test_exact_revision_graph_read_is_owner_authorized_and_payload_safe():
+    now=datetime(2026,1,1,tzinfo=timezone.utc); organization_id=uuid4(); deliverable_id=uuid4(); revision_id=uuid4()
+    repo=Repository()
+    repo.revision=SimpleNamespace(id=revision_id,deliverable_id=deliverable_id,organization_id=organization_id,project_id=7,sequence=2,external_label="B",standing="issued",version=3,supporting_file_id=None,created_at=now,transitioned_at=now)
+    repo.get=lambda **kwargs: SimpleNamespace(id=deliverable_id,project_id=7,workspace_id=None,external_authority="cad")
+    uow=Uow(repo); actor=DeliverableActor(actor_id=2,organization_id=organization_id)
+    service=EngineeringDeliverableService(uow_factory=lambda:uow,authorization=Authorization(),clock=lambda:now)
+    result=service.get_authorized_revision(project_id=7,revision_id=revision_id,actor=actor)
+    assert result.id==revision_id and result.deliverable_id==deliverable_id and result.external_authority.value=="cad"
+    assert not uow.committed and repo.get_revision(revision_id=revision_id,organization_id=organization_id) is repo.revision
+    assert not ({"supporting_file_id","source_reference","created_by_id","transitioned_by_id"}&set(result.model_dump()))
+
+
+def test_exact_revision_graph_read_fails_closed_for_missing_or_foreign_project():
+    organization_id=uuid4(); repo=Repository(); uow=Uow(repo); actor=DeliverableActor(actor_id=2,organization_id=organization_id)
+    service=EngineeringDeliverableService(uow_factory=lambda:uow,authorization=Authorization())
+    assert service.get_authorized_revision(project_id=7,revision_id=uuid4(),actor=actor).outcome=="protected_not_found"
+    repo.revision=SimpleNamespace(id=uuid4(),deliverable_id=uuid4(),organization_id=organization_id,project_id=8)
+    assert service.get_authorized_revision(project_id=7,revision_id=repo.revision.id,actor=actor).outcome=="protected_not_found"
+
+def test_representation_graph_relation_is_exact_authorized_and_has_no_storage_payload():
+    now=datetime(2026,1,1,tzinfo=timezone.utc); organization_id=uuid4(); deliverable_id=uuid4(); revision_id=uuid4(); asset_id=uuid4()
+    repo=Repository();repo.revision=SimpleNamespace(id=revision_id,deliverable_id=deliverable_id,organization_id=organization_id,project_id=7,sequence=1,standing="issued",version=2,supporting_file_id=asset_id,created_at=now,transitioned_at=now)
+    repo.get=lambda **kwargs:SimpleNamespace(id=deliverable_id,project_id=7,workspace_id=None,external_authority="cad")
+    service=EngineeringDeliverableService(uow_factory=lambda:Uow(repo),authorization=Authorization(),supporting_files=SimpleNamespace(visible=lambda **kwargs:True));actor=DeliverableActor(actor_id=2,organization_id=organization_id)
+    result=service.get_authorized_representation_link(project_id=7,actor=actor,revision_id=revision_id)
+    assert (result.revision_id,result.asset_id)==(revision_id,asset_id)
+    assert set(result.model_dump())=={"revision_id","asset_id","deliverable_id","project_id","workspace_id","revision_version"}
+
+
+def test_deliverable_incident_read_is_typed_and_never_calls_project_list():
+    organization_id=uuid4();repo=Repository();deliverable_id=uuid4();activity_id=uuid4()
+    repo.graph_row=("deliverable_activity","deliverable",deliverable_id,"activity",activity_id,2)
+    repo.list=lambda **kwargs: (_ for _ in ()).throw(AssertionError("broad list forbidden"))
+    service=EngineeringDeliverableService(uow_factory=lambda:Uow(repo),authorization=Authorization())
+    page=service.list_authorized_incident_graph_links(project_id=7,actor=DeliverableActor(actor_id=2,organization_id=organization_id),selector_kind="activity",selector_id=activity_id)
+    assert page.items[0].source_id==deliverable_id and page.items[0].target_id==activity_id

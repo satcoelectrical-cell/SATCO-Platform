@@ -209,6 +209,26 @@ class OrganizationalMemoryService:
             return MemoryInvalidRequest()
         except Exception: return MemoryUnavailable()
 
+    def get_authorized_source_report_graph_links(self, actor, *, scope, report_id, limit=91):
+        """Exact active Memory incidence with current source reauthorization."""
+        from app.schemas.organizational_memory import OrganizationalMemoryGraphSourceLink, OrganizationalMemoryGraphSourcePage
+        if not 1 <= limit <= 91:return MemoryInvalidRequest()
+        try:
+            with self.uow_factory() as uow:
+                uow.authorization.require(MemoryAuthorizationRequest(actor,MemoryOperation.LIST_ACTIVE,scope,None,None,None,None,()))
+                candidates,has_more=uow.memories.list_active_by_source_report(report_id=report_id,organization_id=actor.organization_id,workspace_id=scope.workspace_id,project_id=scope.project_id,limit=limit)
+                visible=[]
+                for memory in candidates:
+                    try:
+                        uow.authorization.require(self._read_authorization(actor,MemoryOperation.LIST_ACTIVE,memory))
+                        source=self._source(actor,memory.source,self._scope(memory))
+                        if not isinstance(source,AcceptedReportProjection):continue
+                        visible.append(OrganizationalMemoryGraphSourceLink(memory_id=memory.id,report_id=memory.source.report_id,accepted_report_version=memory.source.accepted_aggregate_version,memory_version=memory.version,project_id=memory.project_id,workspace_id=memory.workspace_id,observed_at=memory.updated_at))
+                    except MemoryAuthorizationDenied:continue
+                return OrganizationalMemoryGraphSourcePage(items=tuple(visible),has_more=has_more)
+        except MemoryAuthorizationDenied:return MemoryProtectedNotFound()
+        except Exception:return MemoryUnavailable()
+
     def admit(self, command: AdmitAcceptedReport):
         return self._admit(command, None)
 

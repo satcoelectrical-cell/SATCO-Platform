@@ -150,6 +150,51 @@ class ExecutionMilestoneDTO(MilestoneFields):
     standing: ExecutionMilestoneStanding
 
 
+class ExecutionActivityGraphSummary(StrictExecutionSchema):
+    """The deliberately small owner-authorized Activity projection for EKG."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: UUID
+    plan_id: UUID
+    project_id: int = Field(gt=0)
+    workspace_id: int | None = Field(None, gt=0)
+    title: str
+    ordinal: int = Field(ge=0, le=199)
+    standing: ExecutionActivityStanding
+    version: int = Field(ge=1)
+    target_date: date | None = None
+    blocker_present: bool
+
+
+class ExecutionMilestoneGraphSummary(StrictExecutionSchema):
+    """The deliberately small owner-authorized Milestone projection for EKG."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: UUID
+    plan_id: UUID
+    project_id: int = Field(gt=0)
+    title: str
+    ordinal: int = Field(ge=0, le=49)
+    standing: ExecutionMilestoneStanding
+    target_date: date | None = None
+
+
+class ExecutionGraphIncidentLink(StrictExecutionSchema):
+    """Owner-safe explicit execution relationship; never a Project Context DTO."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    relationship: Literal["plan_activity", "plan_milestone", "activity_dependency", "milestone_activity"]
+    relationship_selector: str = Field(min_length=1, max_length=200)
+    source_kind: Literal["execution_plan", "activity", "milestone"]
+    source_id: UUID
+    target_kind: Literal["activity", "milestone"]
+    target_id: UUID
+    owner_version: int = Field(ge=1)
+
+
+class ExecutionGraphIncidentPage(StrictExecutionSchema):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    items: tuple[ExecutionGraphIncidentLink, ...] = Field(max_length=91)
+    has_more: bool = False
+
+
 class ExecutionProgressDTO(StrictExecutionSchema):
     model_config = ConfigDict(extra="forbid", frozen=True)
     completed_count: int = Field(ge=0, le=200)

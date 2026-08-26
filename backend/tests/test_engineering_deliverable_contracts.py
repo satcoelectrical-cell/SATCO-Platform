@@ -27,7 +27,14 @@ def test_revision_lifecycle_is_external_label_agnostic_and_closed():
 
 
 def test_revision_read_contract_never_contains_a_raw_supporting_file_identity():
-    from app.schemas.engineering_deliverable import DeliverableRevisionDTO
+    from app.schemas.engineering_deliverable import DeliverableRevisionDTO, DeliverableRevisionGraphSummary
 
     assert "supporting_file_id" not in DeliverableRevisionDTO.model_fields
     assert "representation_available" in DeliverableRevisionDTO.model_fields
+    assert set(DeliverableRevisionGraphSummary.model_fields) == {
+        "id", "deliverable_id", "project_id", "workspace_id", "sequence",
+        "external_label", "standing", "version", "representation_available",
+        "external_authority", "created_at", "transitioned_at",
+    }
+    for forbidden in ("supporting_file_id", "source_reference", "created_by_id", "transitioned_by_id"):
+        assert forbidden not in DeliverableRevisionGraphSummary.model_fields

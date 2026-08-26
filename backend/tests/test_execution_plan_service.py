@@ -27,6 +27,8 @@ class Repository:
     def append_revision(self, **kwargs): self.revisions.append((kwargs["plan"].version, kwargs["rationale"]))
     def replace_dependencies(self, *, edges, **kwargs): self.dependencies=[SimpleNamespace(predecessor_activity_id=a, dependent_activity_id=b) for a,b in edges]
     def replace_milestone_links(self, **kwargs): pass
+    def list_graph_incident(self, **kwargs):
+        return (("plan_activity","execution_plan",self.plan.id,"activity",self.activities[0].id,self.plan.version),),False
 
 
 class Uow:
@@ -73,3 +75,12 @@ def test_stale_version_is_conflict_and_replay_is_stable_after_later_state():
     app.establish(project_id=7,data=EstablishExecutionPlanRequest(expected_plan_version=0,rationale="Human establishes"),actor=actor,idempotency_key=plan_key)
     replay=app.establish(project_id=7,data=EstablishExecutionPlanRequest(expected_plan_version=0,rationale="Human establishes"),actor=actor,idempotency_key=plan_key)
     assert replay.outcome == "success" and replay.plan_version == 1
+
+
+def test_execution_incident_read_uses_exact_owner_repository_contract():
+    app,repository,_=service();actor=ExecutionActor(actor_id=4,organization_id=ORG)
+    app.establish(project_id=7,data=EstablishExecutionPlanRequest(expected_plan_version=0,rationale="Human establishes"),actor=actor,idempotency_key=uuid4())
+    created=app.create_activity(project_id=7,data=CreateExecutionActivityRequest(expected_plan_version=1,title="Exact activity",description=None,ordinal=0,workspace_id=None,responsible_user_id=None,target_date=None,completion_basis="Reviewed",rationale="Human adds"),actor=actor,idempotency_key=uuid4())
+    page=app.list_authorized_incident_graph_links(actor=actor,project_id=7,selector_kind="activity",selector_id=created.activity_id)
+    assert page.items[0].relationship=="plan_activity" and page.items[0].target_id==created.activity_id
+    assert set(page.items[0].model_dump())=={"relationship","relationship_selector","source_kind","source_id","target_kind","target_id","owner_version"}

@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.enums.engineering_deliverable import revision_transition_allowed
 from app.models.engineering_deliverable import EngineeringDeliverable, EngineeringDeliverableRevision, EngineeringDeliverableHistory, EngineeringDeliverableIdempotency, EngineeringDeliverableOutbox
-from app.schemas.engineering_deliverable import DeliverableDTO, DeliverableIdempotencyConflictResult, DeliverableInvalidResult, DeliverableListResponse, DeliverableMutationSuccess, DeliverableProtectedResult, DeliverableRevisionDTO, DeliverableUnavailableResult, DeliverableVersionConflictResult
+from app.schemas.engineering_deliverable import DeliverableDTO, DeliverableIdempotencyConflictResult, DeliverableInvalidResult, DeliverableListResponse, DeliverableMutationSuccess, DeliverableProtectedResult, DeliverableRevisionDTO, DeliverableRevisionGraphSummary, DeliverableRepresentationGraphLink, DeliverableUnavailableResult, DeliverableVersionConflictResult, DeliverableGraphIncidentLink, DeliverableGraphIncidentPage
 
 
 class EngineeringDeliverableService:
@@ -32,6 +32,35 @@ class EngineeringDeliverableService:
                 if not self.authorization.can_read(actor=actor,project=project) or row is None or row.project_id!=project_id or not self._revision_visible(actor=actor,project=project,workspace_id=row.workspace_id,revision=revision): return DeliverableProtectedResult()
                 return self._dto(row,revision)
         except SQLAlchemyError: return DeliverableUnavailableResult()
+    def get_authorized_revision(self, *, project_id, revision_id, actor):
+        """Exact revision UUID read through the canonical Deliverable authority."""
+        try:
+            with self.uow_factory() as uow:
+                revision = uow.repository.get_revision(
+                    revision_id=revision_id, organization_id=actor.organization_id,
+                )
+                if revision is None or revision.project_id != project_id:
+                    return DeliverableProtectedResult()
+                row = uow.repository.get(
+                    deliverable_id=revision.deliverable_id,
+                    organization_id=actor.organization_id,
+                )
+                project = self.authorization.project(actor=actor, project_id=project_id)
+                if row is None or project is None or row.project_id != project_id or not self.authorization.can_read(actor=actor, project=project):
+                    return DeliverableProtectedResult()
+                if not self._revision_visible(actor=actor, project=project, workspace_id=row.workspace_id, revision=revision):
+                    return DeliverableProtectedResult()
+                return DeliverableRevisionGraphSummary(
+                    id=revision.id, deliverable_id=row.id, project_id=row.project_id,
+                    workspace_id=row.workspace_id, sequence=revision.sequence,
+                    external_label=revision.external_label, standing=revision.standing,
+                    version=revision.version,
+                    representation_available=revision.supporting_file_id is not None,
+                    external_authority=row.external_authority,
+                    created_at=revision.created_at, transitioned_at=revision.transitioned_at,
+                )
+        except SQLAlchemyError:
+            return DeliverableUnavailableResult()
     def history(self, *, project_id, deliverable_id, actor):
         result=self.get(project_id=project_id,deliverable_id=deliverable_id,actor=actor)
         if not isinstance(result, DeliverableDTO): return result
@@ -43,6 +72,26 @@ class EngineeringDeliverableService:
                 if any(not self._revision_visible(actor=actor,project=project,workspace_id=row.workspace_id,revision=item) for item in revisions): return DeliverableProtectedResult()
                 return DeliverableListResponse(items=tuple(self._dto(row,item) for item in revisions),visible_count=len(revisions))
         except SQLAlchemyError: return DeliverableUnavailableResult()
+    def get_authorized_representation_link(self, *, project_id, actor, revision_id=None, asset_id=None):
+        """Exact canonical relation read; exactly one endpoint selector is supplied."""
+        if (revision_id is None)==(asset_id is None): return DeliverableInvalidResult()
+        try:
+            with self.uow_factory() as uow:
+                revision=(uow.repository.get_revision(revision_id=revision_id,organization_id=actor.organization_id) if revision_id is not None else uow.repository.get_revision_by_supporting_file(asset_id=asset_id,organization_id=actor.organization_id))
+                if revision is None or revision.project_id!=project_id or revision.supporting_file_id is None:return DeliverableProtectedResult()
+                row=uow.repository.get(deliverable_id=revision.deliverable_id,organization_id=actor.organization_id);project=self.authorization.project(actor=actor,project_id=project_id)
+                if row is None or project is None or not self.authorization.can_read(actor=actor,project=project) or not self._revision_visible(actor=actor,project=project,workspace_id=row.workspace_id,revision=revision):return DeliverableProtectedResult()
+                return DeliverableRepresentationGraphLink(revision_id=revision.id,asset_id=revision.supporting_file_id,deliverable_id=row.id,project_id=row.project_id,workspace_id=row.workspace_id,revision_version=revision.version)
+        except SQLAlchemyError:return DeliverableUnavailableResult()
+    def list_authorized_incident_graph_links(self, *, project_id, actor, selector_kind, selector_id, limit=91):
+        if selector_kind not in {"deliverable","deliverable_revision","activity","milestone","supporting_file"} or not 1<=limit<=91:return DeliverableInvalidResult()
+        try:
+            with self.uow_factory() as uow:
+                project=self.authorization.project(actor=actor,project_id=project_id)
+                if project is None or not self.authorization.can_read(actor=actor,project=project):return DeliverableProtectedResult()
+                rows,has_more=uow.repository.list_graph_incident(selector_kind=selector_kind,selector_id=selector_id,organization_id=actor.organization_id,project_id=project_id,limit=limit)
+                return DeliverableGraphIncidentPage(items=tuple(DeliverableGraphIncidentLink(relationship=row[0],relationship_selector=f"{row[2]}:{row[4]}",source_kind=row[1],source_id=row[2],target_kind=row[3],target_id=row[4],owner_version=row[5]) for row in rows),has_more=has_more)
+        except SQLAlchemyError:return DeliverableUnavailableResult()
     def create(self, *, project_id,data,actor,idempotency_key): return self._mutate("create_deliverable",project_id,data,actor,idempotency_key,self._create)
     def update(self, *, project_id,deliverable_id,data,actor,idempotency_key): return self._mutate("update_deliverable",project_id,data,actor,idempotency_key,lambda uow,p,now: self._update(uow,p,deliverable_id,data,actor,now))
     def create_revision(self, *, project_id,deliverable_id,data,actor,idempotency_key): return self._mutate("create_revision",project_id,data,actor,idempotency_key,lambda uow,p,now: self._create_revision(uow,p,deliverable_id,data,actor,now))

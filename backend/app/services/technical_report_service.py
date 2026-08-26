@@ -40,6 +40,9 @@ from app.ports.technical_report import (
     RequestAIProposalHistoricalAuthority,
     TechnicalReportAIProposal,
     TechnicalReportAIRequest,
+    AcceptedTechnicalReportSummary,
+    AcceptedTechnicalReportSummaryPage,
+    TechnicalReportGraphProvenanceLink,
     TechnicalReportAuditRecord,
     TechnicalReportAuthorizationRequest,
     TechnicalReportClock,
@@ -290,6 +293,58 @@ class TechnicalReportService:
                 TechnicalReportAuthorizationRequest(actor, "list", criteria.scope)
             )
             return uow.technical_reports.list_scoped(criteria)
+
+    def list_accepted_summaries(
+        self, actor: TechnicalReportActor, criteria: TechnicalReportReadCriteria,
+    ) -> AcceptedTechnicalReportSummaryPage:
+        """Return only the accepted safe projection for a bounded owner read."""
+        if not 1 <= criteria.page or not 1 <= criteria.size <= 100:
+            raise TechnicalReportAuthorizationDenied()
+        accepted_criteria = replace(
+            criteria, lifecycle=TechnicalReportLifecycle.ACCEPTED,
+        )
+        with self._uow_factory() as uow:
+            uow.authorization.require(
+                TechnicalReportAuthorizationRequest(
+                    actor, "list_accepted_summaries", accepted_criteria.scope,
+                )
+            )
+            page = uow.technical_reports.list_scoped(accepted_criteria)
+            summaries = []
+            for item in page.items:
+                report = uow.technical_reports.get_scoped(
+                    item.report_id, actor.organization_id,
+                )
+                if report is None or report.lifecycle is not TechnicalReportLifecycle.ACCEPTED:
+                    raise TechnicalReportAuthorizationDenied()
+                record = report.acceptance_record
+                if record is None or report.accepted_at is None:
+                    raise TechnicalReportAuthorizationDenied()
+                summaries.append(AcceptedTechnicalReportSummary(
+                    report_id=report.id,
+                    workspace_id=report.workspace_id,
+                    project_id=report.project_id,
+                    version=report.version,
+                    accepted_digest=record.snapshot_digest,
+                    accepted_at=report.accepted_at,
+                    purpose=report.purpose,
+                ))
+            return AcceptedTechnicalReportSummaryPage(
+                items=tuple(summaries), page=page.page, size=page.size,
+                has_more=page.total > page.page * page.size,
+            )
+
+    def list_authorized_graph_provenance(self, *, actor, scope, source_kind, source_id):
+        """One bounded canonical-owner read for report provenance incidence."""
+        if source_kind not in {"evidence","engineering_object"}: raise TechnicalReportAuthorizationDenied()
+        with self._uow_factory() as uow:
+            uow.authorization.require(TechnicalReportAuthorizationRequest(actor,"list",scope))
+            links=uow.technical_reports.list_graph_provenance_links(scope=scope,source_kind=source_kind,source_id=source_id,limit=91)
+            visible=[]
+            for link in links:
+                report,_=self._protected_report(uow,actor,link.report_id,"get")
+                if report.lifecycle is TechnicalReportLifecycle.ACCEPTED:visible.append(link)
+            return tuple(visible)
 
     def list_report_details(self, actor, criteria):
         with self._uow_factory() as uow:

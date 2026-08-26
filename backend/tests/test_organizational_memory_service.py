@@ -54,6 +54,9 @@ class Repository:
         )]
         items.sort(key=lambda item: (-item.admitted_at.timestamp(), str(item.id)))
         return MemoryCandidatePage(tuple(items[:criteria.candidate_limit]), len(items) > criteria.candidate_limit)
+    def list_active_by_source_report(self, *, report_id, organization_id, workspace_id, project_id, limit=91):
+        items=tuple(sorted((item for item in self.items.values() if item.source.report_id==report_id and item.organization_id==organization_id and item.workspace_id==workspace_id and item.project_id==project_id and item.standing is MemoryStanding.ACTIVE),key=lambda item:str(item.id)))
+        return items[:limit],len(items)>limit
 
 
 class Idempotency:
@@ -225,6 +228,14 @@ def test_active_read_and_history_use_closed_standing_specific_results():
     assert history.outcome == "success" and history.item.standing is MemoryStanding.WITHDRAWN
     assert history.item.withdrawal_reason == "obsolete" and history.item.safe_provenance
     assert service.get_active(actor, GetActiveMemory(admitted.memory_id)).outcome == "protected_not_found"
+
+
+def test_memory_source_report_incident_is_exact_and_currently_reauthorized():
+    service,uow,_,snapshot=setup();admitted=service.admit(admit_command(snapshot));actor=MemoryActor(9,snapshot.organization_id)
+    page=service.get_authorized_source_report_graph_links(actor,scope=MemoryScope(snapshot.organization_id,snapshot.workspace_id,snapshot.project_id),report_id=snapshot.report_id)
+    assert len(page.items)==1 and page.items[0].memory_id==admitted.memory_id and page.items[0].report_id==snapshot.report_id
+    uow.authorization.deny=True
+    assert service.get_authorized_source_report_graph_links(actor,scope=MemoryScope(snapshot.organization_id,snapshot.workspace_id,snapshot.project_id),report_id=snapshot.report_id).outcome=="protected_not_found"
 
 
 def test_read_authorization_precedes_source_and_protected_results_are_payload_free():

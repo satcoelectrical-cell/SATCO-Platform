@@ -13,7 +13,8 @@ from app.exceptions.technical_report import (
     TechnicalReportAuthorizationDenied,
     TechnicalReportValidationError,
 )
-from app.ports.technical_report import TechnicalReportAIRequest
+from app.ports.technical_report import TechnicalReportAIRequest, TechnicalReportReadCriteria, TechnicalReportScope
+from app.models.technical_report_command import AcceptExactTechnicalReportDraft, AcceptanceConfirmation, TechnicalReportCommandMetadata
 from app.services.technical_report_service import TechnicalReportService
 from test_technical_report_service import Assistant, Clock, Uow, command, content
 
@@ -60,6 +61,29 @@ def test_protected_report_denial_discloses_same_outcome_for_absent_and_cross_org
             service.get_report(actor, report_id)
         outcomes.append((type(caught.value), caught.value.code, str(caught.value)))
     assert outcomes[0] == outcomes[1]
+
+
+def test_accepted_summary_requires_owner_authorization_before_safe_disclosure():
+    from test_technical_report_service import Repository, Uow
+    create = command(); repository = Repository(); uow = Uow(repository)
+    service = TechnicalReportService(lambda: uow, Clock(), Assistant())
+    created = service.create_draft(create); report = repository.reports[created.report_id]
+    service.accept_exact_draft(AcceptExactTechnicalReportDraft(
+        TechnicalReportCommandMetadata(create.metadata.actor, "accept", uuid4(), uuid4(), uuid4()),
+        report.id, AcceptanceConfirmation(report.version, report.draft_revision_id, True),
+    ))
+    outsider = type(create.metadata.actor)(create.metadata.actor.actor_id, uuid4())
+    uow.authorization.denied_operations.add("list_accepted_summaries")
+    with pytest.raises(TechnicalReportAuthorizationDenied):
+        service.list_accepted_summaries(outsider, TechnicalReportReadCriteria(
+            TechnicalReportScope(outsider.organization_id, report.workspace_id, report.project_id), 1, 1,
+        ))
+    uow.authorization.denied_operations.clear()
+    uow.authorization.denied_operations.add("list_accepted_summaries")
+    with pytest.raises(TechnicalReportAuthorizationDenied):
+        service.list_accepted_summaries(create.metadata.actor, TechnicalReportReadCriteria(
+            TechnicalReportScope(report.organization_id, report.workspace_id, report.project_id), 1, 1,
+        ))
 
 
 def test_ai_request_reauthorizes_current_report_and_never_commits():
@@ -261,3 +285,7 @@ def test_concrete_policy_enforces_operation_specific_owner_authority(
     ):
         with pytest.raises(TechnicalReportAuthorizationDenied):
             policy.require(TechnicalReportAuthorizationRequest(actor, operation, scope, report.id))
+def test_graph_provenance_link_contract_excludes_human_and_report_content():
+    from app.ports.technical_report import TechnicalReportGraphProvenanceLink
+    assert set(TechnicalReportGraphProvenanceLink.__dataclass_fields__)=={"report_id","entry_id","source_kind","source_id","report_version","accepted_at"}
+    assert not ({"accepted_by_id","owner_id","content","rationale","origin_attribution","limitations"}&set(TechnicalReportGraphProvenanceLink.__dataclass_fields__))

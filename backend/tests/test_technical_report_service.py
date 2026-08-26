@@ -36,6 +36,7 @@ from app.ports.technical_report import (
     TechnicalReportReadCriteria,
     TechnicalReportReadItem,
     TechnicalReportReadPage,
+    AcceptedTechnicalReportSummaryPage,
     TechnicalReportScope,
 )
 from app.services.technical_report_service import TechnicalReportService
@@ -82,7 +83,14 @@ class Repository:
     def persist_draft_expected_version(self, report, expected_version): return not self.fail_cas
     def persist_acceptance_expected_version(self, report, expected_version): return not self.fail_cas
     def list_scoped(self, criteria):
-        items = tuple(TechnicalReportReadItem(r.id, r.version) for r in self.reports.values())
+        reports = [
+            r for r in self.reports.values()
+            if r.organization_id == criteria.scope.organization_id
+            and r.workspace_id == criteria.scope.workspace_id
+            and (criteria.scope.project_id is None or r.project_id == criteria.scope.project_id)
+            and (criteria.lifecycle is None or r.lifecycle == criteria.lifecycle)
+        ]
+        items = tuple(TechnicalReportReadItem(r.id, r.version) for r in reports)
         return TechnicalReportReadPage(items, len(items), criteria.page, criteria.size)
     def list_successors_scoped(self, predecessor_id, criteria):
         reports = [
@@ -260,6 +268,25 @@ def test_authorized_get_list_and_ai_proposal_are_read_only():
     )
     assert page.total == 1 and proposal.proposal_text == "Advisory draft"
     assert uow.commits == commits
+
+
+def test_accepted_summary_is_owner_scoped_bounded_and_safe():
+    service, uow = setup_service(); create = command()
+    created = service.create_draft(create); report = uow.technical_reports.reports[created.report_id]
+    service.accept_exact_draft(AcceptExactTechnicalReportDraft(
+        TechnicalReportCommandMetadata(create.metadata.actor, "accept", uuid4(), uuid4(), uuid4()),
+        report.id, AcceptanceConfirmation(report.version, report.draft_revision_id, True),
+    ))
+    summary = service.list_accepted_summaries(create.metadata.actor, TechnicalReportReadCriteria(
+        TechnicalReportScope(report.organization_id, report.workspace_id, report.project_id), 1, 1,
+    ))
+    assert isinstance(summary, AcceptedTechnicalReportSummaryPage)
+    assert len(summary.items) == 1
+    item = summary.items[0]
+    assert (item.report_id, item.workspace_id, item.project_id, item.version) == (report.id, report.workspace_id, report.project_id, report.version)
+    assert item.accepted_digest == report.acceptance_record.snapshot_digest
+    assert set(item.__dataclass_fields__) == {"report_id", "workspace_id", "project_id", "version", "accepted_digest", "accepted_at", "purpose"}
+    assert uow.authorization.requests[-1].operation == "list_accepted_summaries"
 
 
 def test_successor_and_lineage_preserve_predecessor_and_authorized_total():
@@ -762,3 +789,10 @@ def test_real_uow_canonical_accepted_mutations_rollback_then_audit_once(
             super().__init__(factory); self.rejection_audit = FailingRejection()
     with pytest.raises(TechnicalReportAcceptedImmutable):
         TechnicalReportService(lambda: FailingAuditUow(), Clock()).revise_draft(revise)
+def test_project_context_graph_provenance_read_is_bounded_owner_authorized_and_read_only():
+    from pathlib import Path
+    source=Path("app/services/technical_report_service.py").read_text()
+    block=source[source.index("def list_authorized_graph_provenance"):source.index("def list_report_details")]
+    assert "TechnicalReportAuthorizationRequest(actor,\"list\",scope)" in block
+    assert "limit=91" in block and "_protected_report" in block
+    assert ".commit(" not in block and ".add(" not in block

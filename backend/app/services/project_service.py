@@ -23,6 +23,7 @@ from app.repositories.customer_repository import CustomerRepository
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.project import (
     ProjectAuthorizedSelectionPage,
+    ProjectGraphSummary,
     ProjectCreate,
     ProjectSelectionActor,
     ProjectUpdate,
@@ -104,6 +105,14 @@ class ProjectService:
             organization_id=actor.organization_id,
         ):
             raise ProjectForbiddenException()
+
+    def get_authorized_graph_summary(self, *, actor: ProjectSelectionActor, project_id: int) -> ProjectGraphSummary:
+        """Exact graph read.  Active actor is checked before project disclosure."""
+        self.authorize_selection_actor(actor=actor)
+        project = self.repository.get_by_id(project_id, organization_id=actor.organization_id)
+        if project is None:
+            raise ProjectNotFoundException(project_id)
+        return ProjectGraphSummary(project_id=project.id, project_code=project.project_code, project_name=project.name, lifecycle_status=project.status)
 
     def create(
         self,

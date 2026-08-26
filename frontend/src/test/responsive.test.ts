@@ -6,4 +6,5 @@ describe("responsive and accessibility-critical styling", () => {
   it("preserves visible focus, reduced motion and contained narrow navigation", () => { expect(css).toContain(":focus-visible"); expect(css).toContain("prefers-reduced-motion"); expect(css).toContain("translateX(-102%)"); });
   it("stacks the Customer-to-Capture bootstrap without horizontal workflow overflow", () => { expect(css).toContain(".bootstrap-grid"); expect(css).toMatch(/\.bootstrap-grid \{ display:grid; grid-template-columns:repeat\(2/); expect(css).toMatch(/\.bootstrap-grid \{ grid-template-columns:1fr/); });
   it("does not depend on remote visual assets or fonts", () => { expect(css).not.toMatch(/@import|url\(['\"]?https?:/); });
+  it("stacks Project Context and related records direction-neutrally",()=>{expect(css).toContain(".project-context-grid");expect(css).toMatch(/\.project-context-grid\{grid-template-columns:1fr/);expect(css).toContain(".related-context");expect(css).not.toMatch(/\.project-context[^}]*\b(left|right):/);});
 });

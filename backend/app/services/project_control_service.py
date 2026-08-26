@@ -16,7 +16,9 @@ from app.models.project_control import (
 from app.schemas.project_control import (
     ControlSuccess, ControlReadSuccess, ImpactSuccess, Protected, Invalid,
     Conflict, IdempotencyConflict, Unavailable, ControlListSuccess,
-    ControlHistoryEntry, ControlHistorySuccess, ImpactRead,
+    ControlHistoryEntry, ControlHistorySuccess, ImpactRead, ChangeImpactGraphSummary,
+    RiskGraphSummary, IssueGraphSummary, DecisionGraphSummary, ChangeGraphSummary,
+    ProjectControlGraphIncidentLink, ProjectControlGraphIncidentPage,
 )
 
 
@@ -51,6 +53,51 @@ class ProjectControlService:
                 return self._read_success(uow, kind=kind, row=row)
         except SQLAlchemyError:
             return Unavailable()
+
+    def get_change_impact_graph_summary(self, *, actor, project_id, impact_id):
+        """Exact impact lookup with owning Change authorization before disclosure."""
+        try:
+            with self.uow_factory() as uow:
+                impact = uow.repository.get_impact(impact_id=impact_id, organization_id=actor.organization_id)
+                if impact is None or impact.project_id != project_id: return Protected()
+                change = uow.repository.get("change", id=impact.change_id, organization_id=actor.organization_id)
+                project = uow.repository.get_project(project_id=project_id, organization_id=actor.organization_id)
+                if change is None or project is None or change.project_id != project_id or not self.authorization.can_read(actor=actor, project=project): return Protected()
+                return ChangeImpactGraphSummary(id=impact.id, change_id=impact.change_id, project_id=impact.project_id, target_kind=impact.target_kind, target_id=impact.target_id, standing=impact.standing, impact_class="human_confirmed" if impact.standing == "confirmed" else "potential")
+        except SQLAlchemyError:
+            return Unavailable()
+
+    def get_control_graph_summary(self, *, kind, actor, project_id, control_id):
+        """Exact owner-authorized graph read without statements or Human identity."""
+        if kind not in self._models:
+            return Invalid()
+        try:
+            with self.uow_factory() as uow:
+                row = uow.repository.get(kind, id=control_id, organization_id=actor.organization_id)
+                project = uow.repository.get_project(project_id=project_id, organization_id=actor.organization_id)
+                if row is None or row.project_id != project_id or project is None or not self.authorization.can_read(actor=actor, project=project):
+                    return Protected()
+                common = dict(id=row.id, project_id=row.project_id, workspace_id=row.workspace_id, standing=row.standing, version=row.version)
+                if kind == "risk":
+                    return RiskGraphSummary(category=row.category, likelihood=row.likelihood, impact=row.impact, **common)
+                if kind == "issue":
+                    return IssueGraphSummary(severity=row.severity, **common)
+                if kind == "decision":
+                    return DecisionGraphSummary(predecessor_id=row.predecessor_id, **common)
+                return ChangeGraphSummary(predecessor_id=row.predecessor_id, **common)
+        except SQLAlchemyError:
+            return Unavailable()
+
+    def list_authorized_incident_graph_links(self, *, actor, project_id, selector_kind, selector_id, limit=91):
+        allowed={"human_decision","change","change_impact","activity","milestone","deliverable","deliverable_revision","evidence","supporting_file"}
+        if selector_kind not in allowed or not 1<=limit<=91:return Invalid()
+        try:
+            with self.uow_factory() as uow:
+                project=uow.repository.get_project(project_id=project_id,organization_id=actor.organization_id)
+                if project is None or not self.authorization.can_read(actor=actor,project=project):return Protected()
+                rows,has_more=uow.repository.list_graph_incident(selector_kind=selector_kind,selector_id=selector_id,organization_id=actor.organization_id,project_id=project_id,limit=limit)
+                return ProjectControlGraphIncidentPage(items=tuple(ProjectControlGraphIncidentLink(relationship=row[0],relationship_selector=f"{row[2]}:{row[4]}",source_kind=row[1],source_id=row[2],target_kind=row[3],target_id=row[4],owner_version=row[5]) for row in rows),has_more=has_more)
+        except SQLAlchemyError:return Unavailable()
 
     def list(self, *, kind, project_id, actor):
         if kind not in self._models:

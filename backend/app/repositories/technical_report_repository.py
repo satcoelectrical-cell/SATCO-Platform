@@ -40,6 +40,7 @@ from app.ports.technical_report import (
     TechnicalReportReadCriteria,
     TechnicalReportReadItem,
     TechnicalReportReadPage,
+    TechnicalReportGraphProvenanceLink,
 )
 
 
@@ -259,6 +260,16 @@ class SqlAlchemyTechnicalReportRepository:
         if [entry.ordinal for entry in entries] != list(range(len(entries))):
             raise TechnicalReportValidationError("persisted provenance ordinals are incoherent")
         return entries
+
+    def list_graph_provenance_links(self, *, scope, source_kind, source_id, limit):
+        column={"evidence":TechnicalReportProvenanceRecord.evidence_id,"engineering_object":TechnicalReportProvenanceRecord.engineering_object_id}.get(source_kind)
+        if column is None or not 1<=limit<=91:return ()
+        rows=(self.session.query(TechnicalReportProvenanceRecord,TechnicalReportRecord)
+            .join(TechnicalReportRecord,TechnicalReportRecord.id==TechnicalReportProvenanceRecord.technical_report_id)
+            .filter(column==source_id,TechnicalReportRecord.organization_id==scope.organization_id,TechnicalReportRecord.workspace_id==scope.workspace_id,TechnicalReportRecord.project_id==scope.project_id,TechnicalReportRecord.lifecycle==TechnicalReportLifecycle.ACCEPTED.value)
+            .order_by(TechnicalReportRecord.id,TechnicalReportProvenanceRecord.ordinal)
+            .limit(limit).all())
+        return tuple(TechnicalReportGraphProvenanceLink(report_id=root.id,entry_id=entry.id,source_kind=source_kind,source_id=source_id,report_version=root.version,accepted_at=root.accepted_at) for entry,root in rows if root.accepted_at is not None)
 
     def persist_draft_expected_version(self, report: TechnicalReport, expected_version: int) -> bool:
         if report.lifecycle is not TechnicalReportLifecycle.DRAFT:

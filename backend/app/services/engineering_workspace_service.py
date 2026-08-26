@@ -29,6 +29,7 @@ from app.repositories.engineering_workspace_repository import (
 from app.schemas.engineering_workspace import (
     EngineeringWorkspaceCollaboratorAdd,
     EngineeringWorkspaceCreate,
+    EngineeringWorkspaceGraphSummary,
     EngineeringWorkspaceUpdate,
     WorkspaceArchiveRequest,
     WorkspaceRestoreRequest,
@@ -187,6 +188,11 @@ class EngineeringWorkspaceService:
             self._get_visible(workspace_id, current_user),
             current_user,
         )
+
+    def get_authorized_graph_summary(self, *, workspace_id: int, current_user: User) -> EngineeringWorkspaceGraphSummary:
+        """Exact visibility-authorized Workspace read without broad response fields."""
+        workspace = self._get_visible(workspace_id, current_user)
+        return EngineeringWorkspaceGraphSummary(workspace_id=workspace.id, project_id=workspace.project_id, discipline=workspace.discipline, workspace_status=workspace.status)
 
     def update(
         self,

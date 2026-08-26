@@ -23,6 +23,32 @@ export interface Capture {
   source_kind: string; lifecycle: string; version: number; original_content?: string;
   created_at: string; updated_at: string;
 }
+
+export type ProjectContextSectionKind = "project_basis" | "execution" | "deliverables" | "project_controls" | "engineering_context" | "engineering_objects" | "evidence" | "supporting_files" | "technical_reports" | "organizational_memory";
+export type ContextNodeKind = "project" | "workspace" | "execution_plan" | "activity" | "milestone" | "deliverable" | "deliverable_revision" | "risk" | "issue" | "human_decision" | "change" | "change_impact" | "engineering_object" | "engineering_context" | "evidence" | "supporting_file" | "technical_report" | "organizational_memory";
+export type AuthorityClassification = "human_authoritative" | "external_tool_authored" | "canonical_evidence" | "derived" | "contextual_advisory";
+export type TemporalClassification = "current" | "historical";
+export interface ContextProvenance { owner_kind:string; selector:string; version:number|null; standing:string|null; source_observed_at:string|null; observed_at:string; authority_class:AuthorityClassification; temporal_class:TemporalClassification }
+export interface ContextTruncation { truncated:boolean; continuation:{continuation:string;last_evaluated_key:string}|null }
+export interface ProjectContextItem {
+  item_kind:string; selector:string; version:number|null; standing:string|null; provenance:ContextProvenance;
+  project_id?:number; workspace_id?:number|null; title?:string; project_name?:string|null; project_code?:string|null;
+  code?:string; filename?:string; object_type?:string; evidence_kind?:string; report_type?:string;
+  title_or_purpose?:string|null; purpose?:string|null; memory_id?:string; report_id?:string; object_id?:string;
+  evidence_id?:string; asset_id?:string; deliverable_id?:string; control_id?:string; plan_id?:string; context_id?:number;
+}
+export type ProjectContextSectionState =
+  | {state:"available";visible_count:number;truncated:ContextTruncation;observed_at:string}
+  | {state:"empty"}
+  | {state:"not_established"}
+  | {state:"not_disclosed"}
+  | {state:"unavailable"};
+export interface ProjectContextSection { kind:ProjectContextSectionKind; state:ProjectContextSectionState; items:ProjectContextItem[] }
+export interface ProjectContextSuccess { status:"success";observation_started_at:string;observation_completed_at:string;observation_status:"complete_within_bounds"|"partial";sections:ProjectContextSection[] }
+export interface ContextNodeSelector {kind:ContextNodeKind;value:string|number}
+export interface ContextNode {node_kind:ContextNodeKind;selector:string|number;navigation:{project_id:number;workspace_id:number|null};provenance:ContextProvenance;authority_class:AuthorityClassification;temporal_class:TemporalClassification;[key:string]:unknown}
+export interface ContextEdge {relationship_selector:string;relationship_kind:string|{family:string;relationship_type:string};source:ContextNodeSelector;target:ContextNodeSelector;provenance:ContextProvenance}
+export interface OneHopSuccess {status:"success";start:ContextNode;edges:ContextEdge[];nodes:ContextNode[];truncated:ContextTruncation}
 export interface TechnicalReport {
   id: string; organization_id: string; workspace_id: number; project_id: number | null;
   owner_id: number; purpose: string; lifecycle: "draft" | "accepted"; version: number;

@@ -326,6 +326,18 @@ class SqlAlchemyOrganizationalMemoryRepository:
         ).one_or_none()
         return None if record is None else self._aggregate(record)
 
+    def list_active_by_source_report(self, *, report_id: UUID, organization_id: UUID,
+                                     workspace_id: int, project_id: int | None,
+                                     limit: int = 91):
+        """Exact source-report incidence; bounded and canonically ordered."""
+        query = self.session.query(OrganizationalMemoryRecord).filter_by(
+            source_report_id=report_id, organization_id=organization_id,
+            workspace_id=workspace_id, project_id=project_id,
+            standing=MemoryStanding.ACTIVE.value,
+        ).order_by(OrganizationalMemoryRecord.id)
+        rows = query.limit(limit + 1).all()
+        return tuple(self._aggregate(row) for row in rows[:limit]), len(rows) > limit
+
     def persist_standing_expected_version(self, memory: OrganizationalMemory, expected_version: int) -> bool:
         result = self.session.execute(
             update(OrganizationalMemoryRecord)
