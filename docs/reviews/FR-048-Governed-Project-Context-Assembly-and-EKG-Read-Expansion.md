@@ -38,9 +38,11 @@ validation PASS. The backend-only container path diagnostic is preserved and
 the repository-root mounted result is authoritative.
 
 All Batch 1–4 and final Batch 3/4 remediation/re-review history is traceable.
-The final review does not authorize delivery or closure.
 
 ## Readiness
 
-Human QG-11 readiness: **READY**. Delivery and PATCH closure remain pending
-their separate governed authority.
+Human QG-11 and QG-12: **PASS**. The exact 94-file delivery boundary was
+committed as `3af6ed63f52d6511bbb352eb387f1abcadb2aa67`, pushed to the governed
+branch, and verified with remote/local divergence `0/0`. PATCH-048 is
+**DONE / CLOSED**. This closure changes no product semantics and grants no
+authority to PATCH-049.

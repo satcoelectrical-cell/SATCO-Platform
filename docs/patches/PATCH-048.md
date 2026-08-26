@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | FINAL REVIEW, HUMAN QG-11, AND QG-12 DELIVERY READINESS PASS; BOUNDED DELIVERY AUTHORITY PENDING |
+| Status | DONE / CLOSED |
 | Registered after | PATCH-047 DONE / CLOSED |
 | Frozen roadmap placement | Phase 1 — Project / execution / context foundation |
 | Priority / complexity | P0 / VERY HIGH |
@@ -25,7 +25,7 @@
 | Batch 4 | ACCEPTED / COMPLETE; all Critical/Major findings resolved |
 | Final validation | PASS; 1,315 backend and 79 frontend tests |
 | Independent Final Review / QG-11 | PASS / PASS |
-| Delivery / closure | DELIVERY-READY; COMMIT/PUSH NOT AUTHORIZED / NOT CLOSED |
+| Delivery / closure | PASS; delivered and closed |
 
 ## Frozen capability boundary
 
@@ -212,7 +212,14 @@ introduced no migration.
 
 The Independent Final Implementation Review is **PASS** with Critical/Major/
 Minor findings 0/0/0. All Batch 1–4 and final-review FAIL → remediation →
-re-review chronology remains preserved. Human QG-11 is **PASS**. QG-12 delivery
-readiness is **PASS** for the exact 94-file bounded delivery boundary. Commit,
-push, delivery, and closure remain pending separately governed authority;
-PATCH-048 is not delivered or closed and PATCH-049 remains not registered.
+re-review chronology remains preserved. Human QG-11 and QG-12 are **PASS**.
+
+## Delivery and closure
+
+The exact 94-file PATCH-048 delivery boundary was committed as
+`3af6ed63f52d6511bbb352eb387f1abcadb2aa67` and pushed to the governed branch.
+Remote HEAD matched the delivery commit and divergence was `0/0` before this
+closure record. All accepted Batch, final-review, QG-11 and QG-12 evidence is
+preserved; unrelated work remained unstaged and untouched. PATCH-048 is
+**DONE / CLOSED**. This closure grants no authority to PATCH-049, which remains
+not registered.
