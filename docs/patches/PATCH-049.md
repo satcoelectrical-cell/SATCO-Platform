@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | DELIVERY-READY / NOT DELIVERED / NOT CLOSED |
+| Status | DONE / CLOSED |
 | Registered after | PATCH-048 DONE / CLOSED |
 | Frozen roadmap placement | Phase 2 — Initial Engineering Intelligence |
 | Priority / complexity | P0 / HIGH |
@@ -25,8 +25,8 @@
 | Batch 3 | PASS / ACCEPTED / COMPLETE; Final Independent Review and QG-11/QG-12 preparation authority GRANTED ONLY |
 | Final Independent Review | PASS; Critical/Major/Minor 0/0/0 |
 | QG-11 | PASS / ACCEPTED |
-| QG-12 | PASS / DELIVERY-READY; delivery authority NOT GRANTED |
-| Implementation / migration | Batch 1–3 COMPLETE / NONE; delivery-ready only |
+| QG-12 | PASS / DELIVERED |
+| Implementation / migration | Batch 1–3 COMPLETE / NONE; delivered and closed |
 | PATCH-050 | NOT STARTED / NOT AUTHORIZED |
 
 ## Registered capability boundary
@@ -180,3 +180,14 @@ Re-review is **PASS**, B3-049-MAJ-02 is **RESOLVED**, and Human Batch 3
 Acceptance remains **PASS / ACCEPTED / COMPLETE**. Final Independent Review
 and QG-11/QG-12 preparation authority is granted only; delivery, closure and
 PATCH-050 remain not granted.
+
+## Delivery and closure
+
+The exact 49-file PATCH-049 delivery boundary was committed as
+`593f02fee99016d046c7659f0d669cf856745e44` and pushed to the governed branch.
+Remote HEAD matched the delivery commit and divergence was `0/0` before this
+closure record. QG-11 and QG-12 are **PASS**; all accepted Batch, final-review
+and FAIL → remediation → re-review evidence remains preserved. Unrelated local
+work remained unstaged and untouched. PATCH-049 is **DONE / CLOSED**. This
+closure grants no authority to PATCH-050, which remains not started or
+authorized.
