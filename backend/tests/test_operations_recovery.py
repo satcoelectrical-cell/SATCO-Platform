@@ -52,6 +52,8 @@ def test_preflight_maps_governed_runtime_role_to_alembic_contract():
     assert "CREATE ROLE {} LOGIN NOINHERIT NOSUPERUSER" in script
     assert 'SATCO_PREFLIGHT_PHASE" = "before' in script
     assert 'payload.get("verification_state") == "verified"' in script
+    assert "SATCO_REGISTRY_INSTALLER_DB_PASSWORD_FILE" in script
+    assert "PATCH051_REQUIRE_PREFLIGHT" in script
 
 
 def test_backup_and_restore_fail_closed_and_remove_plaintext():

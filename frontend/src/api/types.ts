@@ -24,6 +24,15 @@ export interface Capture {
   created_at: string; updated_at: string;
 }
 
+export interface PackageSelection { package_key:string; package_version:string; descriptor_digest?:string }
+export interface SupportedPackage { package_key:string; package_version:string; primary_discipline_id:string; standing:string; descriptor_digest:string }
+export interface SupportedPackages { registry_digest:string; items:SupportedPackage[]; next_cursor:string|null }
+export interface OrganizationPackageConfiguration { organization_id:string; configuration_version:number; enabled_selections:PackageSelection[]; disabled_selections:PackageSelection[]; registry_digest:string; updated_at:string|null }
+export interface ProjectPackageConfiguration { state:"NOT_CONFIGURED"|"CONFIGURED"; project_id:number; organization_id:string; configuration_version:number; configuration_revision?:number; profile_id?:string; profile_digest?:string; registry_digest?:string; selections:PackageSelection[] }
+export interface EffectiveDisciplinePackage { discipline_id:string; display_name:string; availability:"OPERATIONAL_AVAILABLE"|"FUTURE_UNAVAILABLE"|"HISTORICAL_ONLY"|"LEGACY_UNRESOLVED"; allowed_actions:string[]; binding_state:string; package_key:string|null; package_version:string|null; descriptor_digest:string|null; project_configuration_revision:number|null }
+export interface EffectiveDisciplinePackages { project_id:number; items:EffectiveDisciplinePackage[] }
+export interface WorkspacePackageApplicability { workspace_id:number; project_id:number; legacy_discipline:string; canonical_discipline_id:string|null; binding_state:string; package_key:string|null; package_version:string|null; descriptor_digest:string|null; project_configuration_revision:number|null; effective_standing:string|null }
+
 export type ProjectContextSectionKind = "project_basis" | "execution" | "deliverables" | "project_controls" | "engineering_context" | "engineering_objects" | "evidence" | "supporting_files" | "technical_reports" | "organizational_memory";
 export type ContextNodeKind = "project" | "workspace" | "execution_plan" | "activity" | "milestone" | "deliverable" | "deliverable_revision" | "risk" | "issue" | "human_decision" | "change" | "change_impact" | "engineering_object" | "engineering_context" | "evidence" | "supporting_file" | "technical_report" | "organizational_memory";
 export type AuthorityClassification = "human_authoritative" | "external_tool_authored" | "canonical_evidence" | "derived" | "contextual_advisory";

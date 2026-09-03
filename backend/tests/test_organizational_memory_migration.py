@@ -6,7 +6,12 @@ import json
 import re
 from sqlalchemy import inspect, text
 
-from conftest import TEST_DATABASE_REVISION, alembic_config, owner_engine
+from conftest import (
+    TEST_DATABASE_REVISION,
+    alembic_config,
+    clear_patch051_registry_provenance_for_historical_migration,
+    owner_engine,
+)
 
 
 TABLES = {
@@ -37,7 +42,8 @@ TRIGGERS = {
 
 def test_repository_head_preserves_patch_034_in_current_chain() -> None:
     script = ScriptDirectory.from_config(alembic_config)
-    assert TEST_DATABASE_REVISION == "e04700000001"
+    assert TEST_DATABASE_REVISION == "e05100000006"
+    assert script.get_heads() == ["e05100000006"]
     assert script.get_revision("e03800000001").down_revision == "e03400000001"
 
 
@@ -426,6 +432,7 @@ def test_patch_034_downgrade_and_upgrade_restore_single_head() -> None:
         # This historical cycle crosses PATCH-038.  Remove disposable rows
         # committed by real-UoW tests so its strict Human-approved legacy
         # Customer inventory guard is exercised from an isolated state.
+        clear_patch051_registry_provenance_for_historical_migration()
         with owner_engine.begin() as connection:
             connection.execute(text("TRUNCATE TABLE customers CASCADE"))
         command.downgrade(alembic_config, "e03200000001")

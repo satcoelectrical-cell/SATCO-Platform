@@ -1,4 +1,10 @@
 from .discipline import Discipline
+from .discipline_package import (
+    CompatibilityDecision,
+    DisciplinePackageStanding,
+    EntitlementDecision,
+    EntitlementOperation,
+)
 from .engineering_context import ContextAuthority
 from .engineering_context import ContextConfidentiality
 from .engineering_context import ContextKind

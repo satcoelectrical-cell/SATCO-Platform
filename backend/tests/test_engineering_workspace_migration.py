@@ -39,6 +39,10 @@ def test_engineering_workspace_database_contract():
         "archived_at",
         "created_at",
         "updated_at",
+        "canonical_discipline_id",
+        "package_binding_state",
+        "bound_package_key",
+        "bound_project_configuration_revision",
     } == set(columns)
     for required in (
         "project_id",
@@ -49,6 +53,7 @@ def test_engineering_workspace_database_contract():
         "version",
         "created_at",
         "updated_at",
+        "package_binding_state",
     ):
         assert columns[required]["nullable"] is False
 

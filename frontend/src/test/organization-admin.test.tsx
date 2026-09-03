@@ -7,6 +7,8 @@ vi.mock("../auth/AuthProvider", () => ({ useAuth: () => ({ profile: { role: "adm
 it("shows only real server members and treats issued credentials as one-time", async () => {
   const responses = [
     { outcome: "success", items: [{ user_id: 7, username: "engineer", email: "e@example.com", full_name: "Engineer", role: "engineer", account_active: true, activation_pending: false, membership_enabled: true, membership_selected: true, version: 1 }] },
+    { organization_id: "o", configuration_version: 0, enabled_selections: [], disabled_selections: [], registry_digest: "d".repeat(64), updated_at: null },
+    { registry_digest: "d".repeat(64), items: [], next_cursor: null },
     { outcome: "success", member: { user_id: 8 }, one_time_token: "z".repeat(48) },
     { outcome: "success", items: [] },
   ];

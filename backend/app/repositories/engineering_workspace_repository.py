@@ -80,6 +80,20 @@ class EngineeringWorkspaceRepository:
             .first()
         )
 
+    def get_locked_by_project_discipline(
+        self, project_id: int, discipline: str
+    ) -> EngineeringWorkspace | None:
+        """Package-derived create locks the uniqueness candidate in its UoW."""
+        return (
+            self.db.query(EngineeringWorkspace)
+            .filter(
+                EngineeringWorkspace.project_id == project_id,
+                EngineeringWorkspace.discipline == discipline,
+            )
+            .with_for_update()
+            .one_or_none()
+        )
+
     def list_for_project(
         self,
         *,

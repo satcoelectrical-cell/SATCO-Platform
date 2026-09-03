@@ -1,4 +1,7 @@
 import os
+import hashlib
+import json
+import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
@@ -27,6 +30,28 @@ if parsed_database_url.path.lstrip("/") != TEST_DATABASE_NAME:
 
 runtime_password = os.getenv("TEST_RUNTIME_DATABASE_PASSWORD", "satco_runtime_test_password")
 runtime_role = "satco_runtime"
+installer_role = "satco_registry_installer"
+
+_preflight_payload = {
+    "schema_version": 1,
+    "overall": "PASS",
+    "test_only": True,
+    # The disposable test database is freshly empty at the M2 boundary.  Keep
+    # the M3 preflight shape/digest contract truthful rather than bypassing it.
+    "alembic_head": "e05100000002",
+    "workspace_disciplines": {},
+    "workspace_total_count": 0,
+    "workspace_checksum": "",
+    "workspace_null_count": 0,
+    "duplicate_canonical_candidates": 0,
+    "workspace_project_orphans": 0,
+    "historical_registry_source_available": True,
+}
+_preflight_file = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
+json.dump(_preflight_payload, _preflight_file, sort_keys=True, separators=(",", ":"))
+_preflight_file.close()
+os.environ["PATCH051_REQUIRE_PREFLIGHT"] = _preflight_file.name
+os.environ["PATCH051_REQUIRE_DIGEST"] = hashlib.sha256(Path(_preflight_file.name).read_bytes()).hexdigest()
 
 bootstrap_engine = create_bootstrap_engine(test_database_url)
 with bootstrap_engine.begin() as bootstrap_connection:
@@ -43,11 +68,27 @@ with bootstrap_engine.begin() as bootstrap_connection:
     bootstrap_connection.exec_driver_sql(
         "ALTER ROLE satco_runtime NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"
     )
+    installer_exists = bootstrap_connection.execute(
+        text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:role)"),
+        {"role": installer_role},
+    ).scalar_one()
+    if not installer_exists:
+        bootstrap_connection.exec_driver_sql(
+            "CREATE ROLE satco_registry_installer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"
+        )
+    bootstrap_connection.exec_driver_sql(
+        "ALTER ROLE satco_registry_installer NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"
+    )
 
 os.environ["DATABASE_HOST"] = parsed_database_url.hostname or "postgres"
 os.environ["DATABASE_PORT"] = str(parsed_database_url.port or 5432)
-os.environ["DATABASE_USER"] = runtime_role
-os.environ["DATABASE_PASSWORD"] = runtime_password
+# Alembic imports ``app.core.database`` while bootstrapping a fresh schema.  It
+# must therefore see the migration owner here; the governed runtime identity is
+# supplied independently through ``RUNTIME_DATABASE_ROLE`` below.  Otherwise
+# the cached application engine remains the read-only runtime role for the
+# rest of this shared-process test run.
+os.environ["DATABASE_USER"] = parsed_database_url.username or "satco"
+os.environ["DATABASE_PASSWORD"] = parsed_database_url.password or "satco_password"
 os.environ["DATABASE_NAME"] = TEST_DATABASE_NAME
 os.environ["ALEMBIC_DATABASE_URL"] = test_database_url
 os.environ["MIGRATION_DATABASE_ROLE"] = parsed_database_url.username or "satco"
@@ -136,6 +177,34 @@ with owner_engine.begin() as owner_connection:
     owner_connection.exec_driver_sql("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO satco_runtime")
 owner_engine.dispose()
 
+
+def clear_patch051_registry_provenance_for_historical_migration() -> None:
+    """Return the disposable test DB to the only state M6 may downgrade.
+
+    Historical migration tests deliberately traverse below PATCH-051.  M6
+    truthfully refuses that traversal once Registry provenance exists, so those
+    tests must clear only their disposable Registry/configuration projection
+    before asserting older migration behavior.
+    """
+
+    projection_tables = (
+        "discipline_package_registry_releases",
+        "discipline_package_descriptors",
+        "discipline_package_registry_memberships",
+        "discipline_package_compatibility_profiles",
+        "discipline_package_registry_profile_memberships",
+        "discipline_package_compatibility_members",
+        "organization_package_configuration_heads",
+        "organization_package_selections",
+        "project_package_configuration_revisions",
+        "project_package_configuration_selections",
+        "project_package_configuration_heads",
+        "package_configuration_audit_events",
+    )
+    tables = ", ".join(f'"{table_name}"' for table_name in projection_tables)
+    with owner_engine.begin() as connection:
+        connection.exec_driver_sql(f"TRUNCATE TABLE {tables} CASCADE")
+
 # The legacy shared-process test harness retains its schema-owner engine because
 # historical migration-isolation tests perform owner-only DDL/TRUNCATE. Focused
 # PATCH-032 role tests use their explicit restricted runtime engine.
@@ -158,6 +227,9 @@ if actual_database_name != TEST_DATABASE_NAME:
 
 from app.core.security import hash_password  # noqa: E402
 from app.main import app  # noqa: E402
+from app.api.v1.routers.engineering_workspaces import (  # noqa: E402
+    get_workspace_package_uow_factory,
+)
 from app.models.audit_log import AuditLog  # noqa: E402,F401
 from app.models.contact import Contact  # noqa: E402,F401
 from app.models.customer import Customer  # noqa: E402,F401
@@ -236,6 +308,16 @@ def client(db_session):
             pass
 
     app.dependency_overrides[get_db] = override_get_db
+
+    # The production route creates a fresh UoW/connection for guarded writes.
+    # This fixture owns one rollback-only outer transaction, so its test-only
+    # factory creates a distinct Session/savepoint on that same connection.
+    # Concurrency evidence uses independent real PostgreSQL Sessions directly.
+    app.dependency_overrides[get_workspace_package_uow_factory] = lambda: sessionmaker(
+        bind=db_session.connection(),
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
 
     def override_organization_context(
         current_user: User = Depends(get_current_user),
@@ -354,6 +436,7 @@ def login_headers(client, username: str):
     access_token = response.json()["access_token"]
     return {
         "Authorization": f"Bearer {access_token}",
+        "X-Correlation-ID": str(uuid4()),
     }
 
 

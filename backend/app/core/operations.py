@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 
@@ -115,6 +116,17 @@ def _database_ready(settings: Settings) -> bool:
             ).scalar_one()
             if observed_head != settings.SATCO_EXPECTED_ALEMBIC_HEAD:
                 return False
+        if settings.DISCIPLINE_PACKAGE_PERSISTENCE_ENABLED:
+            from app.core.database import validate_discipline_package_runtime_boundary
+            from app.discipline_packages.descriptors.releases.release_051_core_v1 import RELEASE_051_CORE_V1
+            from app.discipline_packages.registry import assemble_registry
+            from app.services.discipline_package_registry_service import validate_source_projection_parity
+            validate_discipline_package_runtime_boundary(engine, migration_role_name=settings.MIGRATION_DATABASE_ROLE)
+            # The runtime role can only read projections.  Readiness verifies
+            # that the one current projection is precisely the source release;
+            # it never installs, activates, or repairs data.
+            with Session(engine, autoflush=False) as session:
+                validate_source_projection_parity(session, assemble_registry(RELEASE_051_CORE_V1))
         return True
     except Exception:
         return False

@@ -1,5 +1,6 @@
-import pytest
+from uuid import uuid4
 
+import pytest
 from app.core.security import hash_password
 from app.models.customer import Customer
 from app.models.user import User
@@ -32,7 +33,8 @@ def _headers(client, username):
     return {
         "Authorization": (
             f"Bearer {response.json()['access_token']}"
-        )
+        ),
+        "X-Correlation-ID": str(uuid4()),
     }
 
 
@@ -69,14 +71,14 @@ def test_workspace_permission_and_collaborator_boundaries(
     denied_create = client.post(
         f"/projects/{project['id']}/workspaces",
         headers=other_headers,
-        json={"discipline": "control"},
+        json={"discipline": "mechanical"},
     )
     assert denied_create.status_code == 403
 
     created = client.post(
         f"/projects/{project['id']}/workspaces",
         headers=engineer_headers,
-        json={"discipline": "control"},
+        json={"discipline": "mechanical"},
     ).json()
 
     hidden = client.get(
@@ -172,7 +174,7 @@ def test_workspace_assignment_validation(
     response = client.post(
         f"/projects/{project['id']}/workspaces",
         headers=engineer_headers,
-        json={"discipline": "electrical", field: invalid_id},
+        json={"discipline": "mechanical", field: invalid_id},
     )
 
     assert response.status_code == 422
@@ -211,7 +213,9 @@ def test_invalid_collaborator_is_rejected(
     workspace = client.post(
         f"/projects/{project['id']}/workspaces",
         headers=engineer_headers,
-        json={"discipline": "instrumentation"},
+        # This permission-only fixture must not claim PATCH-052 operational
+        # package configuration.  Future packages remain valid unbound state.
+        json={"discipline": "civil"},
     ).json()
 
     response = client.post(
@@ -255,7 +259,9 @@ def permission_workspace(client, db_session):
         f"/projects/{project['id']}/workspaces",
         headers=project_headers,
         json={
-            "discipline": "control",
+            # Permission coverage remains independent from executable package
+            # availability, which needs explicit Project configuration.
+            "discipline": "mechanical",
             "owner_id": users["workspace_owner"].id,
             "primary_assignee_id": users["assignee"].id,
             "collaborator_ids": [users["collaborator"].id],

@@ -180,8 +180,13 @@ def _scope(connection):
             VALUES (:organization_id, :code, 'PATCH-032 Test', :customer_id, 'new', 'medium', :owner_id, 0, now()) RETURNING id
         """), {"organization_id": organization_id, "code": f"SAT-PRJ-2099-{int(token[:8], 16)}", "customer_id": customer_id, "owner_id": user_id}).scalar_one()
         workspace_id = owner.execute(text("""
-            INSERT INTO engineering_workspaces(project_id, discipline, status, owner_id, created_by_id, version)
-            VALUES (:project_id, 'control', 'draft', :owner_id, :owner_id, 1) RETURNING id
+            INSERT INTO engineering_workspaces(
+              project_id, discipline, status, owner_id, created_by_id, version,
+              canonical_discipline_id, package_binding_state
+            ) VALUES (
+              :project_id, 'control', 'draft', :owner_id, :owner_id, 1,
+              'control_automation', 'FUTURE_UNAVAILABLE_UNBOUND'
+            ) RETURNING id
         """), {"project_id": project_id, "owner_id": user_id}).scalar_one()
     return {"organization_id": organization_id, "workspace_id": workspace_id, "project_id": project_id, "owner_id": user_id, "customer_id": customer_id, "_owned": True}
 

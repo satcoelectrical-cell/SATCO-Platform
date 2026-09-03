@@ -4,11 +4,11 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 
-def test_patch_045_is_sole_repository_head_and_preserves_patch_044_parent():
+def test_patch_045_parentage_is_preserved_under_the_current_patch_051_head():
     config = Config("alembic.ini")
     config.set_main_option("script_location", "migrations")
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["e04700000001"]
+    assert script.get_heads() == ["e05100000006"]
     assert script.get_revision("e04500000001").down_revision == "e04400000001"
 
 

@@ -4,7 +4,12 @@ from alembic import command
 from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 
-from conftest import TEST_DATABASE_REVISION, alembic_config, owner_engine
+from conftest import (
+    TEST_DATABASE_REVISION,
+    alembic_config,
+    clear_patch051_registry_provenance_for_historical_migration,
+    owner_engine,
+)
 
 
 EXPECTED_TABLES = {
@@ -17,7 +22,8 @@ EXPECTED_TABLES = {
 
 def test_repository_head_preserves_patch_032_in_current_chain() -> None:
     script = ScriptDirectory.from_config(alembic_config)
-    assert TEST_DATABASE_REVISION == "e04700000001"
+    assert TEST_DATABASE_REVISION == "e05100000006"
+    assert script.get_heads() == ["e05100000006"]
     assert script.get_revision("e03400000001").down_revision == "e03200000001"
 
 
@@ -82,6 +88,7 @@ def test_patch_032_downgrade_and_upgrade_restore_head() -> None:
         # historical chain test crosses PATCH-038, whose upgrade correctly
         # rejects any Customer inventory other than the Human-approved legacy
         # set.  Isolate the shared test database before exercising the chain.
+        clear_patch051_registry_provenance_for_historical_migration()
         with owner_engine.begin() as connection:
             connection.execute(text("TRUNCATE TABLE customers CASCADE"))
         command.downgrade(alembic_config, "e02800000001")

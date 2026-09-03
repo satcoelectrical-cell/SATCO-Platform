@@ -41,3 +41,10 @@ from .project_foundation import (
     ProjectScopeItem,
     ProjectStageHistory,
 )
+from .discipline_package import (
+    RegistryRelease, PackageDescriptor, RegistryMembership, CompatibilityProfile,
+    RegistryProfileMembership, CompatibilityMember, OrganizationPackageConfigurationHead,
+    OrganizationPackageSelection, ProjectPackageConfigurationRevision,
+    ProjectPackageConfigurationSelection, ProjectPackageConfigurationHead,
+    PackageConfigurationAuditEvent,
+)

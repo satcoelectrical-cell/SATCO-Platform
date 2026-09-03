@@ -162,9 +162,12 @@ class OnboardingService:
             if not membership or not target:
                 raise ProtectedOnboarding()
             return self.member_summary(target, membership), True
-        membership = self.repo.membership(organization_id, target_id, lock=True)
+        # PATCH-051 lock order for the only onboarding mutations that touch
+        # mutable authority: User -> membership -> Organization.
         target = self.db.query(User).filter(User.id == target_id).with_for_update().one_or_none()
-        if not membership or not target or self.repo.memberships_for_user(target_id) != 1: raise ProtectedOnboarding()
+        membership = self.repo.membership(organization_id, target_id, lock=True)
+        organization = self.db.query(Organization).filter(Organization.id == organization_id).with_for_update().one_or_none()
+        if not membership or not target or not organization or self.repo.memberships_for_user(target_id) != 1: raise ProtectedOnboarding()
         if max(target.version, membership.version) != data.expected_version: raise OnboardingConflict()
         removes_admin = target.role == "admin" and ((data.role is not None and data.role != "admin") or data.membership_enabled is False or data.account_active is False)
         if target.id == actor.id and removes_admin: raise ProtectedOnboarding()
@@ -193,9 +196,9 @@ class OnboardingService:
             if not membership or not user:
                 raise ProtectedOnboarding()
             return self.member_summary(user, membership), None, True
-        membership = self.repo.membership(organization_id, target_id, lock=True)
         user = self.db.query(User).filter(User.id == target_id).with_for_update().one_or_none()
-        org = self.db.get(Organization, organization_id)
+        membership = self.repo.membership(organization_id, target_id, lock=True)
+        org = self.db.query(Organization).filter(Organization.id == organization_id).with_for_update().one_or_none()
         if not membership or not membership.is_enabled or not user or user.activation_pending or not org or not org.is_active: raise ProtectedOnboarding()
         token = self._issue(organization_id=organization_id, user=user, purpose="reset", issuer_id=actor_id)
         self.repo.audit(actor_id=actor_id, action="ONBOARDING_RESET_ISSUED", entity="USER", entity_id=user.id, details={"purpose": "reset"})

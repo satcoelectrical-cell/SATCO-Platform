@@ -128,6 +128,20 @@ class ProjectRepository:
             .first()
         )
 
+    def get_locked_for_package_configuration(
+        self, project_id: int, *, organization_id: UUID
+    ) -> Project | None:
+        """Guarded configuration callers use the same tenant predicate."""
+        return (
+            self.db.query(Project)
+            .filter(
+                Project.id == project_id,
+                Project.organization_id == organization_id,
+            )
+            .with_for_update()
+            .one_or_none()
+        )
+
     def get_by_code(self, project_code: str, *, organization_id: UUID):
         return (
             self._base_query(organization_id)

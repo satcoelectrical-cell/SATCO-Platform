@@ -34,6 +34,9 @@ def test_production_compose_keeps_backend_and_database_private():
     assert "preupgrade_recovery_set" in compose
     assert "POSTGRES_PASSWORD_FILE: /run/secrets/schema_owner_db_password" in compose
     assert "service_healthy" in compose
+    assert "registry-installer:" in compose
+    assert "registry_installer_db_password" in compose
+    assert "DISCIPLINE_PACKAGE_PERSISTENCE_ENABLED" in compose
 
 
 def test_edge_configuration_has_tls_headers_and_no_object_route():

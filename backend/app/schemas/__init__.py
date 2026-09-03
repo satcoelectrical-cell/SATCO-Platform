@@ -54,3 +54,4 @@ from .engineering_relationship import ReviewEngineeringRelationshipRequest
 from .engineering_relationship import SubmitEngineeringRelationshipForReviewRequest
 from .engineering_relationship import TransferEngineeringRelationshipStewardRequest
 from .engineering_relationship import TransitionEngineeringRelationshipLifecycleRequest
+from app.schemas.discipline_package import ProjectionDescriptor, ProjectionProfile, ProjectionRelease

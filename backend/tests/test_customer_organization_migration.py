@@ -13,9 +13,9 @@ from app.core.database import engine as application_engine
 LEGACY_ORGANIZATION_ID = "7e7c9d7a-7693-4f75-9bc5-3ef7bf528281"
 
 
-def test_patch_041_is_sole_repository_head_and_preserves_patch_038_parentage() -> None:
+def test_patch_041_parentage_is_preserved_under_the_current_patch_051_head() -> None:
     script = ScriptDirectory.from_config(alembic_config)
-    assert script.get_heads() == ["e04700000001"]
+    assert script.get_heads() == ["e05100000006"]
     assert script.get_revision("e04100000001").down_revision == "e03800000001"
     assert script.get_revision("e03800000001").down_revision == "e03400000001"
 
@@ -137,7 +137,7 @@ def test_exact_legacy_inventory_upgrade_downgrade_reupgrade_without_loss() -> No
             revision = connection.execute(text(
                 "SELECT version_num FROM alembic_version"
             )).scalar_one()
-        if revision != "e04700000001":
+        if revision != "e05100000006":
             application_engine.dispose()
             owner_engine.dispose()
             command.upgrade(alembic_config, "head")

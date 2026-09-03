@@ -3,7 +3,9 @@ from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from uuid import UUID, uuid4
 
+from app.core.database import SessionLocal
 from app.enums import Discipline, ProjectStatus, WorkspaceStatus
 from app.exceptions.engineering_workspace import (
     InvalidWorkspaceAssignee,
@@ -36,6 +38,15 @@ from app.schemas.engineering_workspace import (
     WorkspaceStatusTransitionRequest,
 )
 from app.services.audit_service import create_audit_log
+from app.services.discipline_package_service import (
+    DisciplinePackageWorkspaceService,
+    FrozenGuardedIdentity,
+    PackageWorkspaceAlreadyExists,
+    PackageWorkspaceConflict,
+    PackageWorkspaceForbidden,
+    PackageWorkspaceInvalidPerson,
+    WorkspaceCreateCommand,
+)
 
 
 ALLOWED_TRANSITIONS = {
@@ -65,12 +76,59 @@ PROJECT_BLOCKED_STATUSES = {
 
 
 class EngineeringWorkspaceService:
-    def __init__(self, db: Session, organization_id=None):
+    def __init__(self, db: Session, organization_id=None, *, package_uow_factory=None):
         self.db = db
         self.repository = EngineeringWorkspaceRepository(db)
         self.organization_id = organization_id
+        self._package_uow_factory = package_uow_factory or SessionLocal
 
     def create(
+        self,
+        project_id: int,
+        data: EngineeringWorkspaceCreate,
+        current_user: User,
+        correlation_id: UUID | None = None,
+    ) -> dict:
+        """Create package-derived state in a fresh guarded UoW."""
+        organization_id = self._organization_id(current_user)
+        owner_id = data.owner_id or current_user.id
+        try:
+            workspace_id = DisciplinePackageWorkspaceService(
+                self._package_uow_factory
+            ).create(
+                FrozenGuardedIdentity(
+                    actor_id=current_user.id,
+                    organization_id=organization_id,
+                    auth_version=current_user.auth_version,
+                    correlation_id=correlation_id or uuid4(),
+                ),
+                WorkspaceCreateCommand(
+                    project_id=project_id,
+                    discipline=data.discipline.value,
+                    description=data.description,
+                    owner_id=owner_id,
+                    primary_assignee_id=data.primary_assignee_id,
+                    collaborator_ids=tuple(data.collaborator_ids),
+                ),
+            )
+        except PackageWorkspaceAlreadyExists as exc:
+            raise WorkspaceAlreadyExists() from exc
+        except PackageWorkspaceForbidden as exc:
+            raise WorkspaceForbidden() from exc
+        except PackageWorkspaceInvalidPerson as exc:
+            if exc.kind == "owner":
+                raise InvalidWorkspaceOwner() from exc
+            if exc.kind == "assignee":
+                raise InvalidWorkspaceAssignee() from exc
+            raise InvalidWorkspaceCollaborator() from exc
+        except PackageWorkspaceConflict as exc:
+            raise WorkspaceProjectStateConflict(str(exc)) from exc
+        self.db.expire_all()
+        return self._response(
+            self._get_visible(workspace_id, current_user), current_user
+        )
+
+    def _legacy_create_for_reference(
         self,
         project_id: int,
         data: EngineeringWorkspaceCreate,

@@ -4,17 +4,26 @@ set -eu
 # PostgreSQL runs this file only when initializing a clean data directory.
 # Existing environments must provision the same restricted role operationally.
 : "${SATCO_RUNTIME_DATABASE_PASSWORD:?SATCO_RUNTIME_DATABASE_PASSWORD is required}"
+: "${SATCO_REGISTRY_INSTALLER_DATABASE_PASSWORD:?SATCO_REGISTRY_INSTALLER_DATABASE_PASSWORD is required}"
 
 psql --set=ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-  --set=runtime_password="$SATCO_RUNTIME_DATABASE_PASSWORD" <<'SQL'
+  --set=runtime_password="$SATCO_RUNTIME_DATABASE_PASSWORD" \
+  --set=installer_password="$SATCO_REGISTRY_INSTALLER_DATABASE_PASSWORD" <<'SQL'
 SELECT format(
   'CREATE ROLE satco_runtime LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS',
   :'runtime_password'
 ) WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'satco_runtime') \gexec
 ALTER ROLE satco_runtime NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+SELECT format(
+  'CREATE ROLE satco_registry_installer LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS',
+  :'installer_password'
+) WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'satco_registry_installer') \gexec
+ALTER ROLE satco_registry_installer NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"DBNAME" TO satco_runtime;
 GRANT USAGE ON SCHEMA public TO satco_runtime;
+GRANT CONNECT ON DATABASE :"DBNAME" TO satco_registry_installer;
+GRANT USAGE ON SCHEMA public TO satco_registry_installer;
 
 -- Explicit compatibility matrix for capabilities approved before PATCH-032.
 -- Missing relations are skipped during clean initialization; the PATCH-032

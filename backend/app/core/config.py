@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     DATABASE_NAME: str = "satco"
     MIGRATION_DATABASE_ROLE: str = "satco"
     TECHNICAL_REPORT_PERSISTENCE_ENABLED: bool = False
+    DISCIPLINE_PACKAGE_PERSISTENCE_ENABLED: bool = False
     COPILOT_ENABLED: bool = False
     COPILOT_PROVIDER_ENDPOINT: str = ""
     COPILOT_PROVIDER_API_KEY: str = ""

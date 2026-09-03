@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
@@ -46,6 +47,67 @@ SessionLocal = sessionmaker(
 
 
 Base = declarative_base()
+
+
+class DisciplinePackageGuardMode(str, Enum):
+    SHARED = "shared"
+    EXCLUSIVE = "exclusive"
+
+
+PACKAGE_REGISTRY_GUARD_NAMESPACE = 1396790339
+PACKAGE_REGISTRY_GUARD_CONTRACT = 51
+
+
+def acquire_discipline_package_registry_guard(session, mode: DisciplinePackageGuardMode) -> None:
+    """Acquire the governed transaction-scoped PATCH-051 PostgreSQL guard.
+
+    The caller must own an already-open outer transaction.  This helper neither
+    opens a Session nor completes a transaction.
+    """
+
+    if not session.in_transaction():
+        raise RuntimeError("discipline package guard requires an active transaction")
+    session.execute(text("SET LOCAL lock_timeout = '5s'"))
+    function = "pg_advisory_xact_lock_shared" if mode is DisciplinePackageGuardMode.SHARED else "pg_advisory_xact_lock"
+    session.execute(text(f"SELECT {function}(:namespace, :contract)"), {
+        "namespace": PACKAGE_REGISTRY_GUARD_NAMESPACE,
+        "contract": PACKAGE_REGISTRY_GUARD_CONTRACT,
+    })
+
+
+def validate_discipline_package_runtime_boundary(
+    checked_engine: Engine = engine,
+    *,
+    migration_role_name: str | None = None,
+) -> None:
+    """Fail closed if the ordinary runtime can mutate Registry projections."""
+
+    owner_role = migration_role_name or os.getenv("MIGRATION_DATABASE_ROLE")
+    runtime_role = make_url(str(checked_engine.url)).username
+    if not runtime_role or not owner_role or runtime_role == owner_role:
+        raise RuntimeError("discipline package runtime ownership boundary is unsafe")
+    tables = (
+        "discipline_package_registry_releases", "discipline_package_descriptors",
+        "discipline_package_registry_memberships", "discipline_package_compatibility_profiles",
+        "discipline_package_registry_profile_memberships", "discipline_package_compatibility_members",
+    )
+    with checked_engine.connect() as connection:
+        flags = connection.execute(text(
+            "SELECT rolsuper, rolbypassrls, rolcreatedb, rolcreaterole, rolinherit "
+            "FROM pg_roles WHERE rolname=current_user"
+        )).mappings().one()
+        if any(flags.values()) or connection.execute(text(
+            "SELECT has_schema_privilege(current_user, 'public', 'CREATE')"
+        )).scalar_one():
+            raise RuntimeError("discipline package runtime has forbidden authority")
+        grants = connection.execute(text(
+            "SELECT table_name, privilege_type FROM information_schema.role_table_grants "
+            "WHERE grantee=current_user AND table_name = ANY(CAST(:tables AS text[]))"
+        ), {"tables": list(tables)}).all()
+        observed = {(name, privilege) for name, privilege in grants}
+        expected = {(name, "SELECT") for name in tables}
+        if observed != expected:
+            raise RuntimeError("discipline package projection grants are not read-only")
 
 
 def validate_technical_report_runtime_boundary(

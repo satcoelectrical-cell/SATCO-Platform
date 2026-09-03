@@ -4,7 +4,10 @@ from alembic import command
 from sqlalchemy import inspect, text
 
 from app.core.database import engine
-from conftest import alembic_config
+from conftest import (
+    alembic_config,
+    clear_patch051_registry_provenance_for_historical_migration,
+)
 
 
 MIGRATION = Path(
@@ -91,6 +94,7 @@ def test_patch_028_1_preserves_seven_projects_and_engineer():
         ).scalar_one() == "satco_platform_patch02022_test"
 
     try:
+        clear_patch051_registry_provenance_for_historical_migration()
         command.downgrade(alembic_config, "e02600000001")
         with engine.begin() as connection:
             connection.execute(

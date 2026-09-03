@@ -42,7 +42,10 @@ from app.api.v1.routers.engineering_deliverables import router as engineering_de
 from app.api.v1.routers.project_controls import router as project_control_router
 from app.api.v1.routers.project_context import router as project_context_router
 from app.api.v1.routers.project_completeness import router as project_completeness_router
+from app.api.v1.routers.discipline_packages import router as discipline_package_router
 from app.core.config import settings
+from app.discipline_packages.descriptors.releases.release_051_core_v1 import RELEASE_051_CORE_V1
+from app.discipline_packages.registry import assemble_registry
 from app.core.operations import (
     GovernedWriteBlocked,
     readiness_snapshot,
@@ -89,6 +92,9 @@ register_exception_handlers(app)
 
 @app.on_event("startup")
 def validate_production_startup() -> None:
+    # Assemble only the source-controlled static release. Environment cannot
+    # select modules, descriptors, adapters or a Registry digest.
+    assemble_registry(RELEASE_051_CORE_V1)
     validate_production_settings(settings)
     operational_mode(settings)
 
@@ -127,6 +133,7 @@ app.include_router(engineering_deliverable_router)
 app.include_router(project_control_router)
 app.include_router(project_context_router)
 app.include_router(project_completeness_router)
+app.include_router(discipline_package_router)
 
 
 @app.get("/health/live")

@@ -4,6 +4,7 @@ from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -32,6 +33,9 @@ def _create_project(client, db_session, headers, owner):
         },
     )
     assert response.status_code == 200
+    # Release the routed Project write's test-harness savepoint before the
+    # Workspace service opens its fresh guarded PostgreSQL transaction.
+    db_session.commit()
     return response.json()
 
 
@@ -51,14 +55,14 @@ def test_workspace_create_lifecycle_archive_restore_and_version(
         f"/projects/{project['id']}/workspaces",
         headers=engineer_headers,
         json={
-            "discipline": "electrical",
-            "description": "Electrical engineering scope.",
+            "discipline": "mechanical",
+            "description": "Mechanical engineering scope.",
         },
     )
     assert created.status_code == 201
     workspace = created.json()
     assert workspace["display_name"] == (
-        "Electrical Engineering Workspace"
+        "Mechanical Engineering Workspace"
     )
     assert workspace["status"] == "draft"
     assert workspace["version"] == 1
@@ -67,7 +71,7 @@ def test_workspace_create_lifecycle_archive_restore_and_version(
     duplicate = client.post(
         f"/projects/{project['id']}/workspaces",
         headers=engineer_headers,
-        json={"discipline": "electrical"},
+        json={"discipline": "mechanical"},
     )
     assert duplicate.status_code == 409
 
@@ -137,14 +141,14 @@ def test_workspace_validation_listing_and_openapi_examples(
     created = client.post(
         f"/projects/{project['id']}/workspaces",
         headers=engineer_headers,
-        json={"discipline": "instrumentation"},
+        json={"discipline": "civil"},
     )
     assert created.status_code == 201
 
     listed = client.get(
         f"/projects/{project['id']}/workspaces",
         headers=engineer_headers,
-        params={"discipline": "instrumentation"},
+        params={"discipline": "civil"},
     )
     assert listed.status_code == 200
     assert listed.json()["total"] == 1
@@ -485,6 +489,14 @@ def test_concurrent_workspace_uniqueness_for_project_and_discipline():
     setup = Session()
     barrier = Barrier(2)
     try:
+        # This vector deliberately owns independent Sessions, so it cannot
+        # rely on conftest's rollback-only fixture transaction for the shared
+        # Organization required by the test ownership hooks.
+        setup.execute(text(
+            "INSERT INTO organizations (id, is_active) "
+            "VALUES ('02810000-0000-4000-8000-000000000001', true) "
+            "ON CONFLICT (id) DO NOTHING"
+        ))
         from app.core.security import hash_password
         from app.models.user import User
 

@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, Query, Response, status
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app import schemas
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.dependencies.auth import (
     AuthenticatedOrganizationContext,
     get_current_user_organization_context,
@@ -19,6 +21,18 @@ from app.services.engineering_workspace_service import (
 
 
 router = APIRouter(tags=["Engineering Workspaces"])
+
+
+def get_workspace_package_uow_factory():
+    """Provide the production fresh-UoW factory at the HTTP boundary.
+
+    The guarded create path deliberately cannot reuse the request Session.
+    Keeping this as a dependency lets the isolated request test harness supply
+    a separate savepoint Session on its transaction-owned connection without
+    changing production transaction semantics.
+    """
+
+    return SessionLocal
 
 WORKSPACE_EXAMPLE = {
     "id": 17,
@@ -170,11 +184,18 @@ def create_workspace(
     context: AuthenticatedOrganizationContext = Depends(
         get_current_user_organization_context
     ),
+    correlation_id: UUID = Header(alias="X-Correlation-ID"),
+    package_uow_factory=Depends(get_workspace_package_uow_factory),
 ):
-    return EngineeringWorkspaceService(db, context.organization_id).create(
+    return EngineeringWorkspaceService(
+        db,
+        context.organization_id,
+        package_uow_factory=package_uow_factory,
+    ).create(
         project_id,
         data,
         context.user,
+        correlation_id=correlation_id,
     )
 
 

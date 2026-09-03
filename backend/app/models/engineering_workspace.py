@@ -3,6 +3,7 @@ from sqlalchemy import Column
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
 from sqlalchemy import Index
+from sqlalchemy import BigInteger
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
@@ -20,6 +21,23 @@ DISCIPLINE_VALUES = ", ".join(
 STATUS_VALUES = ", ".join(
     f"'{status.value}'" for status in WorkspaceStatus
 )
+
+
+_CANONICAL_DISCIPLINE_BY_RAW = {
+    "electrical": "electrical",
+    "instrumentation": "instrumentation",
+    "control": "control_automation",
+    "mechanical": "mechanical",
+    "civil": "civil",
+    "process": "process",
+}
+
+
+def _canonical_discipline_default(context):
+    """Legacy ORM fixtures still describe a known raw Workspace discipline."""
+    return _CANONICAL_DISCIPLINE_BY_RAW.get(
+        context.get_current_parameters().get("discipline")
+    )
 
 
 class EngineeringWorkspace(Base):
@@ -121,6 +139,16 @@ class EngineeringWorkspace(Base):
         onupdate=func.now(),
         index=True,
     )
+    # PATCH-051 M2/M3 package applicability foundation.  These values are
+    # derived by migration/configuration services, never request input.
+    canonical_discipline_id = Column(
+        String(64), nullable=True, default=_canonical_discipline_default
+    )
+    package_binding_state = Column(
+        String(40), nullable=True, default="FUTURE_UNAVAILABLE_UNBOUND"
+    )
+    bound_package_key = Column(String(64), nullable=True)
+    bound_project_configuration_revision = Column(BigInteger, nullable=True)
 
     project = relationship("Project")
     owner = relationship("User", foreign_keys=[owner_id])
