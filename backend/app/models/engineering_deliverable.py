@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, Column, Date, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 
 from app.core.database import Base
@@ -23,6 +23,19 @@ class EngineeringDeliverable(Base):
         CheckConstraint(f"standing IN ({DELIVERABLE_STANDINGS})", name="ck_deliverable_standing"),
         CheckConstraint(f"external_authority IN ({EXTERNAL_AUTHORITIES})", name="ck_deliverable_external_authority"),
         CheckConstraint("version >= 1 AND current_revision_sequence >= 1", name="ck_deliverable_versions"),
+        CheckConstraint(
+            "(origin_package_key IS NULL AND origin_project_configuration_revision IS NULL "
+            "AND origin_declaration_id IS NULL) OR "
+            "(origin_package_key IS NOT NULL AND origin_project_configuration_revision IS NOT NULL "
+            "AND origin_declaration_id IS NOT NULL)",
+            name="ck_deliverable_origin_all_or_none",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "origin_project_configuration_revision", "origin_package_key"],
+            ["project_package_configuration_selections.project_id", "project_package_configuration_selections.configuration_revision", "project_package_configuration_selections.package_key"],
+            name="fk_deliverable_origin_selection",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("project_id", "code", name="uq_deliverable_project_code"),
         Index("ix_deliverable_project_order", "organization_id", "project_id", "target_date", "code", "id"),
     )
@@ -47,6 +60,9 @@ class EngineeringDeliverable(Base):
     created_at = Column(DateTime(timezone=True), nullable=False)
     updated_by_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     updated_at = Column(DateTime(timezone=True), nullable=False)
+    origin_package_key = Column(String(64), nullable=True)
+    origin_project_configuration_revision = Column(BigInteger, nullable=True)
+    origin_declaration_id = Column(String(128), nullable=True)
 
 
 class EngineeringDeliverableRevision(Base):

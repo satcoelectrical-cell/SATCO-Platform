@@ -35,9 +35,15 @@ EXPECTED_COLUMNS = {
     "steward_id",
     "created_at",
     "updated_at",
+    "origin_package_key",
+    "origin_project_configuration_revision",
+    "origin_declaration_id",
 }
 
-REQUIRED_COLUMNS = EXPECTED_COLUMNS - {"customer_id", "subtype"}
+REQUIRED_COLUMNS = EXPECTED_COLUMNS - {
+    "customer_id", "subtype", "origin_package_key",
+    "origin_project_configuration_revision", "origin_declaration_id",
+}
 
 EXPECTED_CHECKS = {
     "ck_engineering_objects_family",
@@ -50,6 +56,7 @@ EXPECTED_CHECKS = {
     "ck_engineering_objects_authority_standing",
     "ck_engineering_objects_version",
     "ck_engineering_objects_timestamp_order",
+    "ck_engineering_objects_origin_all_or_none",
 }
 
 EXPECTED_INDEXES = {
@@ -116,6 +123,9 @@ def test_engineering_object_columns_match_approved_contract():
     assert all(not columns[name].nullable for name in REQUIRED_COLUMNS)
     assert columns.customer_id.nullable is True
     assert columns.subtype.nullable is True
+    assert columns.origin_package_key.nullable is True
+    assert columns.origin_project_configuration_revision.nullable is True
+    assert columns.origin_declaration_id.nullable is True
     assert columns.id.primary_key is True
     assert isinstance(columns.id.type, PostgreSQLUUID)
     assert columns.id.type.as_uuid is True
@@ -141,7 +151,10 @@ def test_engineering_object_foreign_keys_are_restrictive():
     for column_name, (target, constraint_name) in (
         EXPECTED_FOREIGN_KEYS.items()
     ):
-        foreign_key = next(iter(columns[column_name].foreign_keys))
+        foreign_key = next(
+            item for item in columns[column_name].foreign_keys
+            if item.target_fullname == target
+        )
         assert foreign_key.target_fullname == target
         assert foreign_key.constraint.name == constraint_name
         assert foreign_key.ondelete == "RESTRICT"

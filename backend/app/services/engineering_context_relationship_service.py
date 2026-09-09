@@ -279,6 +279,9 @@ class EngineeringContextRelationshipService:
             target,
             "Relationship lifecycle",
         )
+        self._positive_version(expected_version)
+        if relationship_record.version != expected_version:
+            raise RelationshipVersionConflict()
         current = RelationshipLifecycle(relationship_record.lifecycle)
         if current == target_state:
             raise RelationshipLifecycleConflict(

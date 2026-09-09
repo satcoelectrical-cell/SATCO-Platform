@@ -375,4 +375,22 @@ def workspace_package_applicability(workspace_id: int, context: AuthenticatedOrg
         RegistryMembership,
         (current_release.registry_digest, descriptor.package_key, descriptor.package_version),
     )
-    return {"workspace_id": workspace.id, "project_id": workspace.project_id, "legacy_discipline": workspace.discipline, "canonical_discipline_id": workspace.canonical_discipline_id, "binding_state": workspace.package_binding_state, "package_key": workspace.bound_package_key, "package_version": None if descriptor is None else descriptor.package_version, "descriptor_digest": None if descriptor is None else descriptor.descriptor_digest, "project_configuration_revision": workspace.bound_project_configuration_revision, "effective_standing": None if membership is None else membership.standing}
+    standing = None if membership is None else membership.standing
+    operational_components = {
+        "electrical": "workspace.electrical.v1",
+        "instrumentation": "workspace.instrumentation.v1",
+        "control_automation": "workspace.control_automation.v1",
+    }
+    component_key = operational_components.get(workspace.bound_package_key)
+    operational_package = (
+        component_key is not None
+        and descriptor is not None
+        and descriptor.package_version == "1.0.0"
+    )
+    if standing == "historical_read_only":
+        operational_state = "HISTORICAL_READ_ONLY"
+    elif operational_package and standing == "executable_supported" and workspace.package_binding_state == "OPERATIONAL_PACKAGE_BOUND":
+        operational_state = "OPERATIONAL_AVAILABLE"
+    else:
+        operational_state = "UNAVAILABLE"
+    return {"workspace_id": workspace.id, "project_id": workspace.project_id, "legacy_discipline": workspace.discipline, "canonical_discipline_id": workspace.canonical_discipline_id, "binding_state": workspace.package_binding_state, "package_key": workspace.bound_package_key, "package_version": None if descriptor is None else descriptor.package_version, "descriptor_digest": None if descriptor is None else descriptor.descriptor_digest, "project_configuration_revision": workspace.bound_project_configuration_revision, "effective_standing": standing, "operational_state": operational_state, "component_key": component_key if operational_package else None, "allowed_actions": ["create_object", "create_relationship", "evaluate"] if operational_state == "OPERATIONAL_AVAILABLE" else []}

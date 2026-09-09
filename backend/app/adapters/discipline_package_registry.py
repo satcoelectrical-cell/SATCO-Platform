@@ -26,7 +26,11 @@ def static_adapter_table() -> tuple[StaticDisciplinePackageAdapter, ...]:
     may add reviewed entries through its own separately authorized release.
     """
 
-    return ()
+    # Local import avoids a module cycle while preserving a literal,
+    # source-controlled table.  It does not inspect package/customer input.
+    from app.discipline_packages.descriptors.eic_v1 import package_adapters
+
+    return package_adapters()
 
 
 class NonCommercialEntitlementAdapter:

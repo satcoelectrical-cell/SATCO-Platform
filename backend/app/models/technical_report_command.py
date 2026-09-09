@@ -25,6 +25,7 @@ from app.enums.engineering_experience_capture import (
 from app.enums.engineering_knowledge import (
     EngineeringAuthorityStanding,
     EngineeringDiscipline,
+    EngineeringIdentifierKind,
     EngineeringLifecycle,
     EngineeringObjectFamily,
     EngineeringObjectType,
@@ -193,6 +194,31 @@ class CaptureHistoricalBasisV1:
 
 
 @dataclass(frozen=True, slots=True)
+class CaptureHistoricalBasisV2:
+    basis_schema_version: int; source_category: str; capture_id: UUID; source_version: int
+    organization_id: UUID; project_id: int; workspace_id: int | None
+    origin_package_key: str; origin_project_configuration_revision: int; origin_declaration_id: str
+    discipline: EngineeringDiscipline | None; engineering_object_id: UUID | None
+    source_kind: EngineeringExperienceSourceKind; original_content: str
+    source_reference: str | None; creator_id: int
+    lifecycle: EngineeringExperienceCaptureLifecycle; created_at: datetime
+    def __post_init__(self) -> None:
+        if self.basis_schema_version != 2 or self.source_category != "universal_capture":
+            raise TechnicalReportValidationError("invalid Capture V2 discriminator")
+        base = CaptureHistoricalBasisV1(
+            1, self.source_category, self.capture_id, self.source_version,
+            self.organization_id, self.project_id, self.workspace_id,
+            self.discipline, self.engineering_object_id, self.source_kind,
+            self.original_content, self.source_reference, self.creator_id,
+            self.lifecycle, self.created_at,
+        )
+        for field in fields(CaptureHistoricalBasisV1):
+            if field.name not in {"basis_schema_version"}:
+                object.__setattr__(self, field.name, getattr(base, field.name))
+        _origin(self.origin_package_key, self.origin_project_configuration_revision, self.origin_declaration_id)
+
+
+@dataclass(frozen=True, slots=True)
 class EvidenceHistoricalBasisV1:
     basis_schema_version: int; source_category: str; evidence_id: UUID; source_version: int
     organization_id: UUID; project_id: int | None; workspace_id: int | None
@@ -264,6 +290,79 @@ class EngineeringObjectHistoricalBasisV1:
         for name, enum_type in (("family", EngineeringObjectFamily), ("discipline", EngineeringDiscipline), ("object_type", EngineeringObjectType), ("lifecycle", EngineeringLifecycle), ("authority_standing", EngineeringAuthorityStanding)): object.__setattr__(self, name, enum_type(getattr(self, name)))
 
 
+def _origin(package_key: str, revision: int, declaration_id: str) -> None:
+    _single_line(package_key, "origin_package_key", 64)
+    _positive(revision, "origin_project_configuration_revision")
+    value = _single_line(declaration_id, "origin_declaration_id", 128)
+    if not all(part and part.replace("_", "a").isalnum() for part in value.split(".")):
+        raise TechnicalReportValidationError("origin_declaration_id is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class EngineeringIdentifierHistoricalSnapshotV1:
+    identifier_id: UUID; identifier_version: int; identifier_kind: EngineeringIdentifierKind
+    display_value: str; normalized_value: str; normalization_algorithm_version: str
+    issuing_scope_kind: str; issuing_scope_value: str; lifecycle: str
+    authority_standing: EngineeringAuthorityStanding; primary_role: str
+    evidence_references: tuple[UUID, ...]; predecessor_identifier_id: UUID | None
+    successor_identifier_id: UUID | None; creator_id: int; steward_id: int
+    reviewer_id: int | None; approver_id: int | None; created_at: datetime; updated_at: datetime
+    origin_package_key: str | None; origin_project_configuration_revision: int | None; origin_declaration_id: str | None
+    def __post_init__(self) -> None:
+        _uuid(self.identifier_id, "identifier_id"); _positive(self.identifier_version, "identifier_version")
+        object.__setattr__(self, "identifier_kind", EngineeringIdentifierKind(self.identifier_kind))
+        if not 1 <= len(self.display_value) <= 128 or not 1 <= len(self.normalized_value) <= 128:
+            raise TechnicalReportValidationError("Identifier snapshot value is invalid")
+        if self.normalization_algorithm_version != "satco_identifier_nfkc_casefold_v1":
+            raise TechnicalReportValidationError("Identifier snapshot normalizer is invalid")
+        if self.issuing_scope_kind not in {"project", "workspace", "external_authority"} or not 1 <= len(self.issuing_scope_value) <= 128:
+            raise TechnicalReportValidationError("Identifier snapshot scope is invalid")
+        if self.lifecycle != "current" or self.primary_role not in {"primary", "alternate"} or self.successor_identifier_id is not None:
+            raise TechnicalReportValidationError("Identifier snapshot current state is invalid")
+        object.__setattr__(self, "authority_standing", EngineeringAuthorityStanding(self.authority_standing))
+        if tuple(sorted(set(self.evidence_references), key=str)) != self.evidence_references or len(self.evidence_references) > 8:
+            raise TechnicalReportValidationError("Identifier snapshot Evidence is invalid")
+        for value in self.evidence_references: _uuid(value, "evidence_reference")
+        _optional_uuid(self.predecessor_identifier_id, "predecessor_identifier_id")
+        for name in ("creator_id", "steward_id"): _positive(getattr(self, name), name)
+        for name in ("reviewer_id", "approver_id"):
+            if getattr(self, name) is not None: _positive(getattr(self, name), name)
+        _aware(self.created_at, "created_at"); _aware(self.updated_at, "updated_at")
+        origin = (self.origin_package_key, self.origin_project_configuration_revision, self.origin_declaration_id)
+        if any(value is not None for value in origin):
+            if not all(value is not None for value in origin): raise TechnicalReportValidationError("Identifier snapshot origin is incomplete")
+            _origin(*origin)
+
+
+@dataclass(frozen=True, slots=True)
+class EngineeringObjectHistoricalBasisV2:
+    basis_schema_version: int; source_category: str; engineering_object_id: UUID; source_version: int
+    organization_id: UUID; customer_id: int | None; project_id: int; workspace_id: int
+    origin_package_key: str; origin_project_configuration_revision: int; origin_declaration_id: str
+    identifiers: tuple[EngineeringIdentifierHistoricalSnapshotV1, ...]
+    family: EngineeringObjectFamily; discipline: EngineeringDiscipline; object_type: EngineeringObjectType
+    subtype: None; lifecycle: EngineeringLifecycle; authority_standing: EngineeringAuthorityStanding
+    creator_id: int; steward_id: int
+    def __post_init__(self) -> None:
+        if self.basis_schema_version != 2 or self.source_category != "engineering_object":
+            raise TechnicalReportValidationError("invalid EngineeringObject V2 discriminator")
+        EngineeringObjectHistoricalBasisV1(
+            1, self.source_category, self.engineering_object_id, self.source_version,
+            self.organization_id, self.customer_id, self.project_id, self.workspace_id,
+            self.family, self.discipline, self.object_type, self.subtype, self.lifecycle,
+            self.authority_standing, self.creator_id, self.steward_id,
+        )
+        _origin(self.origin_package_key, self.origin_project_configuration_revision, self.origin_declaration_id)
+        if not 1 <= len(self.identifiers) <= 16 or sum(item.primary_role == "primary" for item in self.identifiers) != 1:
+            raise TechnicalReportValidationError("Object V2 requires 1..16 current Identifiers and one primary")
+        expected = tuple(sorted(self.identifiers, key=lambda item: (
+            0 if item.primary_role == "primary" else 1,
+            item.identifier_kind.value, item.normalized_value, str(item.identifier_id),
+        )))
+        if self.identifiers != expected or len({item.identifier_id for item in expected}) != len(expected):
+            raise TechnicalReportValidationError("Object V2 Identifier set is not canonical")
+
+
 @dataclass(frozen=True, slots=True)
 class EngineeringRelationshipHistoricalBasisV1:
     basis_schema_version: int; source_category: str; engineering_relationship_id: UUID; source_version: int
@@ -284,8 +383,31 @@ class EngineeringRelationshipHistoricalBasisV1:
         object.__setattr__(self, "evidence_references", tuple(sorted(self.evidence_references, key=str)))
 
 
-HistoricalBasis: TypeAlias = CaptureHistoricalBasisV1 | EvidenceHistoricalBasisV1 | EvidenceHistoricalBasisV2 | EngineeringObjectHistoricalBasisV1 | EngineeringRelationshipHistoricalBasisV1
-_HISTORICAL_TYPES = (CaptureHistoricalBasisV1, EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2, EngineeringObjectHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV1)
+@dataclass(frozen=True, slots=True)
+class EngineeringRelationshipHistoricalBasisV2:
+    basis_schema_version: int; source_category: str; engineering_relationship_id: UUID; source_version: int
+    organization_id: UUID; project_id: int; workspace_id: int
+    origin_package_key: str; origin_project_configuration_revision: int; origin_declaration_id: str
+    source_object_id: UUID; target_object_id: UUID; relationship_family: RelationshipFamily
+    relationship_type: RelationshipType; lifecycle: RelationshipLifecycle
+    authority_standing: EngineeringAuthorityStanding; evidence_references: tuple[UUID, ...]
+    creator_id: int; steward_id: int; reviewer_id: int | None; approver_id: int | None
+    def __post_init__(self) -> None:
+        if self.basis_schema_version != 2 or self.source_category != "engineering_relationship":
+            raise TechnicalReportValidationError("invalid Relationship V2 discriminator")
+        EngineeringRelationshipHistoricalBasisV1(
+            1, self.source_category, self.engineering_relationship_id, self.source_version,
+            self.organization_id, self.project_id, self.workspace_id,
+            self.source_object_id, self.target_object_id, self.relationship_family,
+            self.relationship_type, self.lifecycle, self.authority_standing,
+            self.evidence_references, self.creator_id, self.steward_id,
+            self.reviewer_id, self.approver_id,
+        )
+        _origin(self.origin_package_key, self.origin_project_configuration_revision, self.origin_declaration_id)
+
+
+HistoricalBasis: TypeAlias = CaptureHistoricalBasisV1 | CaptureHistoricalBasisV2 | EvidenceHistoricalBasisV1 | EvidenceHistoricalBasisV2 | EngineeringObjectHistoricalBasisV1 | EngineeringObjectHistoricalBasisV2 | EngineeringRelationshipHistoricalBasisV1 | EngineeringRelationshipHistoricalBasisV2
+_HISTORICAL_TYPES = (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2, EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2, EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2, EngineeringRelationshipHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV2)
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,7 +492,7 @@ class TechnicalReportProvenanceEntry:
         if self.owning_capability is not None:
             object.__setattr__(self, "owning_capability", TechnicalReportOwningCapability(self.owning_capability))
         object.__setattr__(self, "reliance_role", _nonempty(self.reliance_role, "reliance_role")); object.__setattr__(self, "origin_attribution", _nonempty(self.origin_attribution, "origin_attribution")); object.__setattr__(self, "limitations", tuple(_nonempty(item, "limitations") for item in self.limitations))
-        expected = {TechnicalReportSourceType.UNIVERSAL_CAPTURE: (TechnicalReportOwningCapability.UNIVERSAL_CAPTURE, CaptureHistoricalBasisV1), TechnicalReportSourceType.EVIDENCE: (TechnicalReportOwningCapability.EVIDENCE, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)), TechnicalReportSourceType.ENGINEERING_OBJECT: (TechnicalReportOwningCapability.ENGINEERING_OBJECT, EngineeringObjectHistoricalBasisV1), TechnicalReportSourceType.ENGINEERING_RELATIONSHIP: (TechnicalReportOwningCapability.ENGINEERING_RELATIONSHIP, EngineeringRelationshipHistoricalBasisV1)}
+        expected = {TechnicalReportSourceType.UNIVERSAL_CAPTURE: (TechnicalReportOwningCapability.UNIVERSAL_CAPTURE, (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2)), TechnicalReportSourceType.EVIDENCE: (TechnicalReportOwningCapability.EVIDENCE, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)), TechnicalReportSourceType.ENGINEERING_OBJECT: (TechnicalReportOwningCapability.ENGINEERING_OBJECT, (EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2)), TechnicalReportSourceType.ENGINEERING_RELATIONSHIP: (TechnicalReportOwningCapability.ENGINEERING_RELATIONSHIP, (EngineeringRelationshipHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV2))}
         if self.source_class is TechnicalReportSourceClass.CANONICAL_MATERIAL:
             if self.source_type not in expected: raise TechnicalReportHistoricalBasisIncomplete("canonical source type is invalid")
             owner, locator_type = expected[self.source_type]
@@ -476,6 +598,10 @@ _HISTORICAL_KEYS: dict[str, set[str]] = {
     "engineering_object": {field.name for field in fields(EngineeringObjectHistoricalBasisV1)},
     "engineering_relationship": {field.name for field in fields(EngineeringRelationshipHistoricalBasisV1)},
 }
+_CAPTURE_V2_KEYS = {field.name for field in fields(CaptureHistoricalBasisV2)}
+_OBJECT_V2_KEYS = {field.name for field in fields(EngineeringObjectHistoricalBasisV2)}
+_RELATIONSHIP_V2_KEYS = {field.name for field in fields(EngineeringRelationshipHistoricalBasisV2)}
+_IDENTIFIER_SNAPSHOT_KEYS = {field.name for field in fields(EngineeringIdentifierHistoricalSnapshotV1)}
 _EVIDENCE_V2_KEYS = {field.name for field in fields(EvidenceHistoricalBasisV2)}
 _SUPPORTING_FILE_V1_KEYS = {
     field.name for field in fields(SupportingFileHistoricalBasisV1)
@@ -490,6 +616,8 @@ def historical_basis_from_payload(payload: object, source_type: str) -> Historic
     keys = _HISTORICAL_KEYS[source_type]
     if source_type == "evidence" and isinstance(payload, dict) and payload.get("basis_schema_version") == 2:
         keys = _EVIDENCE_V2_KEYS
+    elif isinstance(payload, dict) and payload.get("basis_schema_version") == 2:
+        keys = {"universal_capture": _CAPTURE_V2_KEYS, "engineering_object": _OBJECT_V2_KEYS, "engineering_relationship": _RELATIONSHIP_V2_KEYS}[source_type]
     value = _closed_payload(payload, keys, "historical basis")
     data = dict(value)
     try:
@@ -500,7 +628,7 @@ def historical_basis_from_payload(payload: object, source_type: str) -> Historic
                 engineering_object_id=_payload_optional_uuid(data["engineering_object_id"], "engineering_object_id"),
                 created_at=_payload_datetime(data["created_at"], "created_at"),
             )
-            return CaptureHistoricalBasisV1(**data)
+            return CaptureHistoricalBasisV2(**data) if data.get("basis_schema_version") == 2 else CaptureHistoricalBasisV1(**data)
         if source_type == "evidence":
             is_v2 = data.get("basis_schema_version") == 2
             data.update(
@@ -537,6 +665,19 @@ def historical_basis_from_payload(payload: object, source_type: str) -> Historic
                 engineering_object_id=_payload_uuid(data["engineering_object_id"], "engineering_object_id"),
                 organization_id=_payload_uuid(data["organization_id"], "organization_id"),
             )
+            if data.get("basis_schema_version") == 2:
+                raw_identifiers = data.get("identifiers")
+                if not isinstance(raw_identifiers, list): raise TypeError
+                data["identifiers"] = tuple(EngineeringIdentifierHistoricalSnapshotV1(**{
+                    **_closed_payload(item, _IDENTIFIER_SNAPSHOT_KEYS, "Identifier snapshot"),
+                    "identifier_id": _payload_uuid(item["identifier_id"], "identifier_id"),
+                    "evidence_references": tuple(_payload_uuid(value, "evidence_reference") for value in item["evidence_references"]),
+                    "predecessor_identifier_id": _payload_optional_uuid(item["predecessor_identifier_id"], "predecessor_identifier_id"),
+                    "successor_identifier_id": _payload_optional_uuid(item["successor_identifier_id"], "successor_identifier_id"),
+                    "created_at": _payload_datetime(item["created_at"], "created_at"),
+                    "updated_at": _payload_datetime(item["updated_at"], "updated_at"),
+                }) for item in raw_identifiers)
+                return EngineeringObjectHistoricalBasisV2(**data)
             return EngineeringObjectHistoricalBasisV1(**data)
         data.update(
             engineering_relationship_id=_payload_uuid(data["engineering_relationship_id"], "engineering_relationship_id"),
@@ -545,7 +686,7 @@ def historical_basis_from_payload(payload: object, source_type: str) -> Historic
             target_object_id=_payload_uuid(data["target_object_id"], "target_object_id"),
             evidence_references=tuple(_payload_uuid(item, "evidence_reference") for item in data["evidence_references"]),
         )
-        return EngineeringRelationshipHistoricalBasisV1(**data)
+        return EngineeringRelationshipHistoricalBasisV2(**data) if data.get("basis_schema_version") == 2 else EngineeringRelationshipHistoricalBasisV1(**data)
     except (KeyError, TypeError, ValueError) as exc:
         raise TechnicalReportHistoricalBasisIncomplete("historical basis is invalid") from exc
 

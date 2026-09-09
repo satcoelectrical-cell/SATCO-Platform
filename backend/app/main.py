@@ -15,6 +15,9 @@ from app.api.v1.routers.engineering_workspaces import (
 from app.api.v1.routers.engineering_objects import (
     router as engineering_object_router,
 )
+from app.api.v1.routers.engineering_identifiers import (
+    router as engineering_identifier_router,
+)
 from app.api.v1.routers.evidence import router as evidence_router
 from app.api.v1.routers.engineering_relationships import (
     router as engineering_relationship_router,
@@ -44,6 +47,7 @@ from app.api.v1.routers.project_context import router as project_context_router
 from app.api.v1.routers.project_completeness import router as project_completeness_router
 from app.api.v1.routers.discipline_packages import router as discipline_package_router
 from app.core.config import settings
+from app.api.v1.routers.discipline_package_operations import router as discipline_package_operation_router
 from app.discipline_packages.descriptors.releases.release_051_core_v1 import RELEASE_051_CORE_V1
 from app.discipline_packages.registry import assemble_registry
 from app.core.operations import (
@@ -117,6 +121,7 @@ app.include_router(audit_router)
 app.include_router(engineering_workspace_router)
 app.include_router(engineering_object_router)
 app.include_router(evidence_router)
+app.include_router(engineering_identifier_router)
 app.include_router(engineering_relationship_router)
 app.include_router(engineering_experience_capture_router)
 app.include_router(engineering_journal_router)
@@ -136,6 +141,7 @@ app.include_router(project_completeness_router)
 app.include_router(discipline_package_router)
 
 
+app.include_router(discipline_package_operation_router)
 @app.get("/health/live")
 def health_live():
     return {"status": "alive"}

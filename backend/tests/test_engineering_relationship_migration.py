@@ -19,9 +19,11 @@ def test_relationship_migration_schema_matches_contract():
         "id", "organization_id", "project_id", "workspace_id",
         "source_object_id", "target_object_id", "relationship_family",
         "relationship_type", "lifecycle", "authority_standing",
-        "evidence_references", "version", "creator_id", "steward_id",
-        "reviewer_id", "approver_id", "created_at", "updated_at",
-    }
+            "evidence_references", "version", "creator_id", "steward_id",
+            "reviewer_id", "approver_id", "created_at", "updated_at",
+            "origin_package_key", "origin_project_configuration_revision",
+            "origin_declaration_id",
+        }
     indexes = {
         item["name"] for item in inspector.get_indexes("engineering_relationships")
     }

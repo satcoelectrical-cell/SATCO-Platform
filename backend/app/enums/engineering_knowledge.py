@@ -23,6 +23,8 @@ class EngineeringObjectType(StrEnum):
     SWITCHGEAR = "switchgear"
     ELECTRICAL_PANEL = "electrical_panel"
     ELECTRICAL_CABLE = "electrical_cable"
+    ELECTRICAL_FEEDER = "electrical_feeder"
+    ELECTRICAL_POWER_SOURCE = "electrical_power_source"
     PLC = "plc"
     DCS_CONTROLLER = "dcs_controller"
     ESD_CONTROLLER = "esd_controller"

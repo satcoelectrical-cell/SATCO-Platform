@@ -52,6 +52,7 @@ from app.models import evidence  # noqa: F401
 from app.models import evidence_command  # noqa: F401
 from app.models import engineering_relationship  # noqa: F401
 from app.models import engineering_relationship_command  # noqa: F401
+from app.models import engineering_identifier  # noqa: F401
 from app.models import engineering_experience_capture  # noqa: F401
 from app.models import engineering_experience_capture_command  # noqa: F401
 from app.models import technical_report  # noqa: F401

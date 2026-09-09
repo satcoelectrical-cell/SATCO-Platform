@@ -3,10 +3,12 @@ from datetime import datetime
 from uuid import UUID
 from uuid import uuid4
 
+from sqlalchemy import BigInteger
 from sqlalchemy import CheckConstraint
 from sqlalchemy import Column
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
+from sqlalchemy import ForeignKeyConstraint
 from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
@@ -77,6 +79,8 @@ FAMILY_OBJECT_TYPES = {
         EngineeringObjectType.SWITCHGEAR.value,
         EngineeringObjectType.ELECTRICAL_PANEL.value,
         EngineeringObjectType.ELECTRICAL_CABLE.value,
+        EngineeringObjectType.ELECTRICAL_FEEDER.value,
+        EngineeringObjectType.ELECTRICAL_POWER_SOURCE.value,
     },
     EngineeringObjectFamily.AUTOMATION.value: {
         EngineeringObjectType.PLC.value,
@@ -209,6 +213,19 @@ class EngineeringObject(Base):
             "updated_at >= created_at",
             name="ck_engineering_objects_timestamp_order",
         ),
+        CheckConstraint(
+            "(origin_package_key IS NULL AND origin_project_configuration_revision IS NULL "
+            "AND origin_declaration_id IS NULL) OR "
+            "(origin_package_key IS NOT NULL AND origin_project_configuration_revision IS NOT NULL "
+            "AND origin_declaration_id IS NOT NULL)",
+            name="ck_engineering_objects_origin_all_or_none",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "origin_project_configuration_revision", "origin_package_key"],
+            ["project_package_configuration_selections.project_id", "project_package_configuration_selections.configuration_revision", "project_package_configuration_selections.package_key"],
+            name="fk_engineering_objects_origin_selection",
+            ondelete="RESTRICT",
+        ),
         Index(
             "ix_engineering_objects_organization_project",
             "organization_id",
@@ -322,6 +339,9 @@ class EngineeringObject(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+    origin_package_key = Column(String(64), nullable=True)
+    origin_project_configuration_revision = Column(BigInteger, nullable=True)
+    origin_declaration_id = Column(String(128), nullable=True)
 
     customer = relationship("Customer")
     project = relationship("Project")
@@ -402,6 +422,17 @@ class EngineeringObject(Base):
             raise ValueError("Engineering Object id must be a UUID")
         if key == "creator_id":
             self._validate_positive_reference(key, value)
+        return value
+
+    @validates(
+        "origin_package_key",
+        "origin_project_configuration_revision",
+        "origin_declaration_id",
+    )
+    def _validate_origin_immutable(self, key: str, value):
+        current = self.__dict__.get(key)
+        if current is not None and current != value:
+            raise ValueError(f"Engineering Object {key} is immutable")
         return value
 
     @validates("organization_id")

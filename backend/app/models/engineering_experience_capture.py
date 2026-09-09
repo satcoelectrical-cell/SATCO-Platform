@@ -4,7 +4,7 @@ from datetime import datetime
 import unicodedata
 from uuid import uuid4
 
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import BigInteger, CheckConstraint, Column, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.sql import func
 
@@ -103,6 +103,19 @@ class EngineeringExperienceCapture(Base):
             "source_reference IS NULL OR char_length(source_reference) BETWEEN 1 AND 512",
             name="ck_experience_captures_reference_length",
         ),
+        CheckConstraint(
+            "(origin_package_key IS NULL AND origin_project_configuration_revision IS NULL "
+            "AND origin_declaration_id IS NULL) OR "
+            "(origin_package_key IS NOT NULL AND origin_project_configuration_revision IS NOT NULL "
+            "AND origin_declaration_id IS NOT NULL)",
+            name="ck_experience_captures_origin_all_or_none",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "origin_project_configuration_revision", "origin_package_key"],
+            ["project_package_configuration_selections.project_id", "project_package_configuration_selections.configuration_revision", "project_package_configuration_selections.package_key"],
+            name="fk_experience_captures_origin_selection",
+            ondelete="RESTRICT",
+        ),
         Index(
             "ix_experience_captures_project_order",
             "organization_id",
@@ -170,6 +183,9 @@ class EngineeringExperienceCapture(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+    origin_package_key = Column(String(64), nullable=True)
+    origin_project_configuration_revision = Column(BigInteger, nullable=True)
+    origin_declaration_id = Column(String(128), nullable=True)
 
     @classmethod
     def create(cls, command: CreateEngineeringExperienceCapture, now: datetime):

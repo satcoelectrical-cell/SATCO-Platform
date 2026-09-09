@@ -70,6 +70,9 @@ class EngineeringExperienceCaptureResponse(BaseModel):
     version: int
     created_at: datetime
     updated_at: datetime
+    origin_package_key: str | None = None
+    origin_project_configuration_revision: int | None = None
+    origin_declaration_id: str | None = None
     allowed_actions: tuple[str, ...] = ()
 
 

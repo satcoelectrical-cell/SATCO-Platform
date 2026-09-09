@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from app.enums.engineering_experience_capture import EngineeringExperienceCaptureLifecycle, EngineeringExperienceSourceKind
-from app.enums.engineering_knowledge import EngineeringAuthorityStanding, EngineeringDiscipline, EngineeringLifecycle, EngineeringObjectFamily, EngineeringObjectType
+from app.enums.engineering_knowledge import EngineeringAuthorityStanding, EngineeringDiscipline, EngineeringIdentifierKind, EngineeringLifecycle, EngineeringObjectFamily, EngineeringObjectType
 from app.enums.engineering_relationship import RelationshipFamily, RelationshipLifecycle, RelationshipType
 from app.enums.evidence import EvidenceLifecycle, EvidenceSourceKind, EvidenceSourceStanding
 
@@ -23,8 +23,12 @@ from app.enums.technical_report import (
 )
 from app.models.technical_report_command import (
     CaptureHistoricalBasisV1,
+    CaptureHistoricalBasisV2,
+    EngineeringIdentifierHistoricalSnapshotV1,
     EngineeringObjectHistoricalBasisV1,
+    EngineeringObjectHistoricalBasisV2,
     EngineeringRelationshipHistoricalBasisV1,
+    EngineeringRelationshipHistoricalBasisV2,
     EvidenceHistoricalBasisV1,
     EvidenceHistoricalBasisV2,
     ContextualLocator,
@@ -117,6 +121,30 @@ class CaptureHistoricalBasisSchema(StrictTechnicalReportSchema):
         return CaptureHistoricalBasisV1(**self.model_dump())
 
 
+class CaptureHistoricalBasisV2Schema(StrictTechnicalReportSchema):
+    basis_schema_version: Literal[2]
+    source_category: Literal["universal_capture"]
+    capture_id: UUID
+    source_version: PositiveVersion
+    organization_id: UUID
+    project_id: PositiveIdentifier
+    workspace_id: PositiveIdentifier | None
+    origin_package_key: str = Field(min_length=1, max_length=64)
+    origin_project_configuration_revision: PositiveVersion
+    origin_declaration_id: str = Field(min_length=1, max_length=128)
+    discipline: EngineeringDiscipline | None
+    engineering_object_id: UUID | None
+    source_kind: EngineeringExperienceSourceKind
+    original_content: Annotated[str, Field(min_length=1, max_length=10000)]
+    source_reference: Annotated[str, Field(min_length=1, max_length=512)] | None
+    creator_id: PositiveIdentifier
+    lifecycle: EngineeringExperienceCaptureLifecycle
+    created_at: AwareDatetime
+
+    def to_domain(self) -> CaptureHistoricalBasisV2:
+        return CaptureHistoricalBasisV2(**self.model_dump())
+
+
 class SupportingFileHistoricalBasisSchema(StrictTechnicalReportSchema):
     basis_schema_version: Literal[1]
     source_category: Literal["supporting_file"]
@@ -198,6 +226,73 @@ class EngineeringObjectHistoricalBasisSchema(StrictTechnicalReportSchema):
         return EngineeringObjectHistoricalBasisV1(**self.model_dump())
 
 
+class EngineeringIdentifierHistoricalSnapshotSchema(StrictTechnicalReportSchema):
+    identifier_id: UUID
+    identifier_version: PositiveVersion
+    identifier_kind: EngineeringIdentifierKind
+    display_value: str = Field(min_length=1, max_length=128)
+    normalized_value: str = Field(min_length=1, max_length=128)
+    normalization_algorithm_version: Literal["satco_identifier_nfkc_casefold_v1"]
+    issuing_scope_kind: Literal["project", "workspace", "external_authority"]
+    issuing_scope_value: str = Field(min_length=1, max_length=128)
+    lifecycle: Literal["current"]
+    authority_standing: EngineeringAuthorityStanding
+    primary_role: Literal["primary", "alternate"]
+    evidence_references: tuple[UUID, ...] = Field(max_length=8)
+    predecessor_identifier_id: UUID | None
+    successor_identifier_id: None
+    creator_id: PositiveIdentifier
+    steward_id: PositiveIdentifier
+    reviewer_id: PositiveIdentifier | None
+    approver_id: PositiveIdentifier | None
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
+    origin_package_key: str | None = Field(default=None, min_length=1, max_length=64)
+    origin_project_configuration_revision: PositiveVersion | None
+    origin_declaration_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_snapshot(self):
+        if self.evidence_references != tuple(sorted(set(self.evidence_references), key=str)):
+            raise ValueError("Identifier Evidence must be unique and lexical")
+        origin = (self.origin_package_key, self.origin_project_configuration_revision, self.origin_declaration_id)
+        if any(value is not None for value in origin) and not all(value is not None for value in origin):
+            raise ValueError("Identifier origin is incomplete")
+        return self
+
+    def to_domain(self) -> EngineeringIdentifierHistoricalSnapshotV1:
+        return EngineeringIdentifierHistoricalSnapshotV1(**self.model_dump())
+
+
+class EngineeringObjectHistoricalBasisV2Schema(StrictTechnicalReportSchema):
+    basis_schema_version: Literal[2]
+    source_category: Literal["engineering_object"]
+    engineering_object_id: UUID
+    source_version: PositiveVersion
+    organization_id: UUID
+    customer_id: PositiveIdentifier | None
+    project_id: PositiveIdentifier
+    workspace_id: PositiveIdentifier
+    origin_package_key: str = Field(min_length=1, max_length=64)
+    origin_project_configuration_revision: PositiveVersion
+    origin_declaration_id: str = Field(min_length=1, max_length=128)
+    identifiers: tuple[EngineeringIdentifierHistoricalSnapshotSchema, ...] = Field(min_length=1, max_length=16)
+    family: EngineeringObjectFamily
+    discipline: EngineeringDiscipline
+    object_type: EngineeringObjectType
+    subtype: None
+    lifecycle: EngineeringLifecycle
+    authority_standing: EngineeringAuthorityStanding
+    creator_id: PositiveIdentifier
+    steward_id: PositiveIdentifier
+
+    def to_domain(self) -> EngineeringObjectHistoricalBasisV2:
+        values = self.model_dump(exclude={"identifiers"})
+        return EngineeringObjectHistoricalBasisV2(
+            **values, identifiers=tuple(item.to_domain() for item in self.identifiers)
+        )
+
+
 class EngineeringRelationshipHistoricalBasisSchema(StrictTechnicalReportSchema):
     basis_schema_version: Literal[1]
     source_category: Literal["engineering_relationship"]
@@ -232,9 +327,36 @@ class EngineeringRelationshipHistoricalBasisSchema(StrictTechnicalReportSchema):
         return EngineeringRelationshipHistoricalBasisV1(**values)
 
 
+class EngineeringRelationshipHistoricalBasisV2Schema(StrictTechnicalReportSchema):
+    basis_schema_version: Literal[2]
+    source_category: Literal["engineering_relationship"]
+    engineering_relationship_id: UUID
+    source_version: PositiveVersion
+    organization_id: UUID
+    project_id: PositiveIdentifier
+    workspace_id: PositiveIdentifier
+    origin_package_key: str = Field(min_length=1, max_length=64)
+    origin_project_configuration_revision: PositiveVersion
+    origin_declaration_id: str = Field(min_length=1, max_length=128)
+    source_object_id: UUID
+    target_object_id: UUID
+    relationship_family: RelationshipFamily
+    relationship_type: RelationshipType
+    lifecycle: RelationshipLifecycle
+    authority_standing: EngineeringAuthorityStanding
+    evidence_references: tuple[UUID, ...]
+    creator_id: PositiveIdentifier
+    steward_id: PositiveIdentifier
+    reviewer_id: PositiveIdentifier | None
+    approver_id: PositiveIdentifier | None
+
+    def to_domain(self) -> EngineeringRelationshipHistoricalBasisV2:
+        return EngineeringRelationshipHistoricalBasisV2(**self.model_dump())
+
+
 HistoricalBasisSchema = Annotated[
-    CaptureHistoricalBasisSchema | EvidenceHistoricalBasisSchema | EngineeringObjectHistoricalBasisSchema | EngineeringRelationshipHistoricalBasisSchema,
-    Field(discriminator="source_category"),
+    CaptureHistoricalBasisSchema | CaptureHistoricalBasisV2Schema | EvidenceHistoricalBasisSchema | EngineeringObjectHistoricalBasisSchema | EngineeringObjectHistoricalBasisV2Schema | EngineeringRelationshipHistoricalBasisSchema | EngineeringRelationshipHistoricalBasisV2Schema,
+    Field(union_mode="left_to_right"),
 ]
 
 
@@ -295,10 +417,10 @@ class TechnicalReportProvenanceSchema(StrictTechnicalReportSchema):
     @model_validator(mode="after")
     def validate_material_shape(self):
         expected = {
-            TechnicalReportSourceType.UNIVERSAL_CAPTURE: (TechnicalReportOwningCapability.UNIVERSAL_CAPTURE, CaptureHistoricalBasisSchema),
+            TechnicalReportSourceType.UNIVERSAL_CAPTURE: (TechnicalReportOwningCapability.UNIVERSAL_CAPTURE, (CaptureHistoricalBasisSchema, CaptureHistoricalBasisV2Schema)),
             TechnicalReportSourceType.EVIDENCE: (TechnicalReportOwningCapability.EVIDENCE, EvidenceHistoricalBasisSchema),
-            TechnicalReportSourceType.ENGINEERING_OBJECT: (TechnicalReportOwningCapability.ENGINEERING_OBJECT, EngineeringObjectHistoricalBasisSchema),
-            TechnicalReportSourceType.ENGINEERING_RELATIONSHIP: (TechnicalReportOwningCapability.ENGINEERING_RELATIONSHIP, EngineeringRelationshipHistoricalBasisSchema),
+            TechnicalReportSourceType.ENGINEERING_OBJECT: (TechnicalReportOwningCapability.ENGINEERING_OBJECT, (EngineeringObjectHistoricalBasisSchema, EngineeringObjectHistoricalBasisV2Schema)),
+            TechnicalReportSourceType.ENGINEERING_RELATIONSHIP: (TechnicalReportOwningCapability.ENGINEERING_RELATIONSHIP, (EngineeringRelationshipHistoricalBasisSchema, EngineeringRelationshipHistoricalBasisV2Schema)),
         }
         if self.source_class is TechnicalReportSourceClass.CANONICAL_MATERIAL:
             if self.source_type not in expected:

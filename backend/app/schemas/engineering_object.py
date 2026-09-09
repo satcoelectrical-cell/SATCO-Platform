@@ -174,6 +174,9 @@ class EngineeringObjectResponse(BaseModel):
     steward_id: int
     created_at: datetime
     updated_at: datetime
+    origin_package_key: str | None = None
+    origin_project_configuration_revision: int | None = None
+    origin_declaration_id: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

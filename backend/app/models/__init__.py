@@ -13,6 +13,8 @@ from .engineering_context import EngineeringContextValue
 from .engineering_context_relationship import EngineeringContextRelationship
 from .engineering_context_relationship import InterfaceCommitment
 from .engineering_object import EngineeringObject
+from .engineering_identifier import EngineeringIdentifier
+from .engineering_identifier_command import EngineeringIdentifierIdempotency, EngineeringIdentifierOutbox
 from .engineering_object_command import EngineeringObjectIdempotency
 from .engineering_object_command import EngineeringObjectOutbox
 from .engineering_relationship import EngineeringRelationship
@@ -47,4 +49,8 @@ from .discipline_package import (
     OrganizationPackageSelection, ProjectPackageConfigurationRevision,
     ProjectPackageConfigurationSelection, ProjectPackageConfigurationHead,
     PackageConfigurationAuditEvent,
+)
+from .package_input_binding import (
+    EngineeringContextPackageInputBinding,
+    EvidencePackageInputBinding,
 )

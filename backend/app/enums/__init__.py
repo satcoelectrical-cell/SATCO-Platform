@@ -57,6 +57,12 @@ from app.enums.engineering_knowledge import (
     EngineeringRelationshipFamily,
     EngineeringResponsibilityRole,
 )
+from .engineering_identifier import (
+    EngineeringIdentifierIssuingScope,
+    EngineeringIdentifierLifecycle,
+    EngineeringIdentifierPrimaryRole,
+    NORMALIZATION_ALGORITHM_VERSION,
+)
 from .project_foundation import (
     ProjectEngineeringStage,
     ProjectFoundationAvailability,

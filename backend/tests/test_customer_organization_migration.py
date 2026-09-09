@@ -6,16 +6,20 @@ import pytest
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import DBAPIError
 
-from conftest import alembic_config, owner_engine
+from conftest import (
+    alembic_config,
+    clear_patch051_registry_provenance_for_historical_migration,
+    owner_engine,
+)
 from app.core.database import engine as application_engine
 
 
 LEGACY_ORGANIZATION_ID = "7e7c9d7a-7693-4f75-9bc5-3ef7bf528281"
 
 
-def test_patch_041_parentage_is_preserved_under_the_current_patch_051_head() -> None:
+def test_patch_041_parentage_is_preserved_under_the_current_patch_052_head() -> None:
     script = ScriptDirectory.from_config(alembic_config)
-    assert script.get_heads() == ["e05100000006"]
+    assert script.get_heads() == ["e05200000002"]
     assert script.get_revision("e04100000001").down_revision == "e03800000001"
     assert script.get_revision("e03800000001").down_revision == "e03400000001"
 
@@ -101,6 +105,7 @@ def test_direct_sql_cannot_transfer_customer_or_cross_project_tenant(
 def test_exact_legacy_inventory_upgrade_downgrade_reupgrade_without_loss() -> None:
     application_engine.dispose()
     owner_engine.dispose()
+    clear_patch051_registry_provenance_for_historical_migration()
     command.downgrade(alembic_config, "e03400000001")
     try:
         with owner_engine.begin() as connection:
@@ -137,7 +142,7 @@ def test_exact_legacy_inventory_upgrade_downgrade_reupgrade_without_loss() -> No
             revision = connection.execute(text(
                 "SELECT version_num FROM alembic_version"
             )).scalar_one()
-        if revision != "e05100000006":
+        if revision != "e05200000002":
             application_engine.dispose()
             owner_engine.dispose()
             command.upgrade(alembic_config, "head")

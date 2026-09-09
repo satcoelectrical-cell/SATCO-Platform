@@ -39,6 +39,7 @@ from app.exceptions.technical_report import (
 from app.models.audit_log import AuditLog
 from app.models.engineering_experience_capture import EngineeringExperienceCapture
 from app.models.engineering_object import EngineeringObject
+from app.models.engineering_identifier import EngineeringIdentifier
 from app.models.engineering_relationship import EngineeringRelationship
 from app.models.evidence import Evidence
 from app.models.engineering_workspace import (
@@ -54,8 +55,12 @@ from app.models.technical_report import (
 )
 from app.models.technical_report_command import (
     CaptureHistoricalBasisV1,
+    CaptureHistoricalBasisV2,
+    EngineeringIdentifierHistoricalSnapshotV1,
     EngineeringObjectHistoricalBasisV1,
+    EngineeringObjectHistoricalBasisV2,
     EngineeringRelationshipHistoricalBasisV1,
+    EngineeringRelationshipHistoricalBasisV2,
     EvidenceHistoricalBasisV1,
     EvidenceHistoricalBasisV2,
     HistoricalBasis,
@@ -622,19 +627,19 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
         """Use only a complete, integrity-protected report-owned fallback."""
 
         expected_type = {
-            TechnicalReportSourceType.UNIVERSAL_CAPTURE.value: CaptureHistoricalBasisV1,
+            TechnicalReportSourceType.UNIVERSAL_CAPTURE.value: (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2),
             TechnicalReportSourceType.EVIDENCE.value: (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2),
-            TechnicalReportSourceType.ENGINEERING_OBJECT.value: EngineeringObjectHistoricalBasisV1,
-            TechnicalReportSourceType.ENGINEERING_RELATIONSHIP.value: EngineeringRelationshipHistoricalBasisV1,
+            TechnicalReportSourceType.ENGINEERING_OBJECT.value: (EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2),
+            TechnicalReportSourceType.ENGINEERING_RELATIONSHIP.value: (EngineeringRelationshipHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV2),
         }.get(request.source_type)
         self._authorize_scope(request)
         if expected_type is None or not isinstance(fallback, expected_type):
             raise TechnicalReportHistoricalBasisIncomplete("historical fallback type is incoherent")
         if fallback.organization_id != request.actor.organization_id:
             raise TechnicalReportHistoricalBasisIncomplete()
-        if isinstance(fallback, CaptureHistoricalBasisV1): identity = fallback.capture_id
+        if isinstance(fallback, (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2)): identity = fallback.capture_id
         elif isinstance(fallback, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)): identity = fallback.evidence_id
-        elif isinstance(fallback, EngineeringObjectHistoricalBasisV1): identity = fallback.engineering_object_id
+        elif isinstance(fallback, (EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2)): identity = fallback.engineering_object_id
         else: identity = fallback.engineering_relationship_id
         if identity != request.source_id or fallback.source_version != request.source_version:
             raise TechnicalReportHistoricalBasisIncomplete()
@@ -646,6 +651,18 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
         item = self._load(EngineeringExperienceCapture, request)
         if item.lifecycle != EngineeringExperienceCaptureLifecycle.CAPTURED.value:
             raise TechnicalReportHistoricalBasisIncomplete()
+        values = (
+            item.id, item.version, item.organization_id,
+            item.project_id, item.workspace_id,
+        )
+        if item.origin_package_key is not None:
+            return CaptureHistoricalBasisV2(
+                2, "universal_capture", *values,
+                item.origin_package_key, item.origin_project_configuration_revision,
+                item.origin_declaration_id, item.discipline,
+                item.engineering_object_id, item.source_kind, item.original_content,
+                item.source_reference, item.creator_id, item.lifecycle, item.created_at,
+            )
         return CaptureHistoricalBasisV1(
             1, "universal_capture", item.id, item.version, item.organization_id,
             item.project_id, item.workspace_id, item.discipline,
@@ -683,6 +700,36 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
     def _engineering_object(self, request: TechnicalReportHistoricalRequest) -> HistoricalBasis:
         item = self._load(EngineeringObject, request)
         self._require_approved_object(item, request)
+        if item.origin_package_key is not None:
+            rows = list(self.session.query(EngineeringIdentifier).filter_by(
+                engineering_object_id=item.id,
+                organization_id=item.organization_id,
+                lifecycle="current",
+            ).order_by(
+                EngineeringIdentifier.primary_role.desc(),
+                EngineeringIdentifier.identifier_kind,
+                EngineeringIdentifier.normalized_value,
+                EngineeringIdentifier.identifier_id,
+            ).with_for_update().all())
+            snapshots = tuple(EngineeringIdentifierHistoricalSnapshotV1(
+                row.identifier_id, row.version, row.identifier_kind,
+                row.display_value, row.normalized_value,
+                row.normalization_algorithm_version, row.issuing_scope_kind,
+                row.issuing_scope_value, row.lifecycle, row.authority_standing,
+                row.primary_role, tuple(UUID(str(value)) for value in row.evidence_references),
+                row.predecessor_identifier_id, row.successor_identifier_id,
+                row.creator_id, row.steward_id, row.reviewer_id, row.approver_id,
+                row.created_at, row.updated_at, row.origin_package_key,
+                row.origin_project_configuration_revision, row.origin_declaration_id,
+            ) for row in rows)
+            return EngineeringObjectHistoricalBasisV2(
+                2, "engineering_object", item.id, item.version, item.organization_id,
+                item.customer_id, item.project_id, item.workspace_id,
+                item.origin_package_key, item.origin_project_configuration_revision,
+                item.origin_declaration_id, snapshots, item.family,
+                item.discipline, item.object_type, item.subtype, item.lifecycle,
+                item.authority_standing, item.creator_id, item.steward_id,
+            )
         return EngineeringObjectHistoricalBasisV1(
             1, "engineering_object", item.id, item.version, item.organization_id,
             item.customer_id, item.project_id, item.workspace_id, item.family,
@@ -708,6 +755,23 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
         self._require_related_object(item.target_object_id, request)
         for evidence_id in item.evidence_references:
             self._require_related_evidence(evidence_id, request)
+        base = (
+            item.id, item.version, item.organization_id, item.project_id,
+            item.workspace_id,
+        )
+        tail = (
+            item.source_object_id, item.target_object_id,
+            item.relationship_family, item.relationship_type, item.lifecycle,
+            item.authority_standing,
+            tuple(UUID(str(value)) for value in item.evidence_references),
+            item.creator_id, item.steward_id, item.reviewer_id, item.approver_id,
+        )
+        if item.origin_package_key is not None:
+            return EngineeringRelationshipHistoricalBasisV2(
+                2, "engineering_relationship", *base,
+                item.origin_package_key, item.origin_project_configuration_revision,
+                item.origin_declaration_id, *tail,
+            )
         return EngineeringRelationshipHistoricalBasisV1(
             1, "engineering_relationship", item.id, item.version,
             item.organization_id, item.project_id, item.workspace_id,
@@ -924,7 +988,7 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
             or basis.workspace_id not in {None, request.scope.workspace_id}
         ):
             raise TechnicalReportHistoricalBasisIncomplete()
-        if isinstance(basis, CaptureHistoricalBasisV1):
+        if isinstance(basis, (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2)):
             if basis.lifecycle != EngineeringExperienceCaptureLifecycle.CAPTURED:
                 raise TechnicalReportHistoricalBasisIncomplete()
         elif isinstance(basis, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)):
@@ -933,14 +997,29 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
                 or basis.source_standing != EvidenceSourceStanding.CURRENT
             ):
                 raise TechnicalReportHistoricalBasisIncomplete()
-        elif isinstance(basis, EngineeringObjectHistoricalBasisV1):
+        elif isinstance(basis, (EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2)):
             if (
                 basis.lifecycle != EngineeringLifecycle.ACTIVE
                 or basis.authority_standing
                 != EngineeringAuthorityStanding.APPROVED
             ):
                 raise TechnicalReportHistoricalBasisIncomplete()
-        elif isinstance(basis, EngineeringRelationshipHistoricalBasisV1):
+            if isinstance(basis, EngineeringObjectHistoricalBasisV2):
+                rows = list(self.session.query(EngineeringIdentifier).filter_by(
+                    engineering_object_id=basis.engineering_object_id,
+                    organization_id=basis.organization_id,
+                    lifecycle="current",
+                ).order_by(
+                    EngineeringIdentifier.primary_role.desc(),
+                    EngineeringIdentifier.identifier_kind,
+                    EngineeringIdentifier.normalized_value,
+                    EngineeringIdentifier.identifier_id,
+                ).with_for_update().all())
+                observed = tuple((row.identifier_id, row.version) for row in rows)
+                recorded = tuple((row.identifier_id, row.identifier_version) for row in basis.identifiers)
+                if observed != recorded:
+                    raise TechnicalReportHistoricalBasisIncomplete()
+        elif isinstance(basis, (EngineeringRelationshipHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV2)):
             if (
                 basis.lifecycle != RelationshipLifecycle.CURRENT
                 or basis.authority_standing

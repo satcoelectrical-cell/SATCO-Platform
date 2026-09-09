@@ -35,6 +35,8 @@ ENUM_CONTRACTS = {
         "switchgear",
         "electrical_panel",
         "electrical_cable",
+        "electrical_feeder",
+        "electrical_power_source",
         "plc",
         "dcs_controller",
         "esd_controller",

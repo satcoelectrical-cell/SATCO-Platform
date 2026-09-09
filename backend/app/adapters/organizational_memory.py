@@ -56,8 +56,11 @@ from app.models.organizational_memory_command import (
 )
 from app.models.technical_report_command import (
     CaptureHistoricalBasisV1,
+    CaptureHistoricalBasisV2,
     EngineeringObjectHistoricalBasisV1,
+    EngineeringObjectHistoricalBasisV2,
     EngineeringRelationshipHistoricalBasisV1,
+    EngineeringRelationshipHistoricalBasisV2,
     EvidenceHistoricalBasisV1,
     EvidenceHistoricalBasisV2,
     TechnicalReportActor,
@@ -294,7 +297,7 @@ def _request_matches_basis(item, basis) -> bool:
         and getattr(basis, "source_version", None) == item.source_version
     )
     if type(item) is CaptureProvenanceAuthorization:
-        return common and isinstance(basis, CaptureHistoricalBasisV1) and (
+        return common and isinstance(basis, (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2)) and (
             basis.capture_id, basis.project_id, basis.workspace_id,
             basis.engineering_object_id,
         ) == (
@@ -306,11 +309,11 @@ def _request_matches_basis(item, basis) -> bool:
             basis.evidence_id, basis.project_id, basis.workspace_id,
         ) == (item.evidence_id, item.project_id, item.workspace_id)
     if type(item) is EngineeringObjectProvenanceAuthorization:
-        return common and isinstance(basis, EngineeringObjectHistoricalBasisV1) and (
+        return common and isinstance(basis, (EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2)) and (
             basis.engineering_object_id, basis.project_id, basis.workspace_id,
         ) == (item.engineering_object_id, item.project_id, item.workspace_id)
     if type(item) is EngineeringRelationshipProvenanceAuthorization:
-        return common and isinstance(basis, EngineeringRelationshipHistoricalBasisV1) and (
+        return common and isinstance(basis, (EngineeringRelationshipHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV2)) and (
             basis.engineering_relationship_id, basis.project_id, basis.workspace_id,
             basis.source_object_id, basis.target_object_id,
         ) == (

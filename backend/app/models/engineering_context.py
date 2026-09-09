@@ -8,6 +8,7 @@ from sqlalchemy import Numeric
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy import UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -300,12 +301,18 @@ class EngineeringContextSubjectReference(Base):
         ),
         CheckConstraint(
             "(subject_kind = 'project' AND subject_project_id IS NOT NULL "
-            "AND subject_workspace_id IS NULL AND discipline IS NULL) OR "
+            "AND subject_workspace_id IS NULL AND discipline IS NULL "
+            "AND subject_engineering_object_id IS NULL) OR "
             "(subject_kind = 'workspace' AND subject_project_id IS NULL "
-            "AND subject_workspace_id IS NOT NULL AND discipline IS NULL) "
+            "AND subject_workspace_id IS NOT NULL AND discipline IS NULL "
+            "AND subject_engineering_object_id IS NULL) "
             "OR (subject_kind = 'discipline' "
             "AND subject_project_id IS NULL "
-            "AND subject_workspace_id IS NULL AND discipline IS NOT NULL)",
+            "AND subject_workspace_id IS NULL AND discipline IS NOT NULL "
+            "AND subject_engineering_object_id IS NULL) OR "
+            "(subject_kind = 'engineering_object' AND subject_project_id IS NULL "
+            "AND subject_workspace_id IS NULL AND discipline IS NULL "
+            "AND subject_engineering_object_id IS NOT NULL)",
             name="ck_engineering_context_subject_refs_target",
         ),
         UniqueConstraint(
@@ -323,6 +330,16 @@ class EngineeringContextSubjectReference(Base):
         Index(
             "ix_engineering_context_subject_refs_workspace_id",
             "subject_workspace_id",
+        ),
+        Index(
+            "ix_engineering_context_subject_refs_object_id",
+            "subject_engineering_object_id",
+        ),
+        Index(
+            "uq_engineering_context_subject_refs_object_identity",
+            "context_id", "subject_engineering_object_id",
+            unique=True,
+            postgresql_where="subject_kind = 'engineering_object'",
         ),
     )
 
@@ -359,6 +376,15 @@ class EngineeringContextSubjectReference(Base):
         nullable=True,
     )
     discipline = Column(String(32), nullable=True)
+    subject_engineering_object_id = Column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey(
+            "engineering_objects.id",
+            name="fk_engineering_context_subject_refs_object",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,

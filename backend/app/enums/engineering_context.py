@@ -31,6 +31,7 @@ class ContextSubjectKind(str, Enum):
     PROJECT = "project"
     WORKSPACE = "workspace"
     DISCIPLINE = "discipline"
+    ENGINEERING_OBJECT = "engineering_object"
 
 
 class ContextSourceKind(str, Enum):

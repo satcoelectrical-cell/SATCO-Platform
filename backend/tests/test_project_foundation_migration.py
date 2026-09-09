@@ -14,9 +14,9 @@ TABLES = {
 
 def test_patch_044_parentage_is_preserved_under_the_current_patch_051_head():
     script = ScriptDirectory.from_config(alembic_config)
-    assert script.get_heads() == ["e05100000006"]
+    assert script.get_heads() == ["e05200000002"]
     assert script.get_revision("e04400000001").down_revision == "e04300000001"
-    assert TEST_DATABASE_REVISION == "e05100000006"
+    assert TEST_DATABASE_REVISION == "e05200000002"
 
 
 def test_project_foundation_schema_matrix_and_no_legacy_backfill():

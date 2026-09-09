@@ -21,6 +21,7 @@ class DeliverableActor(DeliverableSchema):
     model_config = ConfigDict(extra="forbid", frozen=True)
     actor_id: int = Field(gt=0)
     organization_id: UUID
+    auth_version: int = Field(default=1, ge=1)
 
 
 class DeliverableFields(DeliverableSchema):
@@ -139,6 +140,9 @@ class DeliverableDTO(DeliverableSchema):
     id: UUID; project_id: int; workspace_id: int | None; code: str; title: str; discipline: str; deliverable_type: str
     purpose: str | None; external_authority: ExternalAuthoringAuthority; responsible_user_id: int | None; target_date: date | None
     standing: DeliverableStanding; version: int; activity_id: UUID | None; milestone_id: UUID | None; current_revision: DeliverableRevisionDTO
+    origin_package_key: str | None = None
+    origin_project_configuration_revision: int | None = None
+    origin_declaration_id: str | None = None
 
 
 class DeliverableListResponse(DeliverableSchema):

@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Index
+from sqlalchemy import BigInteger, CheckConstraint, Column, DateTime, ForeignKey, ForeignKeyConstraint, Index
 from sqlalchemy import Integer, JSON, String, text
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import validates
@@ -111,6 +111,19 @@ class EngineeringRelationship(Base):
             "updated_at >= created_at",
             name="ck_engineering_relationships_timestamp_order",
         ),
+        CheckConstraint(
+            "(origin_package_key IS NULL AND origin_project_configuration_revision IS NULL "
+            "AND origin_declaration_id IS NULL) OR "
+            "(origin_package_key IS NOT NULL AND origin_project_configuration_revision IS NOT NULL "
+            "AND origin_declaration_id IS NOT NULL)",
+            name="ck_engineering_relationships_origin_all_or_none",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "origin_project_configuration_revision", "origin_package_key"],
+            ["project_package_configuration_selections.project_id", "project_package_configuration_selections.configuration_revision", "project_package_configuration_selections.package_key"],
+            name="fk_engineering_relationships_origin_selection",
+            ondelete="RESTRICT",
+        ),
         Index(
             "ix_engineering_relationships_source_scope",
             "organization_id", "project_id", "workspace_id", "source_object_id",
@@ -192,6 +205,9 @@ class EngineeringRelationship(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(),
         onupdate=func.now(),
     )
+    origin_package_key = Column(String(64), nullable=True)
+    origin_project_configuration_revision = Column(BigInteger, nullable=True)
+    origin_declaration_id = Column(String(128), nullable=True)
 
     def __init__(self, **values):
         for key in (

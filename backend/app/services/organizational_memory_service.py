@@ -46,9 +46,11 @@ from app.models.organizational_memory_command import (
     admission_material_from_snapshot, canonical_digest,
 )
 from app.models.technical_report_command import (
-    CaptureHistoricalBasisV1, EvidenceHistoricalBasisV1,
-    EngineeringObjectHistoricalBasisV1,
+    CaptureHistoricalBasisV1, CaptureHistoricalBasisV2,
+    EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2,
+    EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2,
     EngineeringRelationshipHistoricalBasisV1,
+    EngineeringRelationshipHistoricalBasisV2,
 )
 from app.repositories.organizational_memory_unit_of_work import MemoryAuthorizationDenied
 
@@ -613,10 +615,10 @@ class OrganizationalMemoryService:
         items = []
         for entry in snapshot.provenance:
             basis = entry.locator; common = (entry.entry_id, entry.ordinal)
-            if isinstance(basis, CaptureHistoricalBasisV1): item = CaptureProvenanceAuthorization(*common, basis.capture_id, basis.source_version, basis.organization_id, basis.project_id, basis.workspace_id, basis.engineering_object_id)
-            elif isinstance(basis, EvidenceHistoricalBasisV1): item = EvidenceProvenanceAuthorization(*common, basis.evidence_id, basis.source_version, basis.organization_id, basis.project_id, basis.workspace_id)
-            elif isinstance(basis, EngineeringObjectHistoricalBasisV1): item = EngineeringObjectProvenanceAuthorization(*common, basis.engineering_object_id, basis.source_version, basis.organization_id, basis.project_id, basis.workspace_id)
-            elif isinstance(basis, EngineeringRelationshipHistoricalBasisV1): item = EngineeringRelationshipProvenanceAuthorization(*common, basis.engineering_relationship_id, basis.source_version, basis.organization_id, basis.project_id, basis.workspace_id, basis.source_object_id, basis.target_object_id)
+            if isinstance(basis, (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2)): item = CaptureProvenanceAuthorization(*common, basis.capture_id, basis.source_version, basis.organization_id, basis.project_id, basis.workspace_id, basis.engineering_object_id)
+            elif isinstance(basis, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)): item = EvidenceProvenanceAuthorization(*common, basis.evidence_id, basis.source_version, basis.organization_id, basis.project_id, basis.workspace_id)
+            elif isinstance(basis, (EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2)): item = EngineeringObjectProvenanceAuthorization(*common, basis.engineering_object_id, basis.source_version, basis.organization_id, basis.project_id, basis.workspace_id)
+            elif isinstance(basis, (EngineeringRelationshipHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV2)): item = EngineeringRelationshipProvenanceAuthorization(*common, basis.engineering_relationship_id, basis.source_version, basis.organization_id, basis.project_id, basis.workspace_id, basis.source_object_id, basis.target_object_id)
             else: raise OrganizationalMemoryValidationError("unsupported provenance")
             items.append(item)
         provenance_operation = (

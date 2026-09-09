@@ -61,6 +61,9 @@ class GraphNodeProjection(EngineeringKnowledgeGraphDTO):
     steward_id: int
     created_at: datetime
     updated_at: datetime
+    origin_package_key: str | None = None
+    origin_project_configuration_revision: int | None = None
+    origin_declaration_id: str | None = None
 
 class GraphNodeSuccess(EngineeringKnowledgeGraphDTO):
     """Successful one-node projection."""

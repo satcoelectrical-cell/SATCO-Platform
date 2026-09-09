@@ -835,6 +835,7 @@ class EngineeringContextService:
                 "subject_project_id": None,
                 "subject_workspace_id": None,
                 "discipline": None,
+                "subject_engineering_object_id": None,
             }
             if kind == ContextSubjectKind.PROJECT:
                 subject_id = subject.get("project_id")
@@ -856,7 +857,7 @@ class EngineeringContextService:
                         "Workspace subject must match Context scope"
                     )
                 values["subject_workspace_id"] = referenced.id
-            else:
+            elif kind == ContextSubjectKind.DISCIPLINE:
                 discipline = self._enum(
                     Discipline,
                     subject.get("discipline"),
@@ -870,6 +871,24 @@ class EngineeringContextService:
                         "Discipline subject must match Workspace"
                     )
                 values["discipline"] = discipline.value
+            else:
+                from app.models.engineering_object import EngineeringObject
+
+                object_id = subject.get("engineering_object_id")
+                referenced = self.db.query(EngineeringObject).filter_by(
+                    id=object_id,
+                    organization_id=project.organization_id,
+                    project_id=project.id,
+                ).one_or_none()
+                if (
+                    referenced is None
+                    or workspace is None
+                    or referenced.workspace_id != workspace.id
+                ):
+                    raise InvalidContext(
+                        "Engineering Object subject must match Context Project and Workspace"
+                    )
+                values["subject_engineering_object_id"] = referenced.id
             identity = tuple(values.values())
             if identity in identities:
                 raise InvalidContext(
@@ -1102,6 +1121,7 @@ class EngineeringContextService:
                     "project_id": subject.subject_project_id,
                     "workspace_id": subject.subject_workspace_id,
                     "discipline": subject.discipline,
+                    "engineering_object_id": subject.subject_engineering_object_id,
                 }
                 for subject in context.subject_references
             ],

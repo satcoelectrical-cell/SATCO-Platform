@@ -28,6 +28,16 @@ def test_exact_discipline_package_route_manifest_is_registered():
         "/projects/{project_id}/discipline-package-configuration/preflight": {"post"},
         "/projects/{project_id}/effective-discipline-packages": {"get"},
         "/workspaces/{workspace_id}/package-applicability": {"get"},
+        "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/operations/objects": {"post"},
+        "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/operations/relationships": {"post"},
+        "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/operations/captures": {"post"},
+        "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/operations/deliverables": {"post"},
+        "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/rule-evaluations": {"post"},
+        "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/context-bindings": {"post"},
+        "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/evidence-bindings": {"post"},
+        "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/context-evaluation": {"get"},
+        "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/deliverables/{deliverable_id}/revisions/{revision_id}/readiness": {"get"},
+        "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/deliverables/{deliverable_id}/revisions/{revision_id}/package-transition": {"post"},
     }
     assert {path: {method for method in value if method in {"get", "put", "post", "delete"}}
             for path, value in paths.items() if "discipline-package" in path or "discipline-packages" in path or "package-applicability" in path} == expected

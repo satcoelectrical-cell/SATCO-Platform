@@ -73,6 +73,7 @@ def assemble_registry(
             manifest.core_contract_version,
             adapter_by_identity,
         )
+        _validate_release_conformance(manifest, descriptors)
         _validate_dependencies(descriptors, descriptor_by_identity)
         _validate_profiles(manifest.profiles, descriptor_by_identity)
         _validate_resource_bounds(manifest, descriptors)
@@ -135,6 +136,49 @@ def _validate_adapters(adapters: tuple[StaticDisciplinePackageAdapter, ...]) -> 
             raise RegistryAssemblyError(DisciplinePackageReasonCode.DUPLICATE_ADAPTER)
         table[identity] = adapter
     return table
+
+
+def _validate_release_conformance(
+    manifest: RegistryReleaseManifestV1,
+    descriptors: tuple[DisciplinePackageDescriptorV1, ...],
+) -> None:
+    """Bind PATCH-052 descriptor declarations to expected-result digests."""
+
+    if manifest.release_id != "patch-052.eic-v1":
+        return
+    from app.discipline_packages.conformance_manifest import (
+        CONFORMANCE_VECTORS_V1,
+        expected_result_digest,
+        validate_conformance_manifest,
+    )
+
+    validate_conformance_manifest()
+    expected = {
+        vector.vector_id: (
+            vector.subject_id,
+            expected_result_digest(vector),
+            vector.package_selection,
+        )
+        for vector in CONFORMANCE_VECTORS_V1
+        if vector.subject_kind == "package_declaration"
+    }
+    observed_ids: set[str] = set()
+    for descriptor in descriptors:
+        identity = (descriptor.package_key, descriptor.package_version)
+        declarations = descriptor.contributions.conformance_evidence
+        for declaration in declarations:
+            wanted = expected.get(declaration.vector_id)
+            if wanted is None or (
+                declaration.id,
+                declaration.expected_result_digest,
+                (identity,),
+            ) != wanted:
+                raise RegistryAssemblyError(
+                    DisciplinePackageReasonCode.INVALID_DESCRIPTOR
+                )
+            observed_ids.add(declaration.vector_id)
+    if observed_ids != set(expected):
+        raise RegistryAssemblyError(DisciplinePackageReasonCode.INVALID_DESCRIPTOR)
 
 
 def _ordered_registrations(
@@ -277,7 +321,11 @@ def _contribution_collision_sets(descriptor: DisciplinePackageDescriptorV1):
         ("context_kind", contributions.context_contributions, lambda item: item.context_kind_id),
         ("rule_hook", contributions.deterministic_rule_hooks, lambda item: item.hook_id),
         ("interface_type", contributions.cross_discipline_interfaces, lambda item: item.interface_type_id),
-        ("frontend_key", contributions.frontend_metadata.route_keys, lambda item: item),
-        ("frontend_key", contributions.frontend_metadata.navigation_keys, lambda item: item),
-        ("frontend_key", contributions.frontend_metadata.component_keys, lambda item: item),
+        # Route, navigation and component values are independently resolved
+        # namespaces.  A single reviewed key may deliberately identify all
+        # three facets of one descriptor; collisions remain forbidden within
+        # each facet across descriptors.
+        ("frontend_route", contributions.frontend_metadata.route_keys, lambda item: item),
+        ("frontend_navigation", contributions.frontend_metadata.navigation_keys, lambda item: item),
+        ("frontend_component", contributions.frontend_metadata.component_keys, lambda item: item),
     )
