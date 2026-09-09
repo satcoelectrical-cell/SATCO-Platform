@@ -282,3 +282,29 @@ Alembic source head: e05100000006
 PATCH-052 Implementation Readiness Review is PASS / READY FOR SEPARATELY
 GOVERNED IMPLEMENTATION. Implementation remains not authorized pending a
 separate future gate.
+
+## Controlling delivery and closure status — 2026-09-09
+
+This append-only section supersedes earlier status fields for current PATCH
+state without rewriting their chronology.
+
+- Batches 1–5: PASS / ACCEPTED / COMPLETE.
+- Whole-PATCH final independent review: PASS / ACCEPTED / COMPLETE.
+- QG-11: PASS / ACCEPTED.
+- QG-12: PASS / ACCEPTED under separate Human delivery authority.
+- Exact cumulative delivery scope: 130 paths, verified against the staged set.
+- Delivery commit:
+  `10f36383d7ad9d9cba3c971039af467f33f6046c`.
+- Branch/upstream:
+  `patch-022.3a-development-infrastructure` /
+  `origin/patch-022.3a-development-infrastructure`.
+- Push and direct remote verification: PASS; divergence `0 0`.
+- Sole Alembic head: `e05200000002`; M1/M2 only; no M3.
+- Remaining observations: `B5-052-OBS-01` and `B5-052-OBS-02`, OPEN /
+  NON-BLOCKING.
+- Unrelated dirty work: 125 paths preserved locally and excluded.
+- Deployment and production/customer database mutation: none.
+- PATCH-053: NOT STARTED / NOT AUTHORIZED.
+
+PATCH-052:
+DONE / CLOSED

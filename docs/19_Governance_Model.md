@@ -694,3 +694,24 @@ SATCO governs before it implements.
 Every implementation must be traceable upward to an approved PATCH, experience
 decision where applicable, architectural decision where applicable, Product
 Bible principle, and constitutional purpose.
+
+### Controlling PATCH-052 Delivery Closure — 2026-09-09
+
+Under separate Human QG-12 authority, PATCH-052 — Electrical,
+Instrumentation, and Control & Automation Discipline Packages V1 completed
+governed delivery at commit
+`10f36383d7ad9d9cba3c971039af467f33f6046c` on
+`patch-022.3a-development-infrastructure`. The exact 130-path cumulative scope
+was committed and pushed normally; local, upstream and direct remote SHA
+verification matched with divergence `0 0`. The sole Alembic head is
+`e05200000002`; only M1/M2 exist. QG-11 and QG-12 are PASS / ACCEPTED.
+`B5-052-OBS-01` and `B5-052-OBS-02` remain non-blocking. No deployment,
+production/customer database mutation, history rewrite, or PATCH-053 work
+occurred.
+
+This controlling append-only status supersedes earlier PATCH-052 registry
+snapshots for current state:
+
+`PATCH-052: DONE / CLOSED`
+
+`PATCH-053: NOT STARTED / NOT AUTHORIZED`
