@@ -33,3 +33,22 @@ __all__ = [
     "TechnicalReportRepository",
     "TechnicalReportUnitOfWork",
 ]
+from .cross_discipline_intelligence import (
+    AuthorizationChanged,
+    CrossDisciplineAuthorizer,
+    CrossDisciplineClock,
+    CrossDisciplineRepositoryPort,
+    CrossDisciplineSourceReader,
+    CrossDisciplineUnitOfWorkPort,
+    ProtectedResourceError,
+)
+
+__all__ += [
+    "AuthorizationChanged",
+    "CrossDisciplineAuthorizer",
+    "CrossDisciplineClock",
+    "CrossDisciplineRepositoryPort",
+    "CrossDisciplineSourceReader",
+    "CrossDisciplineUnitOfWorkPort",
+    "ProtectedResourceError",
+]

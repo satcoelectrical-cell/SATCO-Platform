@@ -1,0 +1,1 @@
+{"schema_version":1,"vector_id":"patch053.k23.commitment_race","action":"commitment_race","expected":"retry then exact state/indeterminate"}

@@ -1,0 +1,1 @@
+{"schema_version":1,"vector_id":"patch053.k24.idempotent_replay","action":"idempotent_replay","expected":"one aggregate; same ref after fresh auth"}

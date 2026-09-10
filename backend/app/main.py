@@ -45,6 +45,7 @@ from app.api.v1.routers.engineering_deliverables import router as engineering_de
 from app.api.v1.routers.project_controls import router as project_control_router
 from app.api.v1.routers.project_context import router as project_context_router
 from app.api.v1.routers.project_completeness import router as project_completeness_router
+from app.api.v1.routers.cross_discipline_intelligence import router as cross_discipline_router
 from app.api.v1.routers.discipline_packages import router as discipline_package_router
 from app.core.config import settings
 from app.api.v1.routers.discipline_package_operations import router as discipline_package_operation_router
@@ -138,6 +139,7 @@ app.include_router(engineering_deliverable_router)
 app.include_router(project_control_router)
 app.include_router(project_context_router)
 app.include_router(project_completeness_router)
+app.include_router(cross_discipline_router)
 app.include_router(discipline_package_router)
 
 

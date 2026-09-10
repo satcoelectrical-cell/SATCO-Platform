@@ -1,0 +1,1 @@
+export function CrossDisciplineDispositionPanel({assessmentId}:{assessmentId:string|null}) { return <section className="cross-discipline-card" aria-label="Cross-discipline dispositions"><h3>Human disposition</h3><p>{assessmentId?"Server-authorized actions append immutable history.":"Select an assessment to view allowed actions."}</p></section>; }

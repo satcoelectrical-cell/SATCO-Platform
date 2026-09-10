@@ -1,0 +1,1 @@
+{"schema_version":1,"vector_id":"patch053.k28.runtime_budget","action":"runtime_budget","expected":"exact limit; atomic rollback/read-only replay"}

@@ -163,3 +163,13 @@ export interface ProjectControlHistoryEntry { id:string; aggregate_version:numbe
 export interface ProjectControlHistory { outcome:"success"; kind:ProjectControlKind; control_id:string; items:ProjectControlHistoryEntry[]; visible_count:number }
 export interface ProjectControlMutation { outcome:"success"; id:string; version:number }
 export interface ChangeImpactMutation { outcome:"success"; id:string; change_id:string; standing:"potential"|"confirmed" }
+export type XDIState = "loading"|"ready"|"empty"|"indeterminate"|"unavailable"|"protected_not_found"|"conflict";
+export interface XDIReadiness { state:"ready"|"not_ready"|"unavailable"|"protected_not_found";reason_codes:string[];definition_digest?:string }
+export interface XDIScope { workspace_ids:number[];combination_id:string;interface_definition_ids:string[];endpoint_selectors:string[];purpose:"interface_assessment"|"current_handoff_gate"|"explicit_change_impact";project_change_id?:number;project_change_version?:number }
+export interface XDIEligibility { state:"eligible"|"ineligible"|"indeterminate"|"unavailable"|"protected_not_found";reason_codes:string[];definition_digest?:string }
+export interface XDIAssessment { assessment_id:string;aggregate_version:number;status:"completed_no_findings"|"completed_with_findings"|"indeterminate"|"unavailable";reason_code:string|null;result_digest:string;completed_at:string }
+export interface XDIFinding { finding_id:string;assessment_id:string;ordinal:number;category:string;subcode:string;severity:string;fingerprint:string;recurrence_key:string;current_state:string;allowed_actions:string[];provenance:Record<string,unknown>;advisory:true }
+export interface XDIPage<T> { items:T[];next_cursor:string|null }
+export interface XDIDisposition { disposition_id:string;sequence:number;action:string;resulting_view_state:string;actor_id:number;rationale:string;occurred_at:string;view_version:number }
+export interface XDILineage { lineage_id:string;kind:"reassessment_of"|"supersedes";predecessor_id:string;successor_id:string;occurred_at:string }
+export type XDIClosedResult = {outcome:"success"|"protected_not_found"|"invalid_request"|"version_conflict"|"idempotency_conflict"|"indeterminate"|"unavailable";reason_code?:string};

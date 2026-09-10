@@ -1,0 +1,1 @@
+{"schema_version":1,"vector_id":"patch053.k22.configuration_race","action":"configuration_race","expected":"retry then conflict/indeterminate; never mixed"}

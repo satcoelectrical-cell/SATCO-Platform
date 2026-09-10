@@ -1,0 +1,1 @@
+{"schema_version":1,"vector_id":"patch053.k18.database_retry","action":"database_retry","expected":"fresh UoW/auth; one aggregate within 3"}

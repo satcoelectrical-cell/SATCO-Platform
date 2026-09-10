@@ -1,0 +1,2 @@
+import type { XDIAssessment } from "../../api/types";
+export function CrossDisciplineAssessmentHistory({assessments}:{assessments:XDIAssessment[]}) { return <section className="cross-discipline-card" aria-label="Cross-discipline assessment history"><h3>Assessment history</h3><p>Historical verification uses retained snapshots, never current-source substitution.</p>{assessments.map(item=><code className="cross-discipline-machine-id" key={item.assessment_id}>{item.assessment_id}</code>)}</section>; }

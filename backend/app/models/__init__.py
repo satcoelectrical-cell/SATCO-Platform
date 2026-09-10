@@ -54,3 +54,11 @@ from .package_input_binding import (
     EngineeringContextPackageInputBinding,
     EvidencePackageInputBinding,
 )
+from .cross_discipline_intelligence import (
+    CrossDisciplineAssessment, CrossDisciplineAssessmentWorkspace,
+    CrossDisciplineSnapshot, CrossDisciplineSourceProjection,
+    CrossDisciplineCompletenessAttestation, CrossDisciplineOccurrence,
+    CrossDisciplineFinding, CrossDisciplineDisposition,
+    CrossDisciplineFindingCurrent, CrossDisciplineLineage,
+    CrossDisciplineIdempotency, CrossDisciplineOutbox,
+)

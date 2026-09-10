@@ -1,0 +1,1 @@
+export function CrossDisciplineFindingQueue({assessmentId}:{assessmentId:string|null}) { return <section className="cross-discipline-card" aria-label="Cross-discipline finding queue"><h3>Finding queue</h3><p>{assessmentId?"Select the retained, server-ordered Finding page.":"No authorized Findings."}</p></section>; }

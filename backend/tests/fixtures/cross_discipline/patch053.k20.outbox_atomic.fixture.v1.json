@@ -1,0 +1,1 @@
+{"schema_version":1,"vector_id":"patch053.k20.outbox_atomic","action":"outbox_atomic","expected":"no partial aggregate/idempotency/Audit/outbox"}

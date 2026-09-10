@@ -1,0 +1,1 @@
+export function CrossDisciplineProvenancePanel({assessmentId}:{assessmentId:string|null}) { return <section className="cross-discipline-card" aria-label="Cross-discipline provenance"><h3>Provenance</h3><p>{assessmentId?"Retained authorized identities only.":"No authorized provenance selected."}</p></section>; }

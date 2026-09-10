@@ -1,0 +1,2 @@
+import type { XDIFinding } from "../../api/types";
+export function CrossDisciplineFindingDetail({finding}:{finding:XDIFinding|null}) { return <section className="cross-discipline-card" aria-label="Cross-discipline finding detail"><h3>Finding detail</h3><strong className="cross-discipline-advisory">Advisory</strong><p>{finding?finding.subcode:"Select an authorized immutable Finding."}</p>{finding?<code className="cross-discipline-machine-id">{finding.fingerprint}</code>:null}</section>; }

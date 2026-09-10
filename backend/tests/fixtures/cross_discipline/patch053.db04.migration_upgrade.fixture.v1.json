@@ -1,0 +1,1 @@
+{"schema_version":1,"vector_id":"patch053.db04.migration_upgrade","action":"migration_upgrade","expected":"additive; old rows unchanged; no backfill"}
