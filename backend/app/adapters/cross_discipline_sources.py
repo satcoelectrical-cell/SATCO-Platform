@@ -14,7 +14,7 @@ from app.discipline_packages.cross_discipline.canonical import digest
 from app.discipline_packages.cross_discipline.contracts import (
     BATCH_TWO_PROJECTION_IDS, parse_batch_two_selector,
 )
-from app.discipline_packages.cross_discipline.definitions.eic_v1 import BATCH_FOUR_PROJECTION_IDS, BATCH_THREE_PROJECTION_IDS
+from app.discipline_packages.cross_discipline.definitions.eic_v1 import BATCH_FIVE_PROJECTION_IDS, BATCH_FOUR_PROJECTION_IDS, BATCH_THREE_PROJECTION_IDS
 from app.models.engineering_workspace import EngineeringWorkspace, EngineeringWorkspaceMember
 from app.models.project import Project
 from app.ports.cross_discipline_intelligence import ProtectedResourceError
@@ -282,3 +282,24 @@ def validate_batch_four_selectors(*, authorized: AuthorizedScope, selectors: tup
     if tuple(parsed) != ordered or len({(kind, identifier, role) for _, kind, identifier, role in parsed}) != len(parsed):
         raise ValueError("invalid_request")
     return ordered
+
+
+@dataclass(frozen=True, slots=True)
+class BatchFiveChangeProjection(BatchThreeProjection):
+    """Authorized, immutable Change seed; it contains no inferred topology."""
+
+
+def build_batch_five_change_projection(*, authorized: AuthorizedScope, owner_id: str,
+                                       owner_revision: str, values: tuple[tuple[str, Any], ...],
+                                       complete: bool, observed_at: datetime) -> BatchFiveChangeProjection:
+    if "xdi.proj.change_seed.v1" not in BATCH_FIVE_PROJECTION_IDS:
+        raise ValueError("artifact_unavailable")
+    if not authorized.workspace_ids or not owner_id or not owner_revision or observed_at.tzinfo is None:
+        raise ValueError("invalid_request")
+    if tuple(sorted(values, key=lambda item: item[0])) != values or len({key for key, _ in values}) != len(values):
+        raise ValueError("invalid_request")
+    body = {"projection_id": "xdi.proj.change_seed.v1", "owner_kind": "project_change",
+        "owner_id": owner_id, "owner_revision": owner_revision, "values": values,
+        "context_binding_ids": (), "evidence_binding_ids": (), "complete": complete,
+        "authorization_scope_digest": authorized.authorization_scope_digest, "observed_at": observed_at}
+    return BatchFiveChangeProjection(**body, projection_digest=digest(body, "satco:xdi-projection:v1"))

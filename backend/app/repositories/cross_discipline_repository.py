@@ -125,6 +125,14 @@ class CrossDisciplineRepository:
         )
         return self.session.scalar(stmt.with_for_update() if lock else stmt)
 
+    def handoff_by_key(self, *, handoff_key, organization_id, project_id, lock=False):
+        stmt = select(CrossDisciplineIdempotency).where(
+            CrossDisciplineIdempotency.handoff_key == handoff_key,
+            CrossDisciplineIdempotency.organization_id == organization_id,
+            CrossDisciplineIdempotency.project_id == project_id,
+        )
+        return self.session.scalar(stmt.with_for_update() if lock else stmt)
+
     def increment_root_version(self, *, assessment_id, organization_id, project_id, expected_version):
         result = self.session.execute(update(CrossDisciplineAssessment).where(
             CrossDisciplineAssessment.id == assessment_id,

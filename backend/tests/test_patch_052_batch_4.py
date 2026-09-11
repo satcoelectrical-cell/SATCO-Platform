@@ -75,6 +75,7 @@ from app.services.electrical_package_service import (
 )
 from app.services.engineering_deliverable_service import EngineeringDeliverableService
 from app.services.package_declaration_binding_service import PackageDeclarationBindingService
+from conftest import TEST_DATABASE_REVISION
 
 
 ORG_ID = UUID("02810000-0000-4000-8000-000000000001")
@@ -639,7 +640,7 @@ def test_control_authorization_rebind_historical_and_readiness_fail_closed(
         db_session.connection(),
         frontend_component_keys=frozenset({"workspace.control_automation.v1"}),
     )
-    assert snapshot.ready and snapshot.migration_revision == "e05200000002"
+    assert snapshot.ready and snapshot.migration_revision == TEST_DATABASE_REVISION
     assert (snapshot.object_count, snapshot.relationship_count,
             snapshot.input_count, snapshot.deliverable_count,
             snapshot.evidence_count, snapshot.rule_count) == (7, 13, 9, 5, 4, 5)

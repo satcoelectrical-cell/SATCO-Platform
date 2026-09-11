@@ -17,6 +17,7 @@ from app.discipline_packages.operational import (
     OperationalContractError,
     execute_electrical_rule,
 )
+from app.discipline_packages import readiness_052
 from app.discipline_packages.readiness_052 import electrical_operational_readiness_snapshot
 from app.exceptions.engineering_identifier import EngineeringIdentifierConflict
 from app.models.audit_log import AuditLog
@@ -201,7 +202,8 @@ def test_electrical_catalogs_and_rules_are_exact_and_fail_closed():
 
 
 def test_shared_schema_has_one_head_and_required_guards(db_session):
-    assert db_session.execute(text("select version_num from alembic_version")).scalar_one() == "e05200000002"
+    observed_revision = db_session.execute(text("select version_num from alembic_version")).scalar_one()
+    assert observed_revision == "e05300000002"
     schema = inspect(db_session.connection())
     assert {
         "engineering_identifiers", "engineering_identifier_idempotency",
@@ -228,10 +230,42 @@ def test_shared_schema_has_one_head_and_required_guards(db_session):
         db_session.connection(),
         frontend_component_keys=frozenset({"workspace.electrical.v1"}),
     )
-    assert readiness.ready is True and readiness.migration_revision == "e05200000002"
+    assert readiness.ready is True and readiness.migration_revision == observed_revision
+    assert readiness_052._patch_052_revision_is_in_lineage("e05200000002") is True
     assert electrical_operational_readiness_snapshot(
         db_session.connection(), frontend_component_keys=frozenset(),
     ).ready is False
+
+
+@pytest.mark.parametrize(
+    ("revision", "expected"),
+    (
+        ("e05200000002", True),
+        ("e05300000001", True),
+        ("e05300000002", True),
+        ("e05200000001", False),
+        ("unknown-revision", False),
+    ),
+)
+def test_patch_052_readiness_revision_lineage_is_closed(revision, expected):
+    assert readiness_052._patch_052_revision_is_in_lineage(revision) is expected
+
+
+def test_patch_052_readiness_rejects_a_divergent_revision(monkeypatch):
+    class _Revision:
+        revision = "divergent-head"
+
+    class _DivergentScripts:
+        def walk_revisions(self, *, base, head):
+            assert (base, head) == ("base", "divergent-head")
+            return (_Revision(),)
+
+    monkeypatch.setattr(
+        readiness_052.ScriptDirectory,
+        "from_config",
+        lambda config: _DivergentScripts(),
+    )
+    assert readiness_052._patch_052_revision_is_in_lineage("divergent-head") is False
 
 
 def test_package_object_and_required_primary_identifier_are_atomic(

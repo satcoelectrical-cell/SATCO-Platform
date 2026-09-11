@@ -23,6 +23,9 @@ from ..definitions.eic_v1 import (
     BATCH_FOUR_APPLICABILITY_ID, BATCH_FOUR_HANDOFF_APPLICABILITY_ID,
     BATCH_FOUR_INTERFACE_ID, BATCH_FOUR_PATH_ID, BATCH_FOUR_RULE_IDS,
     BATCH_FOUR_VERSION, batch_four_rule_definition, load_batch_four_definition_set,
+    BATCH_FIVE_APPLICABILITY_ID, BATCH_FIVE_INTERFACE_ID, BATCH_FIVE_PATH_ID,
+    BATCH_FIVE_RULE_IDS, BATCH_FIVE_VERSION, batch_five_rule_definition,
+    load_batch_five_definition_set,
 )
 
 
@@ -444,4 +447,94 @@ BATCH_FOUR_RULE_HANDLERS = MappingProxyType({
     BATCH_FOUR_RULE_IDS[1]: cabinet_power_path,
     BATCH_FOUR_RULE_IDS[2]: source_freshness,
     BATCH_FOUR_RULE_IDS[3]: commitment_dispute,
+})
+
+
+def _batch_five_identity(values: Mapping) -> FindingIdentityInputV1:
+    identity = values.get("identity")
+    if not isinstance(identity, FindingIdentityInputV1):
+        raise ValueError("invalid_request")
+    declaration = batch_five_rule_definition(BATCH_FIVE_RULE_IDS[0])
+    interface = load_batch_five_definition_set().interface_definitions[-1]
+    if (
+        identity.rule_id != BATCH_FIVE_RULE_IDS[0]
+        or identity.rule_version != BATCH_FIVE_VERSION
+        or identity.rule_digest != declaration.digest
+        or identity.interface_definition_id != BATCH_FIVE_INTERFACE_ID
+        or identity.interface_version != BATCH_FIVE_VERSION
+        or identity.interface_digest != interface.digest
+        or identity.category != "potential_change_impact"
+        or identity.subcode != "eic.explicit_change_path"
+    ):
+        raise ValueError("invalid_request")
+    return identity
+
+
+def _batch_five_uuid(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("invalid_request")
+    try:
+        if str(UUID(value)) != value:
+            raise ValueError("invalid_request")
+    except ValueError as error:
+        raise ValueError("invalid_request") from error
+    return value
+
+
+def explicit_change_path(_request, values):
+    """Materialize an advisory Finding only for an explicitly supplied path.
+
+    Missing or protected topology is indeterminate; no inferred hop, tag or
+    relationship discovery is attempted here.
+    """
+    if not isinstance(values, Mapping):
+        raise ValueError("invalid_request")
+    if values.get("applicability_id") != BATCH_FIVE_APPLICABILITY_ID:
+        raise ValueError("invalid_request")
+    if values.get("complete") is not True:
+        raise RuleIndeterminate("source_incomplete")
+    if values.get("path_id") != BATCH_FIVE_PATH_ID:
+        raise ValueError("invalid_request")
+    change_id = _batch_five_uuid(values.get("change_id"))
+    target_id = _batch_five_uuid(values.get("target_id"))
+    root_id = _batch_five_uuid(values.get("root_object_id"))
+    change_version = values.get("change_version")
+    if isinstance(change_version, bool) or not isinstance(change_version, int) or change_version < 1:
+        raise ValueError("invalid_request")
+    if values.get("change_present") is not True:
+        return ()
+    edges = values.get("edges")
+    if not isinstance(edges, tuple) or not all(isinstance(edge, ExplicitRelationshipV1) for edge in edges):
+        raise RuleIndeterminate("source_ambiguous")
+    if not edges:
+        return ()
+    if len(edges) > min(LIMITS["edges"], 4):
+        raise RuleIndeterminate("resource_limit_exceeded")
+    if len({edge.relationship_id for edge in edges}) != len(edges):
+        raise RuleIndeterminate("source_ambiguous")
+    allowed = {
+        ("instrumentation", "transmits_to"), ("physical", "connected_through"),
+        ("physical", "terminated_at"), ("electrical", "powered_by"),
+        ("control", "commands"), ("control", "provides_feedback_to"),
+        ("control", "sends_signal_to"),
+    }
+    current, visited = root_id, {root_id}
+    for edge in edges:
+        _canonical_edge(edge)
+        if (edge.relationship_family, edge.relationship_type) not in allowed:
+            raise RuleIndeterminate("source_ambiguous")
+        if edge.source_object_id != current or edge.target_object_id in visited:
+            raise RuleIndeterminate("source_ambiguous")
+        visited.add(edge.target_object_id)
+        current = edge.target_object_id
+    if current != target_id:
+        return ()
+    identity = _batch_five_identity(values)
+    if identity.change != (change_id, change_version):
+        raise ValueError("invalid_request")
+    return ((identity, "major", "potential_change_impact"),)
+
+
+BATCH_FIVE_RULE_HANDLERS = MappingProxyType({
+    BATCH_FIVE_RULE_IDS[0]: explicit_change_path,
 })

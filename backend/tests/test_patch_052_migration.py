@@ -44,6 +44,34 @@ def _truncate_disposable_rows() -> None:
         connection.exec_driver_sql(f"TRUNCATE TABLE {quoted} CASCADE")
 
 
+def _truncate_current_disposable_rows() -> None:
+    table_names = sorted(
+        table_name
+        for table_name in inspect(owner_engine).get_table_names()
+        if table_name != "alembic_version"
+    )
+    if not table_names:
+        return
+    with owner_engine.begin() as connection:
+        quoted = ", ".join(f'"{name}"' for name in table_names)
+        connection.exec_driver_sql(f"TRUNCATE TABLE {quoted} CASCADE")
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _patch_052_historical_migration_boundary():
+    """Exercise PATCH-052 at its immutable boundary and restore the current head."""
+
+    if _revision() != PATCH_052_HEAD:
+        _truncate_current_disposable_rows()
+        command.downgrade(alembic_config, PATCH_052_HEAD)
+    _truncate_disposable_rows()
+    try:
+        yield
+    finally:
+        _truncate_disposable_rows()
+        command.upgrade(alembic_config, TEST_DATABASE_REVISION)
+
+
 def _seed_report_memory_scope() -> dict[str, object]:
     suffix = uuid4().hex[:10]
     organization_id = TEST_ORGANIZATION_ID
@@ -146,7 +174,7 @@ def _assert_patch_052_schema() -> None:
 
 
 def test_clean_base_to_patch_052_head_was_recovered() -> None:
-    assert TEST_DATABASE_REVISION == PATCH_052_HEAD
+    assert _revision() == PATCH_052_HEAD
     _truncate_disposable_rows()
     command.downgrade(alembic_config, "base")
     with owner_engine.connect() as connection:
@@ -277,6 +305,10 @@ def test_e051_upgrade_preserves_legacy_rows_and_safe_empty_downgrade_reupgrade()
     scope: dict[str, object] | None = None
     legacy_object_id = uuid4()
     try:
+        # Current ORM metadata includes nullable PATCH-053 provenance columns.
+        # Seed the retained legacy rows at the current schema, then traverse
+        # the existing historical downgrade path before testing PATCH-052.
+        command.upgrade(alembic_config, TEST_DATABASE_REVISION)
         scope = _seed_report_memory_scope()
         command.downgrade(alembic_config, PATCH_051_HEAD)
         assert _revision() == PATCH_051_HEAD

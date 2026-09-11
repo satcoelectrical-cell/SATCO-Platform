@@ -163,6 +163,20 @@ export interface ProjectControlHistoryEntry { id:string; aggregate_version:numbe
 export interface ProjectControlHistory { outcome:"success"; kind:ProjectControlKind; control_id:string; items:ProjectControlHistoryEntry[]; visible_count:number }
 export interface ProjectControlMutation { outcome:"success"; id:string; version:number }
 export interface ChangeImpactMutation { outcome:"success"; id:string; change_id:string; standing:"potential"|"confirmed" }
+
+export type GuidanceType = "engineering_observation" | "missing_engineering_consideration" | "potential_risk_consideration" | "explicit_conflict_to_verify" | "verification_point" | "clarification_requirement" | "suggested_next_check" | "alternative_consideration";
+export type GuidanceEvidenceSufficiency = "sufficient" | "partial" | "insufficient" | "indeterminate";
+export type GuidanceMaterialCategory = "instrumentation_measurement" | "electrical_power_or_interconnection" | "automation_and_control";
+export type GuidanceAiState = "not_requested" | "available" | "disabled" | "unavailable" | "timed_out" | "rejected";
+export interface GuidanceSafeEvidence { reference_kind:"visible_fact"|"visible_section_state"|"completeness_finding"; safe_key:string; predicate_code:string; observed_at:string; visible_label:string|null }
+export type GuidanceAiEnhancement = { state:"available"; enhanced_explanation:string; enhanced_clarification:string|null } | { state:"available"; enhanced_explanation:null; enhanced_clarification:string } | { state:Exclude<GuidanceAiState,"available">; enhanced_explanation:null; enhanced_clarification:null };
+export interface GuidanceItem { guidance_item_id:string; catalog_id:"engineering_guidance.v1"; catalog_version:1; catalog_digest:string; rule_id:string; rule_version:1; ordinal:number; guidance_type:GuidanceType; title:string; summary:string; explanation:string; engineering_rationale:string; evidence_sufficiency:GuidanceEvidenceSufficiency; evidence:GuidanceSafeEvidence[]; assumptions:string[]; limitations:string[]; verification_requirements:string[]; source_observation_started_at:string; source_observation_completed_at:string; generated_at:string; authority_class:"derived"; advisory:true; authoritative:false; ai_enhancement:GuidanceAiEnhancement }
+export interface GuidanceMaterialAttribute { key:string; label:string; status:"requires_engineering_determination" }
+export interface CandidateMaterialRequirement { candidate_id:string; category:GuidanceMaterialCategory; triggering_guidance_item_id:string; triggering_rule_id:string; engineering_rationale:string; evidence:GuidanceSafeEvidence[]; attributes_to_determine:GuidanceMaterialAttribute[]; assumptions:string[]; limitations:string[]; verification_requirements:string[]; evidence_sufficiency:GuidanceEvidenceSufficiency; quantity_status:"not_estimated"; generated_at:string; authority_class:"derived"; advisory:true; authoritative:false }
+export interface GuidanceObservation { catalog:{catalog_id:"engineering_guidance.v1";catalog_version:1;catalog_digest:string;rules:unknown[]}; context_observation_digest:string; status:"complete_within_bounds"|"partial"; source_observation_started_at:string; source_observation_completed_at:string; generated_at:string; items:GuidanceItem[]; no_guidance_warranted:boolean; candidate_material_requirements:CandidateMaterialRequirement[]; limitations:string[]; authority_class:"derived"; advisory:true; authoritative:false }
+export type EngineeringGuidanceResult = { kind:"success"; observation:GuidanceObservation } | { kind:"partial_success"; observation:GuidanceObservation } | { kind:"insufficient_context"|"protected_not_found"|"invalid_request"|"unavailable" };
+export type EngineeringGuidanceRequest = { workspace_id?:number|null; ai_enhancement:"not_requested"|"requested" };
+
 export type XDIState = "loading"|"ready"|"empty"|"indeterminate"|"unavailable"|"protected_not_found"|"conflict";
 export interface XDIReadiness { state:"ready"|"not_ready"|"unavailable"|"protected_not_found";reason_codes:string[];definition_digest?:string }
 export interface XDIScope { workspace_ids:number[];combination_id:string;interface_definition_ids:string[];endpoint_selectors:string[];purpose:"interface_assessment"|"current_handoff_gate"|"explicit_change_impact";project_change_id?:number;project_change_version?:number }
@@ -176,3 +190,6 @@ export interface XDIPage<T> { items:T[];next_cursor:string|null }
 export interface XDIDisposition { disposition_id:string;sequence:number;action:string;resulting_view_state:string;actor_id:number;rationale:string;occurred_at:string;view_version:number }
 export interface XDILineage { lineage_id:string;kind:"reassessment_of"|"supersedes";predecessor_id:string;successor_id:string;occurred_at:string }
 export type XDIClosedResult = {outcome:"success"|"protected_not_found"|"invalid_request"|"version_conflict"|"idempotency_conflict"|"indeterminate"|"unavailable";reason_code?:string};
+export interface XDIPotentialImpact { outcome:string; state:"pending"|"reconciled"|"handoff_link_pending"|null; impact_id?:string|null; handoff_key?:string|null; advisory:true }
+export interface XDIReportProjection { assessment_id:string;snapshot_digest:string;advisory:true }
+export interface XDIAIExplanation { outcome:string;summary?:string|null;draft_next_actions?:string[];advisory:true }

@@ -406,8 +406,26 @@ class EngineeringRelationshipHistoricalBasisV2:
         _origin(self.origin_package_key, self.origin_project_configuration_revision, self.origin_declaration_id)
 
 
-HistoricalBasis: TypeAlias = CaptureHistoricalBasisV1 | CaptureHistoricalBasisV2 | EvidenceHistoricalBasisV1 | EvidenceHistoricalBasisV2 | EngineeringObjectHistoricalBasisV1 | EngineeringObjectHistoricalBasisV2 | EngineeringRelationshipHistoricalBasisV1 | EngineeringRelationshipHistoricalBasisV2
-_HISTORICAL_TYPES = (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2, EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2, EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2, EngineeringRelationshipHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV2)
+@dataclass(frozen=True, slots=True)
+class CrossDisciplineAssessmentHistoricalBasisV1:
+    basis_schema_version: int; source_category: str; assessment_id: UUID; source_version: int
+    organization_id: UUID; project_id: int; workspace_id: int | None
+    status: str; snapshot_digest: str; definition_digest: str; result_digest: str; completed_at: datetime
+    def __post_init__(self) -> None:
+        if self.basis_schema_version != 1 or self.source_category != "cross_discipline_assessment":
+            raise TechnicalReportValidationError("invalid CrossDisciplineAssessment discriminator")
+        for name in ("assessment_id", "organization_id"): _uuid(getattr(self, name), name)
+        for name in ("source_version", "project_id"): _positive(getattr(self, name), name)
+        if self.workspace_id is not None: _positive(self.workspace_id, "workspace_id")
+        if self.status not in {"completed_no_findings", "completed_with_findings", "indeterminate", "unavailable"}:
+            raise TechnicalReportValidationError("assessment status is invalid")
+        for name in ("snapshot_digest", "definition_digest", "result_digest"):
+            object.__setattr__(self, name, _sha256(getattr(self, name), name))
+        _aware(self.completed_at, "completed_at")
+
+
+HistoricalBasis: TypeAlias = CaptureHistoricalBasisV1 | CaptureHistoricalBasisV2 | EvidenceHistoricalBasisV1 | EvidenceHistoricalBasisV2 | EngineeringObjectHistoricalBasisV1 | EngineeringObjectHistoricalBasisV2 | EngineeringRelationshipHistoricalBasisV1 | EngineeringRelationshipHistoricalBasisV2 | CrossDisciplineAssessmentHistoricalBasisV1
+_HISTORICAL_TYPES = (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2, EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2, EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2, EngineeringRelationshipHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV2, CrossDisciplineAssessmentHistoricalBasisV1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -492,7 +510,7 @@ class TechnicalReportProvenanceEntry:
         if self.owning_capability is not None:
             object.__setattr__(self, "owning_capability", TechnicalReportOwningCapability(self.owning_capability))
         object.__setattr__(self, "reliance_role", _nonempty(self.reliance_role, "reliance_role")); object.__setattr__(self, "origin_attribution", _nonempty(self.origin_attribution, "origin_attribution")); object.__setattr__(self, "limitations", tuple(_nonempty(item, "limitations") for item in self.limitations))
-        expected = {TechnicalReportSourceType.UNIVERSAL_CAPTURE: (TechnicalReportOwningCapability.UNIVERSAL_CAPTURE, (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2)), TechnicalReportSourceType.EVIDENCE: (TechnicalReportOwningCapability.EVIDENCE, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)), TechnicalReportSourceType.ENGINEERING_OBJECT: (TechnicalReportOwningCapability.ENGINEERING_OBJECT, (EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2)), TechnicalReportSourceType.ENGINEERING_RELATIONSHIP: (TechnicalReportOwningCapability.ENGINEERING_RELATIONSHIP, (EngineeringRelationshipHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV2))}
+        expected = {TechnicalReportSourceType.UNIVERSAL_CAPTURE: (TechnicalReportOwningCapability.UNIVERSAL_CAPTURE, (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2)), TechnicalReportSourceType.EVIDENCE: (TechnicalReportOwningCapability.EVIDENCE, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)), TechnicalReportSourceType.ENGINEERING_OBJECT: (TechnicalReportOwningCapability.ENGINEERING_OBJECT, (EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2)), TechnicalReportSourceType.ENGINEERING_RELATIONSHIP: (TechnicalReportOwningCapability.ENGINEERING_RELATIONSHIP, (EngineeringRelationshipHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV2)), TechnicalReportSourceType.CROSS_DISCIPLINE_ASSESSMENT: (TechnicalReportOwningCapability.CROSS_DISCIPLINE_ASSESSMENT, CrossDisciplineAssessmentHistoricalBasisV1)}
         if self.source_class is TechnicalReportSourceClass.CANONICAL_MATERIAL:
             if self.source_type not in expected: raise TechnicalReportHistoricalBasisIncomplete("canonical source type is invalid")
             owner, locator_type = expected[self.source_type]
@@ -597,6 +615,7 @@ _HISTORICAL_KEYS: dict[str, set[str]] = {
     "evidence": {field.name for field in fields(EvidenceHistoricalBasisV1)},
     "engineering_object": {field.name for field in fields(EngineeringObjectHistoricalBasisV1)},
     "engineering_relationship": {field.name for field in fields(EngineeringRelationshipHistoricalBasisV1)},
+    "cross_discipline_assessment": {field.name for field in fields(CrossDisciplineAssessmentHistoricalBasisV1)},
 }
 _CAPTURE_V2_KEYS = {field.name for field in fields(CaptureHistoricalBasisV2)}
 _OBJECT_V2_KEYS = {field.name for field in fields(EngineeringObjectHistoricalBasisV2)}
@@ -679,6 +698,13 @@ def historical_basis_from_payload(payload: object, source_type: str) -> Historic
                 }) for item in raw_identifiers)
                 return EngineeringObjectHistoricalBasisV2(**data)
             return EngineeringObjectHistoricalBasisV1(**data)
+        if source_type == "cross_discipline_assessment":
+            data.update(
+                assessment_id=_payload_uuid(data["assessment_id"], "assessment_id"),
+                organization_id=_payload_uuid(data["organization_id"], "organization_id"),
+                completed_at=_payload_datetime(data["completed_at"], "completed_at"),
+            )
+            return CrossDisciplineAssessmentHistoricalBasisV1(**data)
         data.update(
             engineering_relationship_id=_payload_uuid(data["engineering_relationship_id"], "engineering_relationship_id"),
             organization_id=_payload_uuid(data["organization_id"], "organization_id"),

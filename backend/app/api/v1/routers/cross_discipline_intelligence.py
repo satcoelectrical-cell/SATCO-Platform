@@ -17,7 +17,7 @@ from app.models.engineering_workspace import EngineeringWorkspace, EngineeringWo
 from app.models.project import Project
 from app.schemas.cross_discipline_intelligence import (
     AssessmentCreate, DispositionAppend, EligibilityQuery, ReassessmentCreate,
-    SupersessionCreate, VerificationQuery,
+    SupersessionCreate, VerificationQuery, AIExplanationRequest, PotentialImpactRequest,
 )
 router = APIRouter(tags=["Cross-Discipline Intelligence"])
 PREFIX = "/projects/{project_id}/cross-discipline"
@@ -329,3 +329,44 @@ def dependency(project_id: int, assessment_id: UUID, finding_id: UUID, applicati
     if isinstance(result, JSONResponse):
         return result
     return {"assessment_id": str(assessment_id), "finding_id": str(finding_id), "path": tuple(result["provenance"].get("path", ()))[:4], "advisory": True}
+
+
+@router.post(PREFIX + "/assessments/{assessment_id}/findings/{finding_id}/potential-impact", operation_id="create_cross_discipline_potential_impact")
+def potential_impact(project_id: int, assessment_id: UUID, finding_id: UUID, data: PotentialImpactRequest, application: CrossDisciplineApplication = Depends(get_cross_discipline_application)):
+    if data.assessment_id != assessment_id or data.finding_id != finding_id or _assessment_guard(application, project_id, assessment_id, mutate=True) is None:
+        return _protected()
+    result = application.service.handoff_potential_impact(
+        session_factory=application.session_factory, actor_id=application.context.user.id,
+        actor_role=application.context.user.role, organization_id=application.context.organization_id,
+        project_id=project_id, assessment_id=assessment_id, finding_id=finding_id, data=data,
+    )
+    status = 201 if result.get("outcome") == "success" else 404 if result.get("outcome") == "protected_not_found" else 422 if result.get("outcome") == "invalid_request" else 503
+    return JSONResponse(status_code=status, content=result)
+
+
+@router.get(PREFIX + "/assessments/{assessment_id}/report-projection", operation_id="get_cross_discipline_report_projection")
+def report_projection(project_id: int, assessment_id: UUID, application: CrossDisciplineApplication = Depends(get_cross_discipline_application)):
+    root = _assessment_guard(application, project_id, assessment_id)
+    if root is None:
+        return _protected()
+    snapshot = application.repository.snapshot(assessment_id=assessment_id, organization_id=application.context.organization_id, project_id=project_id)
+    if snapshot is None:
+        return JSONResponse(status_code=503, content={"outcome": "unavailable"})
+    return {"assessment_id": str(assessment_id), "snapshot_digest": snapshot.snapshot_digest, "advisory": True}
+
+
+@router.post(PREFIX + "/assessments/{assessment_id}/ai-explanation", operation_id="create_cross_discipline_ai_explanation")
+def ai_explanation(project_id: int, assessment_id: UUID, data: AIExplanationRequest, application: CrossDisciplineApplication = Depends(get_cross_discipline_application)):
+    if _assessment_guard(application, project_id, assessment_id) is None:
+        return _protected()
+    rows = tuple(application.repository.finding(assessment_id=assessment_id, finding_id=item, organization_id=application.context.organization_id, project_id=project_id) for item in data.finding_ids)
+    if any(row is None for row in rows):
+        return _protected()
+    return application.service.explain_findings(tuple({"category": row.category, "subcode": row.subcode} for row in rows))
+
+
+@router.get(PREFIX + "/assessments/{assessment_id}/integrated-path", operation_id="get_cross_discipline_integrated_path")
+def integrated_path(project_id: int, assessment_id: UUID, application: CrossDisciplineApplication = Depends(get_cross_discipline_application)):
+    if _assessment_guard(application, project_id, assessment_id) is None:
+        return _protected()
+    return {"assessment_id": str(assessment_id), "path_id": "xdi.path.eic.change.v1", "advisory": True}

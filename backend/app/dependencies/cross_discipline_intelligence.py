@@ -18,6 +18,9 @@ from app.dependencies.auth import (
     AuthenticatedOrganizationContext, get_current_user_organization_context,
 )
 from app.repositories.cross_discipline_repository import CrossDisciplineRepository
+from app.adapters.cross_discipline_change_impact import ProjectControlChangeImpactAdapter
+from app.ai.cross_discipline_intelligence import BoundedCrossDisciplineAI
+from app.dependencies.project_control import get_project_control_application
 from app.services.cross_discipline_service import CrossDisciplineService
 
 
@@ -34,8 +37,22 @@ def get_cross_discipline_application(
     context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
     db: Session = Depends(get_db),
 ) -> CrossDisciplineApplication:
+    def project_control_owner_application():
+        """Construct and close the owner boundary in its own session/UoW."""
+        owner_db = SessionLocal()
+        try:
+            return get_project_control_application(owner_db, context), owner_db.close
+        except Exception:
+            owner_db.close()
+            raise
+
     return CrossDisciplineApplication(
-        context, db, CrossDisciplineRepository(db), CrossDisciplineService(),
+        context, db, CrossDisciplineRepository(db), CrossDisciplineService(
+            impact_handoff=ProjectControlChangeImpactAdapter(
+                application_factory=project_control_owner_application,
+            ),
+            ai_explainer=BoundedCrossDisciplineAI(enabled=settings.CROSS_DISCIPLINE_AI_ENABLED),
+        ),
         SessionLocal,
     )
 

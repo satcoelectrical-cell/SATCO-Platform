@@ -37,6 +37,16 @@ class CrossDisciplineClock(Protocol):
     def now(self) -> datetime: ...
 
 
+class ProjectControlImpactHandoff(Protocol):
+    def create_potential(self, *, project_id: int, workspace_id: int | None, change_id: UUID,
+                         change_version: int, target_kind: str, target_id: UUID,
+                         rationale: str, idempotency_key: UUID): ...
+
+
+class CrossDisciplineAIExplainer(Protocol):
+    def explain(self, findings: tuple[dict, ...]): ...
+
+
 class CrossDisciplineRepositoryPort(Protocol):
     def get_assessment(self, assessment_id: UUID, organization_id: UUID, project_id: int, *, lock: bool = False): ...
     def get_idempotency(self, *, organization_id: UUID, project_id: int, actor_id: int, operation: str, idempotency_key: UUID, lock: bool = False): ...

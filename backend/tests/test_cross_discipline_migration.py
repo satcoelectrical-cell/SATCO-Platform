@@ -7,8 +7,8 @@ from sqlalchemy import inspect, text
 from conftest import alembic_config, owner_engine
 
 
-REVISION = "e05300000001"
-PARENT = "e05200000002"
+REVISION = "e05300000002"
+PARENT = "e05300000001"
 TABLES = {
     "cross_discipline_assessments",
     "cross_discipline_assessment_snapshots",
@@ -45,7 +45,7 @@ def test_upgrade_is_additive_and_fabricates_no_assessment():
 def test_empty_downgrade_and_reupgrade_restore_linear_head():
     command.downgrade(alembic_config, PARENT)
     try:
-        assert TABLES.isdisjoint(set(inspect(owner_engine).get_table_names()))
+        assert TABLES <= set(inspect(owner_engine).get_table_names())
         with owner_engine.connect() as connection:
             assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == PARENT
     finally:

@@ -4,6 +4,7 @@ from ..canonical import digest
 from ..conformance_manifest import (
     BATCH_ONE_VECTOR_IDS, CUMULATIVE_BATCH_TWO_VECTOR_IDS,
     CUMULATIVE_BATCH_THREE_VECTOR_IDS, CUMULATIVE_BATCH_FOUR_VECTOR_IDS,
+    CUMULATIVE_BATCH_FIVE_VECTOR_IDS,
 )
 from ..contracts import (
     BATCH_TWO_EVALUATOR_CAPABILITY_ID, BATCH_TWO_HANDOFF_APPLICABILITY_ID,
@@ -66,6 +67,19 @@ BATCH_FOUR_PROJECTIONS = (
 BATCH_FOUR_PROJECTION_IDS = tuple(item.projection_id for item in BATCH_FOUR_PROJECTIONS)
 BATCH_FOUR_PATH_ID = "xdi.path.ec.cabinet_power.v1"
 BATCH_FOUR_INDETERMINATE_REASONS = BATCH_THREE_INDETERMINATE_REASONS
+
+BATCH_FIVE_INTERFACE_ID = "cross.interface.eic.change_path.v1"
+BATCH_FIVE_VERSION = "1.0.0"
+BATCH_FIVE_INTERFACE_NAME = "electrical_instrumentation_control_change_path"
+BATCH_FIVE_APPLICABILITY_ID = "xdi.app.explicit_change.v1"
+BATCH_FIVE_EVALUATOR_CAPABILITY_ID = "cross_discipline.deterministic.v1"
+BATCH_FIVE_RULE_IDS = ("xdi.eic.explicit_change_path.v1",)
+BATCH_FIVE_PROJECTIONS = (
+    ProjectionDefinitionV1("xdi.proj.change_seed.v1", "xdi.schema.change_seed.v1", "xdi.adapter.change_seed.v1", "xdi.selector.change_seed.v1", "xdi.complete.change_seed.v1", "project_change"),
+)
+BATCH_FIVE_PROJECTION_IDS = tuple(item.projection_id for item in BATCH_FIVE_PROJECTIONS)
+BATCH_FIVE_PATH_ID = "xdi.path.eic.change.v1"
+BATCH_FIVE_INDETERMINATE_REASONS = BATCH_THREE_INDETERMINATE_REASONS
 
 
 def load_batch_one_definition_set() -> DefinitionSetV1:
@@ -261,5 +275,60 @@ def validate_batch_four_definition_set(definition: DefinitionSetV1) -> None:
 def batch_four_rule_definition(rule_id: str) -> RuleDefinitionV1:
     for declaration in load_batch_four_definition_set().rule_definitions:
         if declaration.rule_id == rule_id and rule_id in BATCH_FOUR_RULE_IDS:
+            return declaration
+    raise ValueError("artifact_unavailable")
+
+
+def load_batch_five_definition_set() -> DefinitionSetV1:
+    """Cumulative release with the one accepted explicit E+I+C change path."""
+    rule_body = {
+        "rule_id": BATCH_FIVE_RULE_IDS[0], "version": BATCH_FIVE_VERSION,
+        "interface_definition_id": BATCH_FIVE_INTERFACE_ID,
+        "interface_version": BATCH_FIVE_VERSION,
+        "ordered_projection_ids": BATCH_FIVE_PROJECTION_IDS,
+        "applicability_id": BATCH_FIVE_APPLICABILITY_ID,
+        "comparison_id": BATCH_FIVE_PATH_ID, "category": "potential_change_impact",
+        "subcode": "eic.explicit_change_path", "severity": "major",
+        "indeterminate_reasons": BATCH_FIVE_INDETERMINATE_REASONS,
+        "evaluator_capability_id": BATCH_FIVE_EVALUATOR_CAPABILITY_ID,
+    }
+    rule = RuleDefinitionV1(**rule_body, digest=digest(rule_body))
+    interface_body = {
+        "interface_definition_id": BATCH_FIVE_INTERFACE_ID,
+        "version": BATCH_FIVE_VERSION, "name": BATCH_FIVE_INTERFACE_NAME,
+        "provider_discipline": "electrical", "consumer_discipline": "control_automation",
+        "rule_ids": BATCH_FIVE_RULE_IDS,
+    }
+    interface = InterfaceDefinitionV1(**interface_body, digest=digest(interface_body))
+    retained = load_batch_four_definition_set()
+    existing = {item.projection_id for item in retained.projection_definitions}
+    body = {
+        "schema_version": 1, "definition_set_id": DEFINITION_SET_ID, "version": "1.0.0",
+        "release_id": RELEASE_ID, "registry_release_id": REGISTRY_RELEASE_ID, "profile_id": PROFILE_ID,
+        "canonicalization_id": CANONICALIZATION_ID, "limits_profile": dict(LIMITS),
+        "supported_combinations": SUPPORTED_COMBINATIONS, "comparison_ids": COMPARISON_IDS,
+        "rule_ids": retained.rule_ids + BATCH_FIVE_RULE_IDS,
+        "conformance_vector_ids": CUMULATIVE_BATCH_FIVE_VECTOR_IDS,
+        "interface_definitions": retained.interface_definitions + (interface,),
+        "projection_definitions": retained.projection_definitions + tuple(
+            item for item in BATCH_FIVE_PROJECTIONS if item.projection_id not in existing
+        ),
+        "relationship_grammar_ids": retained.relationship_grammar_ids,
+        "path_ids": retained.path_ids + (BATCH_FIVE_PATH_ID,),
+        "rule_definitions": retained.rule_definitions + (rule,),
+    }
+    return DefinitionSetV1(**body, digest=digest(body))
+
+
+def validate_batch_five_definition_set(definition: DefinitionSetV1) -> None:
+    if definition != load_batch_five_definition_set():
+        raise ValueError("untrusted or modified Batch-5 definition set")
+    if definition.rule_ids[-1:] != BATCH_FIVE_RULE_IDS or len(definition.conformance_vector_ids) != 96:
+        raise ValueError("Batch-5 definition scope mismatch")
+
+
+def batch_five_rule_definition(rule_id: str) -> RuleDefinitionV1:
+    for declaration in load_batch_five_definition_set().rule_definitions:
+        if declaration.rule_id == rule_id and rule_id in BATCH_FIVE_RULE_IDS:
             return declaration
     raise ValueError("artifact_unavailable")

@@ -27,6 +27,7 @@ from app.models.technical_report_command import (
     EngineeringObjectHistoricalBasisV2,
     EngineeringRelationshipHistoricalBasisV1,
     EngineeringRelationshipHistoricalBasisV2,
+    CrossDisciplineAssessmentHistoricalBasisV1,
     EvidenceHistoricalBasisV1,
     EvidenceHistoricalBasisV2,
     ReviseTechnicalReportDraft,
@@ -143,6 +144,7 @@ _CANONICAL_LOCATORS = (
     EngineeringObjectHistoricalBasisV2,
     EngineeringRelationshipHistoricalBasisV1,
     EngineeringRelationshipHistoricalBasisV2,
+    CrossDisciplineAssessmentHistoricalBasisV1,
 )
 
 
@@ -550,6 +552,7 @@ class TechnicalReportService:
         if isinstance(locator, (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2)): identity = locator.capture_id
         elif isinstance(locator, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)): identity = locator.evidence_id
         elif isinstance(locator, (EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2)): identity = locator.engineering_object_id
+        elif isinstance(locator, CrossDisciplineAssessmentHistoricalBasisV1): identity = locator.assessment_id
         else: identity = locator.engineering_relationship_id
         return TechnicalReportHistoricalRequest(
             actor, scope, authority, entry.source_type.value, identity, locator.source_version

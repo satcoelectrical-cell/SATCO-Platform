@@ -269,14 +269,16 @@ class TechnicalReportProvenanceRecord(Base):
         CheckConstraint("evidence_version IS NULL OR evidence_version >= 1", name="ck_technical_report_provenance_evidence_version"),
         CheckConstraint("engineering_object_version IS NULL OR engineering_object_version >= 1", name="ck_technical_report_provenance_object_version"),
         CheckConstraint("engineering_relationship_version IS NULL OR engineering_relationship_version >= 1", name="ck_technical_report_provenance_relationship_version"),
+        CheckConstraint("cross_discipline_assessment_version IS NULL OR cross_discipline_assessment_version >= 1", name="ck_technical_report_provenance_xdi_assessment_version"),
         CheckConstraint(
-            "(source_type='universal_capture' AND capture_id IS NOT NULL AND capture_version IS NOT NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
-            "(source_type='evidence' AND evidence_id IS NOT NULL AND evidence_version IS NOT NULL AND capture_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
-            "(source_type='engineering_object' AND engineering_object_id IS NOT NULL AND engineering_object_version IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_relationship_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
-            "(source_type='engineering_relationship' AND engineering_relationship_id IS NOT NULL AND engineering_relationship_version IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
-            "(source_type='external_or_human' AND report_local_source_id IS NOT NULL AND external_reference IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
-            "(source_type='standard' AND standard_identity IS NOT NULL AND issuing_authority IS NOT NULL AND edition IS NOT NULL AND clause_or_location IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND report_local_source_id IS NULL AND context_id IS NULL) OR "
-            "(source_type='contextual' AND context_id IS NOT NULL AND owning_context IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL)",
+            "(source_type='universal_capture' AND capture_id IS NOT NULL AND capture_version IS NOT NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND cross_discipline_assessment_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
+            "(source_type='evidence' AND evidence_id IS NOT NULL AND evidence_version IS NOT NULL AND capture_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND cross_discipline_assessment_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
+            "(source_type='engineering_object' AND engineering_object_id IS NOT NULL AND engineering_object_version IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_relationship_id IS NULL AND cross_discipline_assessment_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
+            "(source_type='engineering_relationship' AND engineering_relationship_id IS NOT NULL AND engineering_relationship_version IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND cross_discipline_assessment_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
+            "(source_type='cross_discipline_assessment' AND cross_discipline_assessment_id IS NOT NULL AND cross_discipline_assessment_version IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
+            "(source_type='external_or_human' AND report_local_source_id IS NOT NULL AND external_reference IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND cross_discipline_assessment_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
+            "(source_type='standard' AND standard_identity IS NOT NULL AND issuing_authority IS NOT NULL AND edition IS NOT NULL AND clause_or_location IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND cross_discipline_assessment_id IS NULL AND report_local_source_id IS NULL AND context_id IS NULL) OR "
+            "(source_type='contextual' AND context_id IS NOT NULL AND owning_context IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND cross_discipline_assessment_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL)",
             name="ck_technical_report_provenance_locator_shape",
         ),
         CheckConstraint(
@@ -284,6 +286,7 @@ class TechnicalReportProvenanceRecord(Base):
             "(source_type='evidence' AND source_class='canonical_material' AND owning_capability='evidence' AND is_material) OR "
             "(source_type='engineering_object' AND source_class='canonical_material' AND owning_capability='engineering_object' AND is_material) OR "
             "(source_type='engineering_relationship' AND source_class='canonical_material' AND owning_capability='engineering_relationship' AND is_material) OR "
+            "(source_type='cross_discipline_assessment' AND source_class='canonical_material' AND owning_capability='cross_discipline_assessment' AND is_material) OR "
             "(source_type='external_or_human' AND source_class='external_or_human_material' AND owning_capability IS NULL AND is_material) OR "
             "(source_type='standard' AND source_class='standards_material' AND owning_capability IS NULL AND is_material) OR "
             "(source_type='contextual' AND source_class='contextual_non_material' AND owning_capability IS NULL AND NOT is_material)",
@@ -302,6 +305,7 @@ class TechnicalReportProvenanceRecord(Base):
         Index("ix_technical_report_provenance_evidence", "evidence_id", postgresql_where=text("evidence_id IS NOT NULL")),
         Index("ix_technical_report_provenance_object", "engineering_object_id", postgresql_where=text("engineering_object_id IS NOT NULL")),
         Index("ix_technical_report_provenance_relationship", "engineering_relationship_id", postgresql_where=text("engineering_relationship_id IS NOT NULL")),
+        Index("ix_technical_report_provenance_xdi_assessment", "cross_discipline_assessment_id", postgresql_where=text("cross_discipline_assessment_id IS NOT NULL")),
     )
 
     id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -330,6 +334,8 @@ class TechnicalReportProvenanceRecord(Base):
     engineering_object_version = Column(Integer)
     engineering_relationship_id = Column(PGUUID(as_uuid=True))
     engineering_relationship_version = Column(Integer)
+    cross_discipline_assessment_id = Column(PGUUID(as_uuid=True))
+    cross_discipline_assessment_version = Column(Integer)
     canonical_snapshot_id = Column(PGUUID(as_uuid=True))
     report_local_source_id = Column(PGUUID(as_uuid=True))
     external_reference = Column(Text)

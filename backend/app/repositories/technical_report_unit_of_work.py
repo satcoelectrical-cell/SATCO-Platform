@@ -42,6 +42,7 @@ from app.models.engineering_object import EngineeringObject
 from app.models.engineering_identifier import EngineeringIdentifier
 from app.models.engineering_relationship import EngineeringRelationship
 from app.models.evidence import Evidence
+from app.models.cross_discipline_intelligence import CrossDisciplineAssessment, CrossDisciplineSnapshot
 from app.models.engineering_workspace import (
     EngineeringWorkspace,
     EngineeringWorkspaceMember,
@@ -61,6 +62,7 @@ from app.models.technical_report_command import (
     EngineeringObjectHistoricalBasisV2,
     EngineeringRelationshipHistoricalBasisV1,
     EngineeringRelationshipHistoricalBasisV2,
+    CrossDisciplineAssessmentHistoricalBasisV1,
     EvidenceHistoricalBasisV1,
     EvidenceHistoricalBasisV2,
     HistoricalBasis,
@@ -101,6 +103,7 @@ _SOURCES: Final = {
     TechnicalReportSourceType.EVIDENCE.value,
     TechnicalReportSourceType.ENGINEERING_OBJECT.value,
     TechnicalReportSourceType.ENGINEERING_RELATIONSHIP.value,
+    TechnicalReportSourceType.CROSS_DISCIPLINE_ASSESSMENT.value,
 }
 
 
@@ -599,7 +602,7 @@ class SqlAlchemyTechnicalReportFinalRecheckPolicy:
 
 
 class SqlAlchemyTechnicalReportHistoricalResolver:
-    """Resolve four closed historical contracts through a caller-owned Session."""
+    """Resolve closed historical contracts through a caller-owned Session."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -615,6 +618,7 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
             TechnicalReportSourceType.EVIDENCE.value: self._evidence,
             TechnicalReportSourceType.ENGINEERING_OBJECT.value: self._engineering_object,
             TechnicalReportSourceType.ENGINEERING_RELATIONSHIP.value: self._relationship,
+            TechnicalReportSourceType.CROSS_DISCIPLINE_ASSESSMENT.value: self._cross_discipline_assessment,
         }
         return factories[request.source_type](request)
 
@@ -631,6 +635,7 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
             TechnicalReportSourceType.EVIDENCE.value: (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2),
             TechnicalReportSourceType.ENGINEERING_OBJECT.value: (EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2),
             TechnicalReportSourceType.ENGINEERING_RELATIONSHIP.value: (EngineeringRelationshipHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV2),
+            TechnicalReportSourceType.CROSS_DISCIPLINE_ASSESSMENT.value: CrossDisciplineAssessmentHistoricalBasisV1,
         }.get(request.source_type)
         self._authorize_scope(request)
         if expected_type is None or not isinstance(fallback, expected_type):
@@ -640,6 +645,7 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
         if isinstance(fallback, (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2)): identity = fallback.capture_id
         elif isinstance(fallback, (EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2)): identity = fallback.evidence_id
         elif isinstance(fallback, (EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2)): identity = fallback.engineering_object_id
+        elif isinstance(fallback, CrossDisciplineAssessmentHistoricalBasisV1): identity = fallback.assessment_id
         else: identity = fallback.engineering_relationship_id
         if identity != request.source_id or fallback.source_version != request.source_version:
             raise TechnicalReportHistoricalBasisIncomplete()
@@ -782,6 +788,29 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
             item.creator_id, item.steward_id, item.reviewer_id, item.approver_id,
         )
 
+    def _cross_discipline_assessment(self, request: TechnicalReportHistoricalRequest) -> HistoricalBasis:
+        project_id = self._authorize_scope(request)
+        item = self.session.query(CrossDisciplineAssessment).filter(
+            CrossDisciplineAssessment.id == request.source_id,
+            CrossDisciplineAssessment.organization_id == request.scope.organization_id,
+            CrossDisciplineAssessment.project_id == project_id,
+        ).with_for_update().first()
+        if item is None or item.aggregate_version != request.source_version:
+            raise TechnicalReportHistoricalBasisIncomplete()
+        snapshot = self.session.query(CrossDisciplineSnapshot).filter(
+            CrossDisciplineSnapshot.assessment_id == item.id,
+            CrossDisciplineSnapshot.organization_id == item.organization_id,
+            CrossDisciplineSnapshot.project_id == item.project_id,
+        ).with_for_update().first()
+        if snapshot is None:
+            raise TechnicalReportHistoricalBasisIncomplete()
+        return CrossDisciplineAssessmentHistoricalBasisV1(
+            1, "cross_discipline_assessment", item.id, item.aggregate_version,
+            item.organization_id, item.project_id, None, item.status,
+            snapshot.snapshot_digest, snapshot.definition_digest, snapshot.result_digest,
+            item.completed_at,
+        )
+
     def _load(self, model: type, request: TechnicalReportHistoricalRequest):
         project_id = self._authorize_scope(request)
         item = self.session.query(model).filter(
@@ -919,6 +948,10 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
                 TechnicalReportProvenanceRecord.engineering_relationship_id,
                 TechnicalReportProvenanceRecord.engineering_relationship_version,
             ),
+            TechnicalReportSourceType.CROSS_DISCIPLINE_ASSESSMENT.value: (
+                TechnicalReportProvenanceRecord.cross_discipline_assessment_id,
+                TechnicalReportProvenanceRecord.cross_discipline_assessment_version,
+            ),
         }.get(request.source_type)
         if identity_columns is None:
             raise TechnicalReportHistoricalBasisIncomplete()
@@ -1034,6 +1067,9 @@ class SqlAlchemyTechnicalReportHistoricalResolver:
             self._require_related_object(basis.target_object_id, request)
             for evidence_id in basis.evidence_references:
                 self._require_related_evidence(evidence_id, request)
+        elif isinstance(basis, CrossDisciplineAssessmentHistoricalBasisV1):
+            if basis.status not in {"completed_no_findings", "completed_with_findings", "indeterminate", "unavailable"}:
+                raise TechnicalReportHistoricalBasisIncomplete()
 
     @staticmethod
     def _source_scope_compatible(

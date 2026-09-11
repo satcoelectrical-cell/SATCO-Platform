@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 
 from app.discipline_packages.conformance_harness_052 import (
@@ -19,6 +22,27 @@ from app.discipline_packages.operational import (
 from app.discipline_packages.descriptors.releases.release_052_eic_v1 import RELEASE_052_EIC_V1
 from app.discipline_packages.operational import static_operation_table
 from app.discipline_packages.registry import assemble_registry
+
+
+PATCH_052_SCHEMA_REVISION = "e05200000002"
+
+
+def _patch_052_revision_is_in_lineage(observed_revision: object) -> bool:
+    """Accept only the PATCH-052 schema revision or a known source descendant."""
+
+    if not isinstance(observed_revision, str) or not observed_revision:
+        return False
+    try:
+        backend_root = Path(__file__).resolve().parents[2]
+        config = Config(str(backend_root / "alembic.ini"))
+        config.set_main_option("script_location", str(backend_root / "migrations"))
+        scripts = ScriptDirectory.from_config(config)
+        return any(
+            revision.revision == PATCH_052_SCHEMA_REVISION
+            for revision in scripts.walk_revisions(base="base", head=observed_revision)
+        )
+    except Exception:
+        return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +121,7 @@ def electrical_operational_readiness_snapshot(
             "'satco_patch052_binding_coherent','satco_patch052_binding_immutable',"
             "'technical_report_historical_basis_v2_valid')"
         )).scalars())
-        if revision != "e05200000002" or not required_tables <= set(schema.get_table_names()) or len(functions) != 7:
+        if not _patch_052_revision_is_in_lineage(revision) or not required_tables <= set(schema.get_table_names()) or len(functions) != 7:
             return ElectricalOperationalReadinessSnapshot(
                 False, "schema_projection_unavailable", revision, *counts, component_key,
             )
@@ -151,7 +175,7 @@ def instrumentation_operational_readiness_snapshot(
             "'satco_patch052_binding_coherent','satco_patch052_binding_immutable',"
             "'technical_report_historical_basis_v2_valid')"
         )).scalars())
-        if revision != "e05200000002" or not required_tables <= set(schema.get_table_names()) or len(functions) != 7:
+        if not _patch_052_revision_is_in_lineage(revision) or not required_tables <= set(schema.get_table_names()) or len(functions) != 7:
             return ElectricalOperationalReadinessSnapshot(
                 False, "schema_projection_unavailable", revision, *counts,
                 component_key,
@@ -221,7 +245,7 @@ def control_automation_operational_readiness_snapshot(
             "'satco_patch052_binding_coherent','satco_patch052_binding_immutable',"
             "'technical_report_historical_basis_v2_valid')"
         )).scalars())
-        if revision != "e05200000002" or not required_tables <= set(schema.get_table_names()) or len(functions) != 7:
+        if not _patch_052_revision_is_in_lineage(revision) or not required_tables <= set(schema.get_table_names()) or len(functions) != 7:
             return ElectricalOperationalReadinessSnapshot(
                 False, "schema_projection_unavailable", revision, *counts,
                 component_key,

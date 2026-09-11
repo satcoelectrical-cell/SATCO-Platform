@@ -29,6 +29,7 @@ from app.models.technical_report_command import (
     EngineeringObjectHistoricalBasisV2,
     EngineeringRelationshipHistoricalBasisV1,
     EngineeringRelationshipHistoricalBasisV2,
+    CrossDisciplineAssessmentHistoricalBasisV1,
     EvidenceHistoricalBasisV1,
     EvidenceHistoricalBasisV2,
     ContextualLocator,
@@ -354,8 +355,26 @@ class EngineeringRelationshipHistoricalBasisV2Schema(StrictTechnicalReportSchema
         return EngineeringRelationshipHistoricalBasisV2(**self.model_dump())
 
 
+class CrossDisciplineAssessmentHistoricalBasisSchema(StrictTechnicalReportSchema):
+    basis_schema_version: Literal[1]
+    source_category: Literal["cross_discipline_assessment"]
+    assessment_id: UUID
+    source_version: PositiveVersion
+    organization_id: UUID
+    project_id: PositiveIdentifier
+    workspace_id: PositiveIdentifier | None
+    status: Literal["completed_no_findings", "completed_with_findings", "indeterminate", "unavailable"]
+    snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    definition_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    completed_at: AwareDatetime
+
+    def to_domain(self) -> CrossDisciplineAssessmentHistoricalBasisV1:
+        return CrossDisciplineAssessmentHistoricalBasisV1(**self.model_dump())
+
+
 HistoricalBasisSchema = Annotated[
-    CaptureHistoricalBasisSchema | CaptureHistoricalBasisV2Schema | EvidenceHistoricalBasisSchema | EngineeringObjectHistoricalBasisSchema | EngineeringObjectHistoricalBasisV2Schema | EngineeringRelationshipHistoricalBasisSchema | EngineeringRelationshipHistoricalBasisV2Schema,
+    CaptureHistoricalBasisSchema | CaptureHistoricalBasisV2Schema | EvidenceHistoricalBasisSchema | EngineeringObjectHistoricalBasisSchema | EngineeringObjectHistoricalBasisV2Schema | EngineeringRelationshipHistoricalBasisSchema | EngineeringRelationshipHistoricalBasisV2Schema | CrossDisciplineAssessmentHistoricalBasisSchema,
     Field(union_mode="left_to_right"),
 ]
 
@@ -421,6 +440,7 @@ class TechnicalReportProvenanceSchema(StrictTechnicalReportSchema):
             TechnicalReportSourceType.EVIDENCE: (TechnicalReportOwningCapability.EVIDENCE, EvidenceHistoricalBasisSchema),
             TechnicalReportSourceType.ENGINEERING_OBJECT: (TechnicalReportOwningCapability.ENGINEERING_OBJECT, (EngineeringObjectHistoricalBasisSchema, EngineeringObjectHistoricalBasisV2Schema)),
             TechnicalReportSourceType.ENGINEERING_RELATIONSHIP: (TechnicalReportOwningCapability.ENGINEERING_RELATIONSHIP, (EngineeringRelationshipHistoricalBasisSchema, EngineeringRelationshipHistoricalBasisV2Schema)),
+            TechnicalReportSourceType.CROSS_DISCIPLINE_ASSESSMENT: (TechnicalReportOwningCapability.CROSS_DISCIPLINE_ASSESSMENT, CrossDisciplineAssessmentHistoricalBasisSchema),
         }
         if self.source_class is TechnicalReportSourceClass.CANONICAL_MATERIAL:
             if self.source_type not in expected:

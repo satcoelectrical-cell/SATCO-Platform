@@ -5,17 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
-from uuid import UUID, uuid4
+from uuid import UUID, NAMESPACE_URL, uuid4, uuid5
 
 from sqlalchemy import select
 
 from app.adapters.cross_discipline_sources import SqlAlchemyCrossDisciplineAuthorizer
 from app.discipline_packages.cross_discipline.canonical import canonical_json, digest
 from app.discipline_packages.cross_discipline.definitions.eic_v1 import (
-    load_batch_four_definition_set, load_batch_one_definition_set, load_batch_three_definition_set, load_batch_two_definition_set,
-    validate_batch_four_definition_set, validate_batch_three_definition_set, validate_batch_two_definition_set,
+    load_batch_five_definition_set, load_batch_four_definition_set, load_batch_one_definition_set, load_batch_three_definition_set, load_batch_two_definition_set,
+    validate_batch_five_definition_set, validate_batch_four_definition_set, validate_batch_three_definition_set, validate_batch_two_definition_set,
 )
-from app.discipline_packages.cross_discipline.evaluator import GenericEvaluator, batch_four_evaluator, batch_three_evaluator, batch_two_evaluator
+from app.discipline_packages.cross_discipline.evaluator import GenericEvaluator, batch_five_evaluator, batch_four_evaluator, batch_three_evaluator, batch_two_evaluator
 from app.discipline_packages.cross_discipline.contracts import EvaluationInputV1
 from app.models.audit_log import AuditLog
 from app.models.discipline_package import RegistryRelease
@@ -161,7 +161,7 @@ def verify_retained_snapshot(*, payload, expected_snapshot_digest: str, expected
 class CrossDisciplineService:
     """Shared kernel application service; pair rules are injected only later."""
 
-    def __init__(self, *, evaluator=None, now=None):
+    def __init__(self, *, evaluator=None, now=None, impact_handoff=None, ai_explainer=None):
         # The generic, zero-rule evaluator is a retained Batch-1 artifact.
         # Batch-2 is deliberately opt-in so historical creation/replay keeps
         # resolving its exact Batch-1 definition and evaluator identity.
@@ -169,12 +169,15 @@ class CrossDisciplineService:
         self._batch_two_evaluator = batch_two_evaluator()
         self._batch_three_evaluator = batch_three_evaluator()
         self._batch_four_evaluator = batch_four_evaluator()
+        self._batch_five_evaluator = batch_five_evaluator()
+        self._impact_handoff = impact_handoff
+        self._ai_explainer = ai_explainer
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     def readiness(self, session=None):
         try:
-            definition = load_batch_four_definition_set()
-            validate_batch_four_definition_set(definition)
+            definition = load_batch_five_definition_set()
+            validate_batch_five_definition_set(definition)
         except ValueError:
             return {"state": "not_ready", "reason_codes": ("definition_digest_mismatch",)}
         if session is not None:
@@ -246,6 +249,172 @@ class CrossDisciplineService:
         return self._batch_four_evaluator.evaluate(EvaluationInputV1(
             execution_id, snapshot_id, values_by_rule, sources_by_rule or {},
         ))
+
+    def evaluate_batch_five(self, *, execution_id: str, snapshot_id: str, values_by_rule, sources_by_rule=None):
+        """Evaluate the sole authorized integrated rule after source authorization."""
+        return self._batch_five_evaluator.evaluate(EvaluationInputV1(
+            execution_id, snapshot_id, values_by_rule, sources_by_rule or {},
+        ))
+
+    def explain_findings(self, findings: tuple[dict, ...]):
+        """Optional advisory only; unavailable AI never changes deterministic output."""
+        if self._ai_explainer is None:
+            return {"outcome": "unavailable", "advisory": True}
+        try:
+            answer = self._ai_explainer.explain(findings)
+        except ValueError:
+            return {"outcome": "invalid_request", "advisory": True}
+        if answer is None:
+            return {"outcome": "unavailable", "advisory": True}
+        return {"outcome": "success", "summary": answer.summary,
+                "draft_next_actions": answer.draft_next_actions, "advisory": True}
+
+    def handoff_potential_impact(
+        self, *, session_factory, actor_id, actor_role, organization_id, project_id,
+        assessment_id, finding_id, data,
+    ):
+        """Persist intent, call Project Control, then reconcile in a fresh UoW.
+
+        No session, ORM row or authorization decision crosses these phases.
+        """
+        handoff_key = digest({"organization_id": str(organization_id), "project_id": project_id,
+            "assessment_id": str(assessment_id), "finding_id": str(finding_id),
+            "change_id": str(data.change_id), "target_id": str(data.target_id)}, "satco:xdi-handoff:v1")
+        project_control_key = uuid5(NAMESPACE_URL, handoff_key)
+        confirm_disposition_key = uuid5(NAMESPACE_URL, f"{handoff_key}:confirm")
+        now = self._now()
+        try:
+            with CrossDisciplineUnitOfWork(session_factory) as uow:
+                authorizer = SqlAlchemyCrossDisciplineAuthorizer(uow.session)
+                authorizer.authorize_scope(
+                    actor_id=actor_id, role=actor_role,
+                    organization_id=organization_id, project_id=project_id,
+                    workspace_ids=(), mutate=True,
+                )
+                root = uow.repository.get_assessment(assessment_id, organization_id, project_id, lock=True)
+                finding = uow.repository.finding(assessment_id=assessment_id, finding_id=finding_id, organization_id=organization_id, project_id=project_id, lock=True)
+                current = uow.repository.current_view(assessment_id=assessment_id, finding_id=finding_id, organization_id=organization_id, project_id=project_id, lock=True)
+                if root is None or finding is None or current is None:
+                    return self.safe_protected_result()
+                workspace_ids = uow.repository.assessment_workspace_ids(assessment_id=assessment_id, organization_id=organization_id, project_id=project_id)
+                authorizer.authorize_scope(actor_id=actor_id, role=actor_role, organization_id=organization_id, project_id=project_id, workspace_ids=workspace_ids, mutate=True)
+                intent = uow.repository.handoff_by_key(handoff_key=handoff_key, organization_id=organization_id, project_id=project_id, lock=True)
+                if intent is not None and intent.project_control_impact_id is not None and intent.response_json is not None:
+                    return intent.response_json
+                if current.current_state not in {"open", "acknowledged", "disputed"}:
+                    return {"outcome": "invalid_request"}
+                if intent is None:
+                    intent = CrossDisciplineIdempotency(organization_id=organization_id, project_id=project_id,
+                        actor_id=actor_id, operation="create_potential_impact", idempotency_key=data.idempotency_key,
+                        request_digest=request_fingerprint("create_potential_impact", data.model_dump(mode="json")),
+                        assessment_id=assessment_id, handoff_key=handoff_key,
+                        project_control_idempotency_key=project_control_key,
+                        project_control_correlation_id=data.correlation_id)
+                    uow.repository.add(intent)
+                    uow.commit()
+                stored_key = intent.project_control_idempotency_key
+        except ProtectedResourceError:
+            return self.safe_protected_result()
+        if self._impact_handoff is None:
+            return {"outcome": "unavailable", "state": "pending", "handoff_key": handoff_key, "advisory": True}
+        owner = self._impact_handoff.create_potential(project_id=project_id, workspace_id=None,
+            change_id=data.change_id, change_version=data.change_version, target_kind=data.target_kind,
+            target_id=data.target_id, rationale=data.rationale, idempotency_key=stored_key)
+        if not isinstance(owner, dict) or owner.get("outcome") != "success":
+            if isinstance(owner, dict) and owner.get("outcome") == "protected_not_found":
+                return self.safe_protected_result()
+            return {"outcome": "unavailable", "state": "pending", "handoff_key": handoff_key, "advisory": True}
+        try:
+            with CrossDisciplineUnitOfWork(session_factory) as uow:
+                authorizer = SqlAlchemyCrossDisciplineAuthorizer(uow.session)
+                authorizer.authorize_scope(
+                    actor_id=actor_id, role=actor_role,
+                    organization_id=organization_id, project_id=project_id,
+                    workspace_ids=(), mutate=True,
+                )
+                root = uow.repository.get_assessment(assessment_id, organization_id, project_id, lock=True)
+                finding = uow.repository.finding(assessment_id=assessment_id, finding_id=finding_id, organization_id=organization_id, project_id=project_id, lock=True)
+                current = uow.repository.current_view(assessment_id=assessment_id, finding_id=finding_id, organization_id=organization_id, project_id=project_id, lock=True)
+                if root is None or finding is None or current is None:
+                    return self.safe_protected_result()
+                workspace_ids = uow.repository.assessment_workspace_ids(assessment_id=assessment_id, organization_id=organization_id, project_id=project_id)
+                authorizer.authorize_scope(actor_id=actor_id, role=actor_role, organization_id=organization_id, project_id=project_id, workspace_ids=workspace_ids, mutate=True)
+                intent = uow.repository.handoff_by_key(handoff_key=handoff_key, organization_id=organization_id, project_id=project_id, lock=True)
+                if intent is None:
+                    return {"outcome": "unavailable", "state": "handoff_link_pending", "advisory": True}
+                if current.current_state not in {"open", "acknowledged", "disputed"}:
+                    return {"outcome": "unavailable", "state": "handoff_link_pending", "advisory": True}
+                decision = disposition_transition(
+                    current_state=current.current_state, action="confirm",
+                    assessment_version=root.aggregate_version,
+                    expected_assessment_version=root.aggregate_version,
+                    view_version=current.projection_version,
+                    expected_view_version=current.projection_version,
+                )
+                disposition_id = uuid4()
+                disposition_payload = {
+                    "schema_version": 1,
+                    "operation": "create_potential_impact",
+                    "handoff_key": handoff_key,
+                    "project_control_impact_id": str(owner["id"]),
+                    "project_control_impact_standing": "potential",
+                    "correlation_id": str(data.correlation_id),
+                    "resulting_view_state": decision.resulting_state,
+                }
+                uow.repository.add(CrossDisciplineDisposition(
+                    id=disposition_id, organization_id=organization_id,
+                    project_id=project_id, assessment_id=assessment_id,
+                    finding_id=finding_id,
+                    sequence=uow.repository.next_disposition_sequence(assessment_id),
+                    action=decision.action,
+                    resulting_view_state=decision.resulting_state,
+                    actor_id=actor_id, actor_role=actor_role,
+                    rationale=data.rationale,
+                    expected_assessment_version=root.aggregate_version,
+                    expected_view_version=current.projection_version,
+                    resulting_view_version=decision.next_view_version,
+                    correlation_id=data.correlation_id,
+                    idempotency_key=confirm_disposition_key,
+                    payload=disposition_payload,
+                    disposition_digest=digest(
+                        disposition_payload, "satco:xdi-disposition:v1",
+                    ), created_at=now,
+                ))
+                current.projection_version = decision.next_view_version
+                current.latest_disposition_id = disposition_id
+                current.latest_action = decision.action
+                current.current_state = decision.resulting_state
+                current.updated_at = now
+                if not uow.repository.increment_root_version(
+                    assessment_id=assessment_id,
+                    organization_id=organization_id, project_id=project_id,
+                    expected_version=root.aggregate_version,
+                ):
+                    return {"outcome": "version_conflict"}
+                response = {"outcome": "success", "state": "reconciled", "impact_id": str(owner["id"]), "handoff_key": handoff_key, "advisory": True}
+                intent.project_control_impact_id = UUID(str(owner["id"]))
+                intent.project_control_impact_snapshot_digest = digest({"impact_id": str(owner["id"]), "standing": "potential"}, "satco:xdi-impact-result:v1")
+                intent.response_json = response
+                intent.response_digest = digest(response, "satco:xdi-response:v1")
+                intent.completed_at = now
+                self._stage_event(
+                    uow, actor_id=actor_id, project_id=project_id,
+                    assessment_id=assessment_id,
+                    event_type="cross_discipline_potential_impact_reconciled",
+                    payload={
+                        **disposition_payload,
+                        "finding_id": str(finding_id),
+                        "disposition_id": str(disposition_id),
+                        "aggregate_version": decision.next_assessment_version,
+                        "current_view_version": decision.next_view_version,
+                    }, occurred_at=now,
+                )
+                uow.commit()
+                return response
+        except ProtectedResourceError:
+            return self.safe_protected_result()
+        except Exception:
+            return {"outcome": "unavailable", "state": "handoff_link_pending", "advisory": True}
 
     def create_foundation_assessment(
         self, *, session_factory, actor_id, actor_role, organization_id,
@@ -851,7 +1020,7 @@ class CrossDisciplineService:
         raise RetryExhausted("database retry limit exhausted") from last_error
 
     def definitions(self):
-        definition = load_batch_one_definition_set()
+        definition = load_batch_five_definition_set()
         return {
             "items": ({
                 "definition_set_id": definition.definition_set_id,

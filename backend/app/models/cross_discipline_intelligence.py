@@ -307,6 +307,19 @@ class CrossDisciplineIdempotency(Base):
             name="fk_xdi_idempotency_project_scope", ondelete="RESTRICT",
         ),
         UniqueConstraint("organization_id", "project_id", "actor_id", "operation", "idempotency_key", name="uq_xdi_idempotency_scope"),
+        UniqueConstraint("handoff_key", name="uq_xdi_idempotency_handoff_key"),
+        CheckConstraint("handoff_key IS NULL OR handoff_key ~ '^[0-9a-f]{64}$'", name="ck_xdi_idempotency_handoff_key_digest"),
+        CheckConstraint("project_control_impact_snapshot_digest IS NULL OR project_control_impact_snapshot_digest ~ '^[0-9a-f]{64}$'", name="ck_xdi_idempotency_impact_snapshot_digest"),
+        CheckConstraint(
+            "(handoff_key IS NULL AND project_control_idempotency_key IS NULL AND project_control_correlation_id IS NULL) OR "
+            "(handoff_key IS NOT NULL AND project_control_idempotency_key IS NOT NULL AND project_control_correlation_id IS NOT NULL)",
+            name="ck_xdi_idempotency_handoff_identity",
+        ),
+        CheckConstraint(
+            "(project_control_impact_id IS NULL AND project_control_impact_snapshot_digest IS NULL) OR "
+            "(project_control_impact_id IS NOT NULL AND project_control_impact_snapshot_digest IS NOT NULL)",
+            name="ck_xdi_idempotency_handoff_result",
+        ),
     )
     id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     organization_id = Column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
@@ -318,6 +331,11 @@ class CrossDisciplineIdempotency(Base):
     response_json = Column(JSONB)
     response_digest = Column(String(64))
     assessment_id = Column(PGUUID(as_uuid=True), ForeignKey("cross_discipline_assessments.id", ondelete="RESTRICT"))
+    handoff_key = Column(String(64))
+    project_control_idempotency_key = Column(PGUUID(as_uuid=True))
+    project_control_correlation_id = Column(PGUUID(as_uuid=True))
+    project_control_impact_id = Column(PGUUID(as_uuid=True))
+    project_control_impact_snapshot_digest = Column(String(64))
     completed_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

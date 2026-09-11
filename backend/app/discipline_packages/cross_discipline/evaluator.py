@@ -99,3 +99,9 @@ def batch_four_evaluator() -> GenericEvaluator:
     """Explicit Batch-4 Electrical ↔ C&A registration."""
     from .rules.eic_v1 import BATCH_FOUR_RULE_HANDLERS
     return GenericEvaluator(BATCH_FOUR_RULE_HANDLERS)
+
+
+def batch_five_evaluator() -> GenericEvaluator:
+    """Explicit Batch-5 registration for the bounded E+I+C change path."""
+    from .rules.eic_v1 import BATCH_FIVE_RULE_HANDLERS
+    return GenericEvaluator(BATCH_FIVE_RULE_HANDLERS)

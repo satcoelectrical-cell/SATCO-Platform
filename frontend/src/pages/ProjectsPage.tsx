@@ -12,11 +12,12 @@ import { EngineeringDeliverableRegisterPanel } from "../components/EngineeringDe
 import { ProjectControlsPanel } from "../components/ProjectControlsPanel";
 import { ProjectEngineeringContextPanel } from "../components/ProjectEngineeringContextPanel";
 import { ProjectCompletenessPanel } from "../components/ProjectCompletenessPanel";
+import { EngineeringGuidancePanel } from "../components/EngineeringGuidancePanel";
 import { CrossDisciplineIntelligencePanel } from "../components/CrossDisciplineIntelligencePanel";
 import { EffectiveDisciplinePackagesPanel } from "../components/EffectiveDisciplinePackagesPanel";
 import { ProjectPackageConfigurationPanel } from "../components/ProjectPackageConfigurationPanel";
-
 import { trustedDisciplinePackageComponent } from "../disciplinePackages/components";
+
 function ResultBoundary<T>({ result, children, empty }: { result: ApiResult<T> | null; children: (data: T) => React.ReactNode; empty?: (data: T) => boolean }) {
   if (!result) return <LoadingState />;
   if (result.state === "protected" || result.state === "invalid") return <ProtectedState />;
@@ -82,14 +83,14 @@ export function ProjectWorkspacePage() {
   const [captures, setCaptures] = useState<ApiResult<{ items: Capture[]; total: number }> | null>(null);
   const [workspaceId, setWorkspaceId] = useState(""); const [discipline, setDiscipline] = useState("");
   const [effectivePackages, setEffectivePackages] = useState<ApiResult<EffectiveDisciplinePackages> | null>(null);
-  const [content, setContent] = useState(""); const [sourceKind, setSourceKind] = useState("observation");
   const [workspaceApplicability,setWorkspaceApplicability]=useState<ApiResult<WorkspacePackageApplicability>|null>(null);
+  const [content, setContent] = useState(""); const [sourceKind, setSourceKind] = useState("observation");
   const [workspaceResult, setWorkspaceResult] = useState<ApiResult<Workspace> | null>(null); const [captureResult, setCaptureResult] = useState<ApiResult<Capture> | null>(null); const [busy, setBusy] = useState(false);
   const [projectName, setProjectName] = useState(""); const [projectDescription, setProjectDescription] = useState(""); const [projectPriority, setProjectPriority] = useState("medium"); const [projectUpdateResult, setProjectUpdateResult] = useState<ApiResult<Project> | null>(null);
   const refresh = () => { if (Number.isInteger(id) && id > 0) { void api.project(id).then(setProject); void api.workspaces(id).then(setWorkspaces); void api.captures(id).then(setCaptures); if (typeof api.effectiveDisciplinePackages === "function") void api.effectiveDisciplinePackages(id).then(setEffectivePackages); } };
   useEffect(refresh, [id]);
-  useEffect(() => { if (project?.state === "success") { setProjectName(project.data.name); setProjectDescription(project.data.description ?? ""); setProjectPriority(project.data.priority); } }, [project]);
   useEffect(()=>{if(workspaceId)void api.workspacePackageApplicability(Number(workspaceId)).then(setWorkspaceApplicability);else setWorkspaceApplicability(null);},[workspaceId]);
+  useEffect(() => { if (project?.state === "success") { setProjectName(project.data.name); setProjectDescription(project.data.description ?? ""); setProjectPriority(project.data.priority); } }, [project]);
 
   async function createWorkspace(event: FormEvent) { event.preventDefault(); setBusy(true); const legacyDiscipline = discipline === "control_automation" ? "control" : discipline; const result = await api.createWorkspace(id, { discipline: legacyDiscipline }); setWorkspaceResult(result); if (result.state === "success") { setWorkspaceId(String(result.data.id)); refresh(); } setBusy(false); }
   async function createCapture(event: FormEvent) { event.preventDefault(); setBusy(true); const result = await api.createCapture({ project_id: id, workspace_id: Number(workspaceId), source_kind: sourceKind, original_content: content }); setCaptureResult(result); if (result.state === "success") { setContent(""); refresh(); } setBusy(false); }
@@ -104,12 +105,13 @@ export function ProjectWorkspacePage() {
       <Surface title="4 · Engineering Capture" subtitle="Record real engineering experience"><form className="bootstrap-form" onSubmit={createCapture}><label>Workspace<select value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)} required><option value="">Select Workspace</option>{workspaceItems.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.display_name}</option>)}</select></label><label>Source kind<select value={sourceKind} onChange={(event) => setSourceKind(event.target.value)}><option value="observation">Observation</option><option value="discussion_note">Discussion note</option><option value="field_note">Field note</option><option value="review_note">Review note</option></select></label><label>Capture content<textarea value={content} onChange={(event) => setContent(event.target.value)} minLength={1} maxLength={10000} rows={5} required /></label><button className="button primary" disabled={busy || !workspaceItems.length}><Plus size={16} />Create Capture</button>{!workspaceItems.length && workspaces?.state === "success" ? <p className="form-hint">Create a Workspace before recording a Capture.</p> : null}<MutationState result={captureResult} /></form></Surface></div>
     <ProjectPackageConfigurationPanel projectId={id} />
     <EffectiveDisciplinePackagesPanel projectId={id} />
-    <ProjectFoundationPanel projectId={id} workspaces={workspaceItems} />
     {workspaceId ? workspaceApplicability?.state==="success" ? PackageComponent ? <PackageComponent state={workspaceApplicability.data.operational_state} projectId={id} workspaceId={Number(workspaceId)} /> : <EmptyState title="No operational package component" detail="The selected Workspace remains available through its canonical owner workflows." /> : <LoadingState /> : null}
+    <ProjectFoundationPanel projectId={id} workspaces={workspaceItems} />
     <EngineeringExecutionPlanPanel projectId={id} project={currentProject} workspaces={workspaceItems} />
     <EngineeringDeliverableRegisterPanel projectId={id} />
     <ProjectControlsPanel projectId={id} workspaces={workspaceItems} />
     <ProjectCompletenessPanel projectId={id} workspaceId={workspaceId ? Number(workspaceId) : null} />
+    <EngineeringGuidancePanel projectId={id} workspaceId={workspaceId ? Number(workspaceId) : null} />
     <CrossDisciplineIntelligencePanel projectId={id} workspaceIds={workspaceItems.map((item) => item.id).sort((a,b) => a-b)} />
     <ProjectEngineeringContextPanel projectId={id} workspaceId={workspaceId ? Number(workspaceId) : null} />
     {workspaceId ? <SupportingEvidencePanel projectId={id} workspaceId={Number(workspaceId)} /> : <EmptyState title="Select an Engineering Workspace for Supporting Evidence" detail="Supporting Files are always constrained to the current authorized Project and Workspace context." />}

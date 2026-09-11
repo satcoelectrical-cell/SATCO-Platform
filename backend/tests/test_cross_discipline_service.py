@@ -7,14 +7,16 @@ from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from uuid import UUID, uuid4
 from app.models.discipline_package import RegistryRelease
-from app.adapters.cross_discipline_sources import AuthorizedScope, build_batch_four_projection, build_batch_three_projection
-from app.discipline_packages.cross_discipline.contracts import FindingIdentityInputV1, RangeV1, SourceIdentityV1
+from app.adapters.cross_discipline_sources import AuthorizedScope, build_batch_five_change_projection, build_batch_four_projection, build_batch_three_projection
+from app.discipline_packages.cross_discipline.contracts import ExplicitRelationshipV1, FindingIdentityInputV1, RangeV1, SourceIdentityV1
 from app.discipline_packages.cross_discipline.definitions.eic_v1 import (
     BATCH_THREE_APPLICABILITY_ID, BATCH_THREE_INTERFACE_ID, BATCH_THREE_PROJECTION_IDS,
     BATCH_THREE_RULE_IDS, BATCH_THREE_VERSION, batch_three_rule_definition,
     BATCH_FOUR_APPLICABILITY_ID, BATCH_FOUR_INTERFACE_ID, BATCH_FOUR_PROJECTION_IDS,
     BATCH_FOUR_RULE_IDS, BATCH_FOUR_VERSION, batch_four_rule_definition, load_batch_four_definition_set,
     load_batch_three_definition_set,
+    BATCH_FIVE_APPLICABILITY_ID, BATCH_FIVE_INTERFACE_ID, BATCH_FIVE_RULE_IDS,
+    BATCH_FIVE_VERSION, BATCH_FIVE_PATH_ID, batch_five_rule_definition, load_batch_five_definition_set,
 )
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -111,6 +113,21 @@ def test_batch_four_mcc_is_explicit_and_projection_is_scope_bound():
     projection = build_batch_four_projection(authorized=scope, projection_id=BATCH_FOUR_PROJECTION_IDS[2], owner_kind="engineering_object",
         owner_id="00000000-0000-4000-8000-000000000074", owner_revision="1", values=(("cabinet", "explicit"),), complete=True, observed_at=datetime.now(timezone.utc))
     assert projection.authorization_scope_digest == scope.authorization_scope_digest
+
+
+def test_batch_five_change_path_is_explicit_bounded_and_advisory():
+    service = CrossDisciplineService()
+    root, target, change = ("00000000-0000-4000-8000-000000000081", "00000000-0000-4000-8000-000000000082", "00000000-0000-4000-8000-000000000083")
+    declaration = batch_five_rule_definition(BATCH_FIVE_RULE_IDS[0])
+    interface = load_batch_five_definition_set().interface_definitions[-1]
+    identity = FindingIdentityInputV1("e", "s", "potential_change_impact", "eic.explicit_change_path", BATCH_FIVE_RULE_IDS[0], BATCH_FIVE_VERSION, declaration.digest, BATCH_FIVE_INTERFACE_ID, BATCH_FIVE_VERSION, interface.digest, "a" * 64, "xdi.sel.v1/electrical/engineering_object/" + target + "/power_endpoint", (), change=(change, 1))
+    values = {BATCH_FIVE_RULE_IDS[0]: {"applicability_id": BATCH_FIVE_APPLICABILITY_ID, "complete": True, "path_id": BATCH_FIVE_PATH_ID, "change_present": True, "change_id": change, "change_version": 1, "root_object_id": root, "target_id": target, "edges": (ExplicitRelationshipV1("engineering_relationship", "00000000-0000-4000-8000-000000000084", 1, "electrical", "powered_by", root, target),), "identity": identity}}
+    result = service.evaluate_batch_five(execution_id="e", snapshot_id="s", values_by_rule=values)
+    assert result.status == "completed_with_findings"
+    assert service.evaluate_batch_five(execution_id="e", snapshot_id="s", values_by_rule={BATCH_FIVE_RULE_IDS[0]: {**values[BATCH_FIVE_RULE_IDS[0]], "edges": ()}}).status == "completed_no_findings"
+    scope = AuthorizedScope(7, uuid4(), 3, (1, 2, 3), False, "a" * 64)
+    projection = build_batch_five_change_projection(authorized=scope, owner_id=change, owner_revision="1", values=(("change_id", change),), complete=True, observed_at=datetime.now(timezone.utc))
+    assert projection.projection_id == "xdi.proj.change_seed.v1"
 
 
 def test_generic_empty_assessment_is_atomic_and_idempotent_on_real_postgresql(db_session, relationship_domain):

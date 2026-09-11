@@ -27,6 +27,7 @@ class TechnicalReportSourceType(StrEnum):
     EVIDENCE = "evidence"
     ENGINEERING_OBJECT = "engineering_object"
     ENGINEERING_RELATIONSHIP = "engineering_relationship"
+    CROSS_DISCIPLINE_ASSESSMENT = "cross_discipline_assessment"
     EXTERNAL_OR_HUMAN = "external_or_human"
     STANDARD = "standard"
     CONTEXTUAL = "contextual"
@@ -39,6 +40,7 @@ class TechnicalReportOwningCapability(StrEnum):
     EVIDENCE = "evidence"
     ENGINEERING_OBJECT = "engineering_object"
     ENGINEERING_RELATIONSHIP = "engineering_relationship"
+    CROSS_DISCIPLINE_ASSESSMENT = "cross_discipline_assessment"
 
 
 class TechnicalReportVerificationStatus(StrEnum):

@@ -211,3 +211,41 @@ class DependencyExplanation(XDIModel):
     finding_id: UUID
     path: tuple[dict[str, str], ...] = Field(max_length=4)
     advisory: Literal[True] = True
+
+
+class PotentialImpactRequest(XDIModel):
+    assessment_id: UUID
+    finding_id: UUID
+    change_id: UUID
+    change_version: int = Field(ge=1)
+    target_id: UUID
+    target_kind: Literal["activity", "milestone", "deliverable", "deliverable_revision", "evidence", "supporting_file"]
+    rationale: str = Field(min_length=1, max_length=4000)
+    correlation_id: UUID
+    idempotency_key: UUID
+
+
+class PotentialImpactView(XDIModel):
+    outcome: Literal["success", "protected_not_found", "invalid_request", "version_conflict", "idempotency_conflict", "unavailable"]
+    state: Literal["pending", "reconciled", "handoff_link_pending"] | None = None
+    impact_id: UUID | None = None
+    handoff_key: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    advisory: Literal[True] = True
+
+
+class AssessmentReportProjection(XDIModel):
+    assessment_id: UUID
+    snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    advisory: Literal[True] = True
+
+
+class AIExplanationRequest(XDIModel):
+    assessment_id: UUID
+    finding_ids: tuple[UUID, ...] = Field(min_length=1, max_length=20)
+
+
+class AIExplanationView(XDIModel):
+    outcome: Literal["success", "protected_not_found", "unavailable", "invalid_request"]
+    summary: str | None = Field(default=None, max_length=65536)
+    draft_next_actions: tuple[str, ...] = Field(default=(), max_length=20)
+    advisory: Literal[True] = True

@@ -10,6 +10,8 @@ import { CrossDisciplineProvenancePanel } from "./crossDiscipline/CrossDisciplin
 import { CrossDisciplineSourceComparison } from "./crossDiscipline/CrossDisciplineSourceComparison";
 import { CrossDisciplineCommitmentContext } from "./crossDiscipline/CrossDisciplineCommitmentContext";
 import { CrossDisciplineDependencyView } from "./crossDiscipline/CrossDisciplineDependencyView";
+import { CrossDisciplinePotentialImpactView } from "./crossDiscipline/CrossDisciplinePotentialImpactView";
+import { CrossDisciplineAIExplanation } from "./crossDiscipline/CrossDisciplineAIExplanation";
 
 export function CrossDisciplineIntelligencePanel({ projectId, workspaceIds = [] }: { projectId: number;workspaceIds?:number[] }) {
   const [state,setState]=useState<XDIState>("loading");
@@ -68,6 +70,8 @@ export function CrossDisciplineIntelligencePanel({ projectId, workspaceIds = [] 
       <CrossDisciplineCommitmentContext findings={findings}/>
       <CrossDisciplineDependencyView findings={findings}/>
       <CrossDisciplineDispositionPanel assessmentId={selectedAssessmentId}/>
+      <CrossDisciplinePotentialImpactView impact={null}/>
+      <CrossDisciplineAIExplanation explanation={null}/>
       <CrossDisciplineAssessmentHistory assessments={assessments?.items??[]}/>
     </div>
   </section>;

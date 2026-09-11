@@ -119,7 +119,7 @@ def _record_for_entry(report_id: UUID, entry: TechnicalReportProvenanceEntry) ->
         "minimal_historical_representation": null(),
     }
     if entry.source_type.value in {
-        "universal_capture", "evidence", "engineering_object", "engineering_relationship"
+        "universal_capture", "evidence", "engineering_object", "engineering_relationship", "cross_discipline_assessment"
     }:
         values["minimal_historical_representation"] = payload
         identity = {
@@ -127,6 +127,7 @@ def _record_for_entry(report_id: UUID, entry: TechnicalReportProvenanceEntry) ->
             "evidence": ("evidence_id", "evidence_version", "evidence_id"),
             "engineering_object": ("engineering_object_id", "engineering_object_version", "engineering_object_id"),
             "engineering_relationship": ("engineering_relationship_id", "engineering_relationship_version", "engineering_relationship_id"),
+            "cross_discipline_assessment": ("cross_discipline_assessment_id", "cross_discipline_assessment_version", "assessment_id"),
         }[entry.source_type.value]
         values[identity[0]] = UUID(payload[identity[2]])
         values[identity[1]] = payload["source_version"]

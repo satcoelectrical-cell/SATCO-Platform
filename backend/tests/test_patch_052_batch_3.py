@@ -38,6 +38,7 @@ from app.schemas.discipline_package_operations import (
 )
 from app.services.electrical_package_service import PackageDeclarationMismatch
 from app.services.instrumentation_package_service import InstrumentationPackageService
+from conftest import TEST_DATABASE_REVISION
 
 
 ORG_ID = UUID("02810000-0000-4000-8000-000000000001")
@@ -266,7 +267,7 @@ def test_instrumentation_readiness_checks_schema_and_component(db_session):
         frontend_component_keys=frozenset({"workspace.instrumentation.v1"}),
     )
     assert snapshot.ready is True
-    assert snapshot.migration_revision == "e05200000002"
+    assert snapshot.migration_revision == TEST_DATABASE_REVISION
     assert snapshot.object_count == 8 and snapshot.relationship_count == 5
     assert not instrumentation_operational_readiness_snapshot(
         db_session.connection(), frontend_component_keys=frozenset(),

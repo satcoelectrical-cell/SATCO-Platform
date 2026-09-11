@@ -21,21 +21,21 @@ EXPECTED_OPERATIONS = {
     "create_cross_discipline_reassessment",
     "supersede_cross_discipline_assessment",
     "get_finding_dependency_explanation",
+    "create_cross_discipline_potential_impact",
+    "get_cross_discipline_report_projection",
+    "create_cross_discipline_ai_explanation",
+    "get_cross_discipline_integrated_path",
 }
 
 
-def test_batch_one_exposes_exact_15_operations_and_no_batch_five_operations():
+def test_batch_five_exposes_exact_19_operations():
     operations = {
         route.operation_id for route in router.routes
         if getattr(route, "operation_id", None)
         and "/cross-discipline" in getattr(route, "path", "")
     }
     assert operations == EXPECTED_OPERATIONS
-    assert all(token not in operations for token in (
-        "create_change_impact_from_finding",
-        "get_assessment_report_projection",
-        "explain_cross_discipline_finding_with_ai",
-    ))
+    assert len(operations) == 19
 
 
 def test_all_transport_models_are_strict_and_frozen():

@@ -90,6 +90,43 @@ BATCH_FOUR_EXPECTED_RESULTS = {
 }
 CUMULATIVE_BATCH_FOUR_VECTOR_IDS = CUMULATIVE_BATCH_THREE_VECTOR_IDS + BATCH_FOUR_VECTOR_IDS
 
+BATCH_FIVE_VECTOR_IDS = (
+    "patch053.int01.change_path", "patch053.int02.no_change",
+    "patch053.int03.no_path", "patch053.int04.hidden_hop",
+    "patch053.int05.impact_handoff", "patch053.int06.no_auto_confirm",
+    "patch053.rpt01.snapshot", "patch053.rpt02.acceptance_race",
+    "patch053.rpt03.accepted_immutable", "patch053.rpt04.authority",
+    "patch053.ai01.explain", "patch053.ai02.unavailable", "patch053.ai03.protected",
+    "patch053.ai04.authority", "patch053.ai05.bounds",
+    "patch053.ui01.matrix", "patch053.ui02.queue_detail", "patch053.ui03.indeterminate",
+    "patch053.ui04.disposition_conflict", "patch053.ui05.project_switch",
+    "patch053.ui06.accessibility_rtl",
+)
+BATCH_FIVE_EXPECTED_RESULTS = {
+    "patch053.int01.change_path": "one potential_change_impact/eic.explicit_change_path",
+    "patch053.int02.no_change": "no change; no Finding",
+    "patch053.int03.no_path": "no explicit path; no Finding",
+    "patch053.int04.hidden_hop": "indeterminate/source_ambiguous; no Finding",
+    "patch053.int05.impact_handoff": "reconciled Project Control potential Impact",
+    "patch053.int06.no_auto_confirm": "Impact remains potential; no automatic confirmation",
+    "patch053.rpt01.snapshot": "frozen cross-discipline assessment basis",
+    "patch053.rpt02.acceptance_race": "one accepted Report; protected historical basis",
+    "patch053.rpt03.accepted_immutable": "accepted Report bytes remain immutable",
+    "patch053.rpt04.authority": "protected_not_found before assessment disclosure",
+    "patch053.ai01.explain": "one bounded non-authoritative explanation",
+    "patch053.ai02.unavailable": "provider unavailable; deterministic core unchanged",
+    "patch053.ai03.protected": "protected_not_found; zero provider calls",
+    "patch053.ai04.authority": "AI cannot mutate engineering authority",
+    "patch053.ai05.bounds": "20 Findings, 65536 bytes, one call, zero retries",
+    "patch053.ui01.matrix": "integrated advisory matrix rendered",
+    "patch053.ui02.queue_detail": "queue and detail preserve advisory state",
+    "patch053.ui03.indeterminate": "indeterminate state is explicit",
+    "patch053.ui04.disposition_conflict": "conflict is truthful and non-optimistic",
+    "patch053.ui05.project_switch": "stale project response is cleared",
+    "patch053.ui06.accessibility_rtl": "accessible RTL-safe advisory presentation",
+}
+CUMULATIVE_BATCH_FIVE_VECTOR_IDS = CUMULATIVE_BATCH_FOUR_VECTOR_IDS + BATCH_FIVE_VECTOR_IDS
+
 BATCH_ONE_EXPECTED_RESULTS = dict(zip(BATCH_ONE_VECTOR_IDS, (
     "identical snapshot/result digests",
     "canonical order; identical Findings/digest",
@@ -244,3 +281,23 @@ def validate_batch_four_manifest(vectors: tuple[ConformanceVectorV1, ...]) -> No
         raise ValueError("Batch-4 manifest must contain the exact ordered cumulative 75 vectors")
     if len({item.vector_id for item in vectors}) != 75 or not all(item.postgres_required for item in vectors):
         raise ValueError("invalid Batch-4 vector identity or PostgreSQL flag")
+
+
+def build_batch_five_manifest(fixture_digests: dict[str, str]) -> tuple[ConformanceVectorV1, ...]:
+    if set(fixture_digests) != set(CUMULATIVE_BATCH_FIVE_VECTOR_IDS):
+        raise ValueError("exact cumulative Batch-5 fixture set required")
+    vectors = []
+    for vector_id in CUMULATIVE_BATCH_FIVE_VECTOR_IDS:
+        body = {"schema_version": 1, "vector_id": vector_id, "fixture_id": vector_id,
+                "fixture_digest": fixture_digests[vector_id],
+                "owner": vector_id.split(".")[1], "postgres_required": True}
+        vectors.append(ConformanceVectorV1(**body, vector_digest=digest(body)))
+    validate_batch_five_manifest(tuple(vectors))
+    return tuple(vectors)
+
+
+def validate_batch_five_manifest(vectors: tuple[ConformanceVectorV1, ...]) -> None:
+    if len(vectors) != 96 or tuple(item.vector_id for item in vectors) != CUMULATIVE_BATCH_FIVE_VECTOR_IDS:
+        raise ValueError("Batch-5 manifest must contain the exact ordered cumulative 96 vectors")
+    if len({item.vector_id for item in vectors}) != 96 or not all(item.postgres_required for item in vectors):
+        raise ValueError("invalid Batch-5 vector identity or PostgreSQL flag")

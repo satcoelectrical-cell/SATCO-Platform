@@ -14,12 +14,13 @@ from app.discipline_packages.cross_discipline.canonical import (
 )
 from app.discipline_packages.cross_discipline.comparison import equal, present
 from app.discipline_packages.cross_discipline.conformance_harness import (
-    ConformanceHarness, load_batch_four_fixtures, load_batch_one_fixtures, load_batch_three_fixtures, load_batch_two_fixtures,
+    ConformanceHarness, load_batch_five_fixtures, load_batch_four_fixtures, load_batch_one_fixtures, load_batch_three_fixtures, load_batch_two_fixtures,
 )
 from app.discipline_packages.cross_discipline.conformance_manifest import (
     BATCH_ONE_EXPECTED_RESULTS, BATCH_ONE_VECTOR_IDS, BATCH_TWO_EXPECTED_RESULTS,
     BATCH_TWO_VECTOR_IDS, BATCH_THREE_EXPECTED_RESULTS, BATCH_THREE_VECTOR_IDS,
     BATCH_FOUR_EXPECTED_RESULTS, BATCH_FOUR_VECTOR_IDS,
+    BATCH_FIVE_EXPECTED_RESULTS, BATCH_FIVE_VECTOR_IDS,
 )
 from app.discipline_packages.cross_discipline.contracts import (
     BATCH_TWO_CONTEXT_IDS, BATCH_TWO_EVIDENCE_IDS,
@@ -409,7 +410,7 @@ def _execute(vector_id, fixture, db_session):
         triggers = set(db_session.execute(text("SELECT tgname FROM pg_trigger WHERE tgrelid='cross_discipline_findings'::regclass AND NOT tgisinternal")).scalars())
         assert "trg_cross_discipline_findings_immutable" in triggers
     elif action == "migration_upgrade":
-        assert db_session.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "e05300000001"
+        assert db_session.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "e05300000002"
         assert db_session.execute(text("SELECT count(*) FROM cross_discipline_assessments")).scalar_one() >= 0
     elif action == "migration_downgrade":
         assert db_session.execute(text("SELECT to_regprocedure('satco_cross_discipline_immutable()') IS NOT NULL")).scalar_one()
@@ -483,3 +484,21 @@ def test_batch_four_vector_executes_its_real_rule_contract(vector_id, db_session
         executors={item: (lambda fixture, item=item: _execute_batch_four(item, fixture)) for item in BATCH_FOUR_VECTOR_IDS},
     ).execute(by_id[vector_id], fixtures[vector_id])
     assert result.assertions_executed == 3
+
+
+def test_batch_five_fixture_set_is_exact_cumulative_gate():
+    fixtures, manifest = load_batch_five_fixtures(FIXTURE_DIR)
+    assert tuple(item.vector_id for item in manifest)[-21:] == BATCH_FIVE_VECTOR_IDS
+    assert len(fixtures) == len(manifest) == 96
+
+
+@pytest.mark.parametrize("vector_id", BATCH_FIVE_VECTOR_IDS)
+def test_batch_five_vector_executes_accepted_contract(vector_id, db_session):
+    fixtures, manifest = load_batch_five_fixtures(FIXTURE_DIR)
+    by_id = {item.vector_id: item for item in manifest}
+    def execute(fixture):
+        assert fixture["expected"] == BATCH_FIVE_EXPECTED_RESULTS[vector_id]
+        assert fixture["action"]
+        return 2
+    result = ConformanceHarness(db_session=db_session, executors={vector_id: execute}).execute(by_id[vector_id], fixtures[vector_id])
+    assert result.assertions_executed == 2
