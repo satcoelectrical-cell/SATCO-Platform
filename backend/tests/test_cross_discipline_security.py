@@ -3,7 +3,10 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.adapters.cross_discipline_sources import SqlAlchemyCrossDisciplineAuthorizer
+from app.adapters.cross_discipline_sources import (
+    AuthorizedScope, SqlAlchemyCrossDisciplineAuthorizer,
+    validate_batch_two_selectors,
+)
 from app.api.v1.routers.cross_discipline_intelligence import (
     _assessment_guard, _protected,
 )
@@ -76,6 +79,24 @@ def test_real_source_owner_intersection_aborts_before_projection_lookup(db_sessi
             workspace_ids=workspaces, mutate=False,
         )
     assert authorizer.source_lookup_calls == 0
+
+
+def test_batch_two_selector_is_closed_and_checked_before_any_source_resolution():
+    scope = AuthorizedScope(
+        actor_id=7, organization_id=uuid4(), project_id=3, workspace_ids=(1, 2),
+        mutate=False, authorization_scope_digest="a" * 64,
+    )
+    electrical = "00000000-0000-4000-8000-000000000001"
+    instrumentation = "00000000-0000-4000-8000-000000000002"
+    selected = validate_batch_two_selectors(authorized=scope, selectors=(
+        f"xdi.sel.v1/electrical/engineering_object/{electrical}/power_endpoint",
+        f"xdi.sel.v1/instrumentation/engineering_object/{instrumentation}/power_consumer",
+    ))
+    assert selected[0][0] == "electrical"
+    with pytest.raises(ValueError, match="invalid_request"):
+        validate_batch_two_selectors(authorized=scope, selectors=(
+            f"xdi.sel.v1/electrical/engineering_object/{electrical}/power_*",
+        ))
 
 
 def test_cursor_is_bound_to_exact_tenant_project_query_and_tamper_collapses():

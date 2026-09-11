@@ -1,0 +1,1 @@
+{"action":"batch_two_rule","expected":"voltage rule satisfied; no Finding","schema_version":1,"vector_id":"patch053.ei03.voltage_equal"}

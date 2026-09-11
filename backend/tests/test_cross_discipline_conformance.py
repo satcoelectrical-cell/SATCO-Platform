@@ -14,16 +14,24 @@ from app.discipline_packages.cross_discipline.canonical import (
 )
 from app.discipline_packages.cross_discipline.comparison import equal, present
 from app.discipline_packages.cross_discipline.conformance_harness import (
-    ConformanceHarness, load_batch_one_fixtures,
+    ConformanceHarness, load_batch_one_fixtures, load_batch_two_fixtures,
 )
 from app.discipline_packages.cross_discipline.conformance_manifest import (
-    BATCH_ONE_EXPECTED_RESULTS, BATCH_ONE_VECTOR_IDS,
+    BATCH_ONE_EXPECTED_RESULTS, BATCH_ONE_VECTOR_IDS, BATCH_TWO_EXPECTED_RESULTS,
+    BATCH_TWO_VECTOR_IDS,
 )
 from app.discipline_packages.cross_discipline.contracts import (
-    EvaluationInputV1, FindingIdentityInputV1, LIMITS, SourceIdentityV1,
+    BATCH_TWO_CONTEXT_IDS, BATCH_TWO_EVIDENCE_IDS,
+    BATCH_TWO_HANDOFF_APPLICABILITY_ID, BATCH_TWO_INTERFACE_APPLICABILITY_ID,
+    BATCH_TWO_INTERFACE_ID, BATCH_TWO_PATH_ID, BATCH_TWO_RELATIONSHIP_GRAMMAR_ID,
+    BATCH_TWO_RULE_IDS, BATCH_TWO_VERSION, EvaluationInputV1,
+    ExplicitRelationshipV1, FindingIdentityInputV1, LIMITS, SourceIdentityV1,
+)
+from app.discipline_packages.cross_discipline.definitions.eic_v1 import (
+    batch_two_rule_definition, load_batch_two_definition_set,
 )
 from app.discipline_packages.cross_discipline.evaluator import (
-    EvaluationInvariantError, GenericEvaluator,
+    EvaluationInvariantError, GenericEvaluator, batch_two_evaluator,
 )
 from app.discipline_packages.cross_discipline.graph import (
     BoundedGraph, Edge, GraphLimitExceeded, Node,
@@ -40,6 +48,82 @@ from app.services.cross_discipline_service import (
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "cross_discipline"
 FIXTURES, MANIFEST = load_batch_one_fixtures(FIXTURE_DIR)
 MANIFEST_BY_ID = {item.vector_id: item for item in MANIFEST}
+
+
+def _batch_two_identity(rule_id, *, category, subcode):
+    declaration = batch_two_rule_definition(rule_id)
+    interface = load_batch_two_definition_set().interface_definitions[0]
+    return FindingIdentityInputV1(
+        "00000000-0000-4000-8000-000000000011",
+        "00000000-0000-4000-8000-000000000012",
+        category, subcode, rule_id, BATCH_TWO_VERSION, declaration.digest,
+        BATCH_TWO_INTERFACE_ID, BATCH_TWO_VERSION, interface.digest,
+        "f" * 64, "xdi.sel.v1/electrical/engineering_object/00000000-0000-4000-8000-000000000013/power_endpoint",
+        (SourceIdentityV1("engineering_object", "00000000-0000-4000-8000-000000000013", "aggregate_version", "1", "a" * 64),),
+        registry_digest="b" * 64, combination_id="cross.ei.v1",
+        workspace_binding_revisions=((1, "electrical", 1), (2, "instrumentation", 1)),
+    )
+
+
+def _batch_two_values(vector_id):
+    endpoint = "00000000-0000-4000-8000-000000000013"
+    instrument = "00000000-0000-4000-8000-000000000014"
+    junction_box = "00000000-0000-4000-8000-000000000015"
+    cable = "00000000-0000-4000-8000-000000000016"
+    supply = "00000000-0000-4000-8000-000000000017"
+    if vector_id.startswith("patch053.ei01") or vector_id.startswith("patch053.ei02"):
+        return {BATCH_TWO_RULE_IDS[0]: {
+            "applicability_id": BATCH_TWO_INTERFACE_APPLICABILITY_ID,
+            "power_presence": "present" if vector_id.endswith("power_present") else "absent",
+            "complete": True,
+            "identity": _batch_two_identity(BATCH_TWO_RULE_IDS[0], category="missing", subcode="ei.instrument_power_required"),
+        }}
+    if vector_id.startswith("patch053.ei03") or vector_id.startswith("patch053.ei04"):
+        return {BATCH_TWO_RULE_IDS[1]: {
+            "applicability_id": BATCH_TWO_INTERFACE_APPLICABILITY_ID,
+            "electrical_voltage": normalize_quantity("electric_potential", "24", "V"),
+            "instrument_voltage": normalize_quantity("electric_potential", "24000" if vector_id.endswith("voltage_equal") else "23000", "mV"),
+            "identity": _batch_two_identity(BATCH_TWO_RULE_IDS[1], category="inconsistent", subcode="ei.motor_instrument_voltage"),
+        }}
+    if vector_id.startswith("patch053.ei05") or vector_id.startswith("patch053.ei06"):
+        edges = () if vector_id.endswith("cable_jb_gap") else (
+            ExplicitRelationshipV1("engineering_relationship", "00000000-0000-4000-8000-000000000021", 1, "instrumentation", "transmits_to", instrument, junction_box),
+            ExplicitRelationshipV1("engineering_relationship", "00000000-0000-4000-8000-000000000022", 1, "physical", "connected_through", junction_box, cable),
+            ExplicitRelationshipV1("engineering_relationship", "00000000-0000-4000-8000-000000000023", 1, "electrical", "powered_by", cable, supply),
+        )
+        return {BATCH_TWO_RULE_IDS[2]: {
+            "applicability_id": BATCH_TWO_INTERFACE_APPLICABILITY_ID,
+            "relationship_grammar_id": BATCH_TWO_RELATIONSHIP_GRAMMAR_ID,
+            "path_id": BATCH_TWO_PATH_ID, "complete": True,
+            "signal_endpoint_id": instrument, "supply_terminal_id": supply,
+            "edges": edges,
+            "object_types": {instrument: "transmitter", junction_box: "junction_box", cable: "electrical_cable", supply: "electrical_power_source"},
+            "identity": _batch_two_identity(BATCH_TWO_RULE_IDS[2], category="dependency", subcode="ei.cable_jb_path"),
+        }}
+    declarations = BATCH_TWO_CONTEXT_IDS + BATCH_TWO_EVIDENCE_IDS
+    if vector_id.endswith("handoff_incomplete"):
+        declarations = declarations[:-1]
+    return {BATCH_TWO_RULE_IDS[3]: {
+        "applicability_id": BATCH_TWO_HANDOFF_APPLICABILITY_ID,
+        "declaration_ids": declarations, "complete": True,
+        "commitment_current_use": True, "commitment_state": "current",
+        "reassessment_needed": False, "provider_workspace_id": 1,
+        "consumer_workspace_id": 2, "occurrence_provider_workspace_id": 1,
+        "occurrence_consumer_workspace_id": 2,
+        "identity": _batch_two_identity(BATCH_TWO_RULE_IDS[3], category="incomplete_handoff", subcode="ei.handoff_complete"),
+    }}
+
+
+def _execute_batch_two(vector_id, fixture):
+    assert fixture["expected"] == BATCH_TWO_EXPECTED_RESULTS[vector_id]
+    result = batch_two_evaluator().evaluate(EvaluationInputV1("execution", "snapshot", _batch_two_values(vector_id)))
+    expected_finding = vector_id in {
+        "patch053.ei02.power_missing", "patch053.ei04.voltage_mismatch",
+        "patch053.ei06.cable_jb_gap", "patch053.ei08.handoff_incomplete",
+    }
+    assert (result.status == "completed_with_findings") is expected_finding
+    assert len(result.findings) == (1 if expected_finding else 0)
+    return 3
 
 
 def _identity(*, execution="00000000-0000-4000-8000-000000000001", snapshot="00000000-0000-4000-8000-000000000002", revision="1", sources=None):
@@ -225,3 +309,20 @@ def test_batch_one_vector_executes_mapped_assertions(vector_id, db_session):
     assert result.vector_id == vector_id
     assert result.assertions_executed >= 1
     assert result.postgres_version
+
+
+def test_batch_two_fixture_set_is_exact_cumulative_gate():
+    fixtures, manifest = load_batch_two_fixtures(FIXTURE_DIR)
+    assert tuple(manifest_item.vector_id for manifest_item in manifest)[-8:] == BATCH_TWO_VECTOR_IDS
+    assert set(fixtures) == set(BATCH_ONE_VECTOR_IDS + BATCH_TWO_VECTOR_IDS)
+
+
+@pytest.mark.parametrize("vector_id", BATCH_TWO_VECTOR_IDS)
+def test_batch_two_vector_executes_its_real_rule_contract(vector_id, db_session):
+    fixtures, manifest = load_batch_two_fixtures(FIXTURE_DIR)
+    by_id = {item.vector_id: item for item in manifest}
+    result = ConformanceHarness(
+        db_session=db_session,
+        executors={item: (lambda fixture, item=item: _execute_batch_two(item, fixture)) for item in BATCH_TWO_VECTOR_IDS},
+    ).execute(by_id[vector_id], fixtures[vector_id])
+    assert result.assertions_executed == 3

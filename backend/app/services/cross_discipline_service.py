@@ -12,9 +12,10 @@ from sqlalchemy import select
 from app.adapters.cross_discipline_sources import SqlAlchemyCrossDisciplineAuthorizer
 from app.discipline_packages.cross_discipline.canonical import canonical_json, digest
 from app.discipline_packages.cross_discipline.definitions.eic_v1 import (
-    load_batch_one_definition_set, validate_batch_one_definition_set,
+    load_batch_one_definition_set, load_batch_two_definition_set,
+    validate_batch_two_definition_set,
 )
-from app.discipline_packages.cross_discipline.evaluator import GenericEvaluator
+from app.discipline_packages.cross_discipline.evaluator import GenericEvaluator, batch_two_evaluator
 from app.discipline_packages.cross_discipline.contracts import EvaluationInputV1
 from app.models.audit_log import AuditLog
 from app.models.discipline_package import RegistryRelease
@@ -161,17 +162,19 @@ class CrossDisciplineService:
     """Shared kernel application service; pair rules are injected only later."""
 
     def __init__(self, *, evaluator=None, now=None):
+        # The generic, zero-rule evaluator is a retained Batch-1 artifact.
+        # Batch-2 is deliberately opt-in so historical creation/replay keeps
+        # resolving its exact Batch-1 definition and evaluator identity.
         self.evaluator = evaluator or GenericEvaluator()
+        self._batch_two_evaluator = batch_two_evaluator()
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     def readiness(self, session=None):
         try:
-            definition = load_batch_one_definition_set()
-            validate_batch_one_definition_set(definition)
+            definition = load_batch_two_definition_set()
+            validate_batch_two_definition_set(definition)
         except ValueError:
             return {"state": "not_ready", "reason_codes": ("definition_digest_mismatch",)}
-        if self.evaluator.registered_rule_ids:
-            return {"state": "not_ready", "reason_codes": ("schema_incompatible",)}
         if session is not None:
             try:
                 registry = session.scalar(select(RegistryRelease).where(
@@ -221,8 +224,14 @@ class CrossDisciplineService:
         }
 
     def unsupported_create(self):
-        # Batch 1 installs no pair/integrated production rule handler.
+        # Unrecognized/future pair and integrated handlers remain unavailable.
         return {"outcome": "unavailable", "reason_code": "artifact_unavailable"}
+
+    def evaluate_batch_two(self, *, execution_id: str, snapshot_id: str, values_by_rule, sources_by_rule=None):
+        """Use the retained shared evaluator; callers must already authorize/project sources."""
+        return self._batch_two_evaluator.evaluate(EvaluationInputV1(
+            execution_id, snapshot_id, values_by_rule, sources_by_rule or {},
+        ))
 
     def create_foundation_assessment(
         self, *, session_factory, actor_id, actor_role, organization_id,

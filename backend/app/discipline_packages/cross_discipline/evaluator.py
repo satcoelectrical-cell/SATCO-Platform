@@ -7,7 +7,7 @@ from uuid import uuid4
 from .canonical import digest, finding_fingerprint, recurrence_key
 from .contracts import (
     EvaluationInputV1, EvaluationResultV1, FindingV1, LIMITS,
-    enforce_resource_limit,
+    RuleIndeterminate, enforce_resource_limit,
 )
 
 
@@ -36,7 +36,13 @@ class GenericEvaluator:
             handler = self._handlers.get(rule_id)
             if handler is None:
                 return self._terminal("unavailable", "artifact_unavailable")
-            produced = tuple(handler(request, request.values_by_rule[rule_id]))
+            try:
+                produced = tuple(handler(request, request.values_by_rule[rule_id]))
+            except RuleIndeterminate as error:
+                # A required operand that cannot be proven makes the entire
+                # assessment closed/indeterminate.  Do not retain Findings
+                # produced by rules evaluated earlier in this run.
+                return self._terminal("indeterminate", error.reason_code)
             try:
                 enforce_resource_limit("findings_per_rule", len(produced))
             except ValueError:
@@ -75,3 +81,9 @@ class GenericEvaluator:
             "satco:cross-discipline-result:v1",
         )
         return EvaluationResultV1(status, reason, (), empty, result)
+
+
+def batch_two_evaluator() -> GenericEvaluator:
+    """Explicit Batch-2 registration; Batch-1 callers retain the empty evaluator."""
+    from .rules.eic_v1 import BATCH_TWO_RULE_HANDLERS
+    return GenericEvaluator(BATCH_TWO_RULE_HANDLERS)

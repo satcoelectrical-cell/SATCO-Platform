@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.discipline_packages.cross_discipline.canonical import digest
+from app.discipline_packages.cross_discipline.contracts import (
+    BATCH_TWO_PROJECTION_IDS, parse_batch_two_selector,
+)
 from app.models.engineering_workspace import EngineeringWorkspace, EngineeringWorkspaceMember
 from app.models.project import Project
 from app.ports.cross_discipline_intelligence import ProtectedResourceError
@@ -103,3 +108,58 @@ def validate_scope_shape(workspace_ids: tuple[int, ...]) -> None:
         or any(value < 1 for value in workspace_ids)
     ):
         raise ValueError("invalid_scope")
+
+
+@dataclass(frozen=True, slots=True)
+class BatchTwoProjection:
+    """Minimal immutable E↔I projection envelope; never a source-of-truth copy."""
+    projection_id: str
+    owner_kind: str
+    owner_id: str
+    owner_revision: str
+    values: tuple[tuple[str, Any], ...]
+    context_binding_ids: tuple[str, ...]
+    evidence_binding_ids: tuple[str, ...]
+    complete: bool
+    authorization_scope_digest: str
+    observed_at: datetime
+    projection_digest: str
+
+
+def build_batch_two_projection(*, authorized: AuthorizedScope, projection_id: str,
+                               owner_kind: str, owner_id: str, owner_revision: str,
+                               values: tuple[tuple[str, Any], ...],
+                               context_binding_ids: tuple[str, ...] = (),
+                               evidence_binding_ids: tuple[str, ...] = (),
+                               complete: bool, observed_at: datetime) -> BatchTwoProjection:
+    """Create a digestible minimal projection after authorization has completed."""
+    if projection_id not in BATCH_TWO_PROJECTION_IDS or owner_kind not in {"engineering_object", "interface_commitment"}:
+        raise ValueError("invalid_request")
+    if not owner_id or not owner_revision or observed_at.tzinfo is None:
+        raise ValueError("invalid_request")
+    if tuple(sorted(values, key=lambda item: item[0])) != values or len({key for key, _ in values}) != len(values):
+        raise ValueError("invalid_request")
+    body = {
+        "projection_id": projection_id, "owner_kind": owner_kind, "owner_id": owner_id,
+        "owner_revision": owner_revision, "values": values,
+        "context_binding_ids": tuple(sorted(context_binding_ids)),
+        "evidence_binding_ids": tuple(sorted(evidence_binding_ids)), "complete": complete,
+        "authorization_scope_digest": authorized.authorization_scope_digest,
+        "observed_at": observed_at,
+    }
+    return BatchTwoProjection(**body, projection_digest=digest(body, "satco:xdi-projection:v1"))
+
+
+def validate_batch_two_selectors(*, authorized: AuthorizedScope, selectors: tuple[str, ...]) -> tuple[tuple[str, str, str, str], ...]:
+    """Closed parsing occurs only after scope authorization; no source resolution happens here."""
+    if not authorized.workspace_ids:
+        raise ValueError("invalid_request")
+    parsed = tuple(parse_batch_two_selector(value) for value in selectors)
+    if tuple(sorted(parsed, key=lambda item: (
+        item[0], item[1], UUID(item[2]).bytes, item[3],
+    ))) != parsed:
+        raise ValueError("invalid_request")
+    claims = {(source_kind, canonical_id, role) for _, source_kind, canonical_id, role in parsed}
+    if len(claims) != len(parsed):
+        raise ValueError("invalid_request")
+    return parsed

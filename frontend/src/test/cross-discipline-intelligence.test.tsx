@@ -6,6 +6,7 @@ const { apiMock } = vi.hoisted(() => ({
   apiMock: {
     crossDisciplineReadiness: vi.fn(),
     crossDisciplineAssessments: vi.fn(),
+    crossDisciplineFindings: vi.fn(),
   },
 }));
 vi.mock("../api/client", () => ({ api: apiMock }));
@@ -16,6 +17,7 @@ const empty = { state:"success",data:{items:[],next_cursor:null} };
 beforeEach(()=>{
   apiMock.crossDisciplineReadiness.mockReset().mockResolvedValue(ready);
   apiMock.crossDisciplineAssessments.mockReset().mockResolvedValue(empty);
+  apiMock.crossDisciplineFindings.mockReset().mockResolvedValue({state:"success",data:{items:[],next_cursor:null}});
 });
 
 describe("PATCH-053 Batch-1 frontend foundation",()=>{
@@ -43,6 +45,17 @@ describe("PATCH-053 Batch-1 frontend foundation",()=>{
     for(const label of ["Cross-discipline overview","Cross-discipline finding queue","Cross-discipline finding detail","Cross-discipline provenance","Cross-discipline dispositions","Cross-discipline assessment history"]){
       expect(screen.getByLabelText(label)).toBeVisible();
     }
+  });
+
+  it("renders only persisted E↔I finding summaries and never infers a pass or a path",async()=>{
+    apiMock.crossDisciplineAssessments.mockResolvedValue({state:"success",data:{items:[{assessment_id:"ei-assessment",aggregate_version:1,status:"completed_with_findings",reason_code:null,result_digest:"b".repeat(64),completed_at:"2026-09-10T00:00:00Z"}],next_cursor:null}});
+    apiMock.crossDisciplineFindings.mockResolvedValue({state:"success",data:{items:[{finding_id:"ei-finding",assessment_id:"ei-assessment",ordinal:1,category:"dependency",subcode:"ei.cable_jb_path",severity:"warning",fingerprint:"f".repeat(64),recurrence_key:"r".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true}],next_cursor:null}});
+    render(<CrossDisciplineIntelligencePanel projectId={7}/>);
+    expect(await screen.findByLabelText("Electrical and instrumentation dependency")).toBeVisible();
+    expect(screen.getByText("ei.cable_jb_path")).toBeVisible();
+    expect(screen.getByLabelText("Electrical and instrumentation source comparison")).toHaveTextContent(/does not imply a PASS/i);
+    expect(screen.getByLabelText("Electrical and instrumentation commitment context")).toHaveTextContent(/does not establish completeness/i);
+    expect(screen.queryByText(/inferred path/i)).not.toBeInTheDocument();
   });
 
   it.each([

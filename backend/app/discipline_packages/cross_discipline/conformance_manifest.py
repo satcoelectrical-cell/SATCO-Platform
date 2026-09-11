@@ -36,6 +36,24 @@ BATCH_ONE_VECTOR_IDS = (
     + DATABASE_VECTOR_IDS
 )
 
+BATCH_TWO_VECTOR_IDS = (
+    "patch053.ei01.power_present", "patch053.ei02.power_missing",
+    "patch053.ei03.voltage_equal", "patch053.ei04.voltage_mismatch",
+    "patch053.ei05.cable_jb_complete", "patch053.ei06.cable_jb_gap",
+    "patch053.ei07.handoff_complete", "patch053.ei08.handoff_incomplete",
+)
+BATCH_TWO_EXPECTED_RESULTS = {
+    "patch053.ei01.power_present": "power rule satisfied; no Finding",
+    "patch053.ei02.power_missing": "one missing/ei.instrument_power_required",
+    "patch053.ei03.voltage_equal": "voltage rule satisfied; no Finding",
+    "patch053.ei04.voltage_mismatch": "one inconsistent/ei.motor_instrument_voltage",
+    "patch053.ei05.cable_jb_complete": "dependency rule satisfied; no Finding",
+    "patch053.ei06.cable_jb_gap": "one dependency/ei.cable_jb_path",
+    "patch053.ei07.handoff_complete": "handoff rule satisfied; no Finding",
+    "patch053.ei08.handoff_incomplete": "one incomplete_handoff/ei.handoff_complete",
+}
+CUMULATIVE_BATCH_TWO_VECTOR_IDS = BATCH_ONE_VECTOR_IDS + BATCH_TWO_VECTOR_IDS
+
 BATCH_ONE_EXPECTED_RESULTS = dict(zip(BATCH_ONE_VECTOR_IDS, (
     "identical snapshot/result digests",
     "canonical order; identical Findings/digest",
@@ -130,3 +148,23 @@ def validate_batch_one_manifest(vectors: tuple[ConformanceVectorV1, ...]) -> Non
         }
         if vector.vector_digest != digest(body):
             raise ValueError(f"vector digest mismatch: {vector.vector_id}")
+
+
+def build_batch_two_manifest(fixture_digests: dict[str, str]) -> tuple[ConformanceVectorV1, ...]:
+    if set(fixture_digests) != set(CUMULATIVE_BATCH_TWO_VECTOR_IDS):
+        raise ValueError("exact cumulative Batch-2 fixture set required")
+    vectors = []
+    for vector_id in CUMULATIVE_BATCH_TWO_VECTOR_IDS:
+        body = {"schema_version": 1, "vector_id": vector_id, "fixture_id": vector_id,
+                "fixture_digest": fixture_digests[vector_id],
+                "owner": vector_id.split(".")[1], "postgres_required": True}
+        vectors.append(ConformanceVectorV1(**body, vector_digest=digest(body)))
+    validate_batch_two_manifest(tuple(vectors))
+    return tuple(vectors)
+
+
+def validate_batch_two_manifest(vectors: tuple[ConformanceVectorV1, ...]) -> None:
+    if len(vectors) != 59 or tuple(item.vector_id for item in vectors) != CUMULATIVE_BATCH_TWO_VECTOR_IDS:
+        raise ValueError("Batch-2 manifest must contain the exact ordered cumulative 59 vectors")
+    if len({item.vector_id for item in vectors}) != 59 or not all(item.postgres_required for item in vectors):
+        raise ValueError("invalid Batch-2 vector identity or PostgreSQL flag")

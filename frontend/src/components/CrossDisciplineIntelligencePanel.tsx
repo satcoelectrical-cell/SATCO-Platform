@@ -1,21 +1,25 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { XDIAssessment, XDIPage, XDIReadiness, XDIState } from "../api/types";
+import type { XDIAssessment, XDIFinding, XDIPage, XDIReadiness, XDIState } from "../api/types";
 import { CrossDisciplineAssessmentHistory } from "./crossDiscipline/CrossDisciplineAssessmentHistory";
 import { CrossDisciplineDispositionPanel } from "./crossDiscipline/CrossDisciplineDispositionPanel";
 import { CrossDisciplineFindingDetail } from "./crossDiscipline/CrossDisciplineFindingDetail";
 import { CrossDisciplineFindingQueue } from "./crossDiscipline/CrossDisciplineFindingQueue";
 import { CrossDisciplineOverviewMatrix } from "./crossDiscipline/CrossDisciplineOverviewMatrix";
 import { CrossDisciplineProvenancePanel } from "./crossDiscipline/CrossDisciplineProvenancePanel";
+import { CrossDisciplineSourceComparison } from "./crossDiscipline/CrossDisciplineSourceComparison";
+import { CrossDisciplineCommitmentContext } from "./crossDiscipline/CrossDisciplineCommitmentContext";
+import { CrossDisciplineDependencyView } from "./crossDiscipline/CrossDisciplineDependencyView";
 
 export function CrossDisciplineIntelligencePanel({ projectId, workspaceIds = [] }: { projectId: number;workspaceIds?:number[] }) {
   const [state,setState]=useState<XDIState>("loading");
   const [readiness,setReadiness]=useState<XDIReadiness|null>(null);
   const [assessments,setAssessments]=useState<XDIPage<XDIAssessment>|null>(null);
   const [selectedAssessmentId,setSelectedAssessmentId]=useState<string|null>(null);
+  const [findings,setFindings]=useState<XDIFinding[]|null>(null);
   useEffect(()=>{
     let active=true;
-    setState("loading");setReadiness(null);setAssessments(null);setSelectedAssessmentId(null);
+    setState("loading");setReadiness(null);setAssessments(null);setSelectedAssessmentId(null);setFindings(null);
     const readinessRequest=typeof api.crossDisciplineReadiness==="function"
       ? api.crossDisciplineReadiness(projectId)
       : Promise.resolve({state:"unavailable"} as const);
@@ -36,6 +40,18 @@ export function CrossDisciplineIntelligencePanel({ projectId, workspaceIds = [] 
       });
     return()=>{active=false;};
   },[projectId]);
+  useEffect(()=>{
+    let active=true;
+    setFindings(null);
+    if(!selectedAssessmentId || typeof api.crossDisciplineFindings!=="function") return ()=>{active=false;};
+    api.crossDisciplineFindings(projectId,selectedAssessmentId).then((result)=>{
+      if(!active)return;
+      if(result.state==="protected"){setFindings(null);setState("protected_not_found");return;}
+      if(result.state!=="success"){setFindings(null);return;}
+      setFindings(result.data.items);
+    }).catch(()=>{if(active)setFindings(null);});
+    return()=>{active=false;};
+  },[projectId,selectedAssessmentId]);
   if(state==="protected_not_found")return null;
   if(state==="loading")return <section className="surface cross-discipline-intelligence" aria-busy="true" aria-label="Cross-discipline intelligence">Loading cross-discipline intelligence…</section>;
   return <section className={"surface cross-discipline-intelligence cross-discipline-state-"+state} aria-label="Cross-discipline intelligence">
@@ -48,6 +64,9 @@ export function CrossDisciplineIntelligencePanel({ projectId, workspaceIds = [] 
       <CrossDisciplineFindingQueue assessmentId={selectedAssessmentId}/>
       <CrossDisciplineFindingDetail finding={null}/>
       <CrossDisciplineProvenancePanel assessmentId={selectedAssessmentId}/>
+      <CrossDisciplineSourceComparison findings={findings}/>
+      <CrossDisciplineCommitmentContext findings={findings}/>
+      <CrossDisciplineDependencyView findings={findings}/>
       <CrossDisciplineDispositionPanel assessmentId={selectedAssessmentId}/>
       <CrossDisciplineAssessmentHistory assessments={assessments?.items??[]}/>
     </div>
