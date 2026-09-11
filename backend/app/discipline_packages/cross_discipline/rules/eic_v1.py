@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 from types import MappingProxyType
 from uuid import UUID
 
-from ..comparison import enum_map_equal, equal, present, range_contains, set_contains
+from ..comparison import enum_map_equal, equal, present, range_contains, set_contains, stale_after
 from ..contracts import (
     BATCH_TWO_HANDOFF_APPLICABILITY_ID, BATCH_TWO_INTERFACE_APPLICABILITY_ID,
     BATCH_TWO_INTERFACE_ID, BATCH_TWO_PATH_ID, BATCH_TWO_RELATIONSHIP_GRAMMAR_ID,
@@ -19,6 +20,9 @@ from ..definitions.eic_v1 import (
     BATCH_THREE_INTERFACE_ID, BATCH_THREE_PATH_ID,
     BATCH_THREE_RULE_IDS, BATCH_THREE_VERSION, batch_three_rule_definition,
     batch_two_rule_definition, load_batch_three_definition_set, load_batch_two_definition_set,
+    BATCH_FOUR_APPLICABILITY_ID, BATCH_FOUR_HANDOFF_APPLICABILITY_ID,
+    BATCH_FOUR_INTERFACE_ID, BATCH_FOUR_PATH_ID, BATCH_FOUR_RULE_IDS,
+    BATCH_FOUR_VERSION, batch_four_rule_definition, load_batch_four_definition_set,
 )
 
 
@@ -329,4 +333,115 @@ BATCH_THREE_RULE_HANDLERS = MappingProxyType({
     BATCH_THREE_RULE_IDS[1]: signal_range,
     BATCH_THREE_RULE_IDS[2]: valve_command_feedback,
     BATCH_THREE_RULE_IDS[3]: commitment_fulfilment,
+})
+
+
+def _batch_four_identity(values: Mapping, *, rule_id: str, category: str, subcode: str) -> FindingIdentityInputV1:
+    identity = values.get("identity")
+    if not isinstance(identity, FindingIdentityInputV1):
+        raise ValueError("invalid_request")
+    declaration = batch_four_rule_definition(rule_id)
+    interface = load_batch_four_definition_set().interface_definitions[-1]
+    if identity.rule_id != rule_id or identity.rule_version != BATCH_FOUR_VERSION:
+        raise ValueError("invalid_request")
+    if identity.rule_digest != declaration.digest or identity.interface_digest != interface.digest:
+        raise ValueError("invalid_request")
+    if identity.interface_definition_id != BATCH_FOUR_INTERFACE_ID or identity.interface_version != BATCH_FOUR_VERSION:
+        raise ValueError("invalid_request")
+    if identity.category != category or identity.subcode != subcode:
+        raise ValueError("invalid_request")
+    return identity
+
+
+def _batch_four_finding(values: Mapping, *, rule_id: str, category: str, subcode: str, severity: str = "major"):
+    return ((_batch_four_identity(values, rule_id=rule_id, category=category, subcode=subcode), severity, "violated"),)
+
+
+def _batch_four_complete(values: Mapping, applicability: str) -> None:
+    if values.get("applicability_id") != applicability:
+        raise ValueError("invalid_request")
+    if values.get("complete") is not True:
+        raise RuleIndeterminate("source_incomplete")
+
+
+def mcc_command_status(_request, values):
+    if not isinstance(values, Mapping):
+        raise ValueError("invalid_request")
+    _batch_four_complete(values, BATCH_FOUR_APPLICABILITY_ID)
+    command = present(values.get("command_presence", "unknown"), True)
+    status = present(values.get("status_presence", "unknown"), True)
+    if command.outcome == "indeterminate" or status.outcome == "indeterminate":
+        raise RuleIndeterminate("source_incomplete")
+    if command.outcome == "violated" or status.outcome == "violated":
+        return _batch_four_finding(values, rule_id=BATCH_FOUR_RULE_IDS[0], category="incomplete_handoff", subcode="ec.mcc_command_status")
+    return ()
+
+
+def cabinet_power_path(_request, values):
+    if not isinstance(values, Mapping):
+        raise ValueError("invalid_request")
+    _batch_four_complete(values, BATCH_FOUR_APPLICABILITY_ID)
+    if values.get("path_id") != BATCH_FOUR_PATH_ID:
+        raise ValueError("invalid_request")
+    edges, cabinet, supply = values.get("edges"), values.get("cabinet_id"), values.get("supply_id")
+    if not isinstance(edges, tuple) or not all(isinstance(edge, ExplicitRelationshipV1) for edge in edges):
+        raise RuleIndeterminate("source_ambiguous")
+    if not isinstance(cabinet, str) or not isinstance(supply, str):
+        raise ValueError("invalid_request")
+    try:
+        if str(UUID(cabinet)) != cabinet or str(UUID(supply)) != supply:
+            raise ValueError("invalid_request")
+    except ValueError as error:
+        raise ValueError("invalid_request") from error
+    if len(edges) > LIMITS["edges"] or len({edge.relationship_id for edge in edges}) != len(edges):
+        raise RuleIndeterminate("resource_limit_exceeded" if len(edges) > LIMITS["edges"] else "source_ambiguous")
+    for edge in edges:
+        _canonical_edge(edge)
+    direct = any(edge.source_object_id == cabinet and edge.target_object_id == supply and edge.relationship_family == "electrical" and edge.relationship_type == "powered_by" for edge in edges)
+    via_panel = any(
+        first.source_object_id == cabinet and first.relationship_type in {"connected_through", "powered_by"}
+        and first.relationship_family in {"physical", "electrical"}
+        and second.source_object_id == first.target_object_id and second.target_object_id == supply
+        and second.relationship_family == "electrical" and second.relationship_type == "powered_by"
+        for first in edges for second in edges
+    )
+    if not direct and not via_panel:
+        return _batch_four_finding(values, rule_id=BATCH_FOUR_RULE_IDS[1], category="dependency", subcode="ec.cabinet_power_path")
+    return ()
+
+
+def source_freshness(_request, values):
+    if not isinstance(values, Mapping):
+        raise ValueError("invalid_request")
+    _batch_four_complete(values, BATCH_FOUR_APPLICABILITY_ID)
+    observed_at, reference_at = values.get("observed_at"), values.get("reference_at")
+    if not isinstance(observed_at, datetime) or not isinstance(reference_at, datetime):
+        raise RuleIndeterminate("source_incomplete")
+    result = stale_after(observed_at, reference_at, 2_592_000)
+    if result.outcome == "indeterminate":
+        raise RuleIndeterminate(result.reason or "source_incomplete")
+    if result.outcome == "violated":
+        return _batch_four_finding(values, rule_id=BATCH_FOUR_RULE_IDS[2], category="stale", subcode="ec.source_freshness", severity="warning")
+    return ()
+
+
+def commitment_dispute(_request, values):
+    if not isinstance(values, Mapping):
+        raise ValueError("invalid_request")
+    _batch_four_complete(values, BATCH_FOUR_HANDOFF_APPLICABILITY_ID)
+    if values.get("commitment_current_use") is not True or values.get("commitment_changed") is True:
+        raise RuleIndeterminate("commitment_changed")
+    state = values.get("commitment_state")
+    if state == "disputed":
+        return _batch_four_finding(values, rule_id=BATCH_FOUR_RULE_IDS[3], category="disputed", subcode="ec.commitment_dispute")
+    if state != "fulfilled_for_stated_use":
+        raise RuleIndeterminate("source_ambiguous")
+    return ()
+
+
+BATCH_FOUR_RULE_HANDLERS = MappingProxyType({
+    BATCH_FOUR_RULE_IDS[0]: mcc_command_status,
+    BATCH_FOUR_RULE_IDS[1]: cabinet_power_path,
+    BATCH_FOUR_RULE_IDS[2]: source_freshness,
+    BATCH_FOUR_RULE_IDS[3]: commitment_dispute,
 })

@@ -12,10 +12,10 @@ from sqlalchemy import select
 from app.adapters.cross_discipline_sources import SqlAlchemyCrossDisciplineAuthorizer
 from app.discipline_packages.cross_discipline.canonical import canonical_json, digest
 from app.discipline_packages.cross_discipline.definitions.eic_v1 import (
-    load_batch_one_definition_set, load_batch_three_definition_set, load_batch_two_definition_set,
-    validate_batch_three_definition_set, validate_batch_two_definition_set,
+    load_batch_four_definition_set, load_batch_one_definition_set, load_batch_three_definition_set, load_batch_two_definition_set,
+    validate_batch_four_definition_set, validate_batch_three_definition_set, validate_batch_two_definition_set,
 )
-from app.discipline_packages.cross_discipline.evaluator import GenericEvaluator, batch_three_evaluator, batch_two_evaluator
+from app.discipline_packages.cross_discipline.evaluator import GenericEvaluator, batch_four_evaluator, batch_three_evaluator, batch_two_evaluator
 from app.discipline_packages.cross_discipline.contracts import EvaluationInputV1
 from app.models.audit_log import AuditLog
 from app.models.discipline_package import RegistryRelease
@@ -168,12 +168,13 @@ class CrossDisciplineService:
         self.evaluator = evaluator or GenericEvaluator()
         self._batch_two_evaluator = batch_two_evaluator()
         self._batch_three_evaluator = batch_three_evaluator()
+        self._batch_four_evaluator = batch_four_evaluator()
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     def readiness(self, session=None):
         try:
-            definition = load_batch_three_definition_set()
-            validate_batch_three_definition_set(definition)
+            definition = load_batch_four_definition_set()
+            validate_batch_four_definition_set(definition)
         except ValueError:
             return {"state": "not_ready", "reason_codes": ("definition_digest_mismatch",)}
         if session is not None:
@@ -237,6 +238,12 @@ class CrossDisciplineService:
     def evaluate_batch_three(self, *, execution_id: str, snapshot_id: str, values_by_rule, sources_by_rule=None):
         """Evaluate only authorized I↔C projections after caller authorization/projection."""
         return self._batch_three_evaluator.evaluate(EvaluationInputV1(
+            execution_id, snapshot_id, values_by_rule, sources_by_rule or {},
+        ))
+
+    def evaluate_batch_four(self, *, execution_id: str, snapshot_id: str, values_by_rule, sources_by_rule=None):
+        """Evaluate only authorized Electrical ↔ C&A projections after authorization/projection."""
+        return self._batch_four_evaluator.evaluate(EvaluationInputV1(
             execution_id, snapshot_id, values_by_rule, sources_by_rule or {},
         ))
 

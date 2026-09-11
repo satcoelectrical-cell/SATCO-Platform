@@ -14,8 +14,9 @@ from .conformance_manifest import (
     BATCH_ONE_EXPECTED_RESULTS, BATCH_ONE_VECTOR_IDS, BATCH_TWO_EXPECTED_RESULTS,
     BATCH_TWO_VECTOR_IDS, CUMULATIVE_BATCH_TWO_VECTOR_IDS,
     BATCH_THREE_EXPECTED_RESULTS, BATCH_THREE_VECTOR_IDS, CUMULATIVE_BATCH_THREE_VECTOR_IDS,
+    BATCH_FOUR_EXPECTED_RESULTS, BATCH_FOUR_VECTOR_IDS, CUMULATIVE_BATCH_FOUR_VECTOR_IDS,
     build_batch_one_manifest, build_batch_two_manifest, validate_batch_one_manifest,
-    build_batch_three_manifest,
+    build_batch_three_manifest, build_batch_four_manifest,
 )
 
 
@@ -78,7 +79,8 @@ def load_batch_two_fixtures(directory: Path):
 
 def load_batch_three_fixtures(directory: Path):
     """Load the retained 59 fixtures plus the exact eight I↔C additions."""
-    files = {path.name.removesuffix(".fixture.v1.json"): path for path in directory.glob("*.fixture.v1.json")}
+    files = {path.name.removesuffix(".fixture.v1.json"): path for path in directory.glob("*.fixture.v1.json")
+             if path.name.removesuffix(".fixture.v1.json") in CUMULATIVE_BATCH_THREE_VECTOR_IDS}
     if set(files) != set(CUMULATIVE_BATCH_THREE_VECTOR_IDS):
         raise ValueError("fixture paths must equal the exact cumulative Batch-3 manifest")
     expected = BATCH_ONE_EXPECTED_RESULTS | BATCH_TWO_EXPECTED_RESULTS | BATCH_THREE_EXPECTED_RESULTS
@@ -91,6 +93,24 @@ def load_batch_three_fixtures(directory: Path):
             raise ValueError(f"fixture identity mismatch: {vector_id}")
         payloads[vector_id] = value; digests[vector_id] = hashlib.sha256(raw).hexdigest()
     return payloads, build_batch_three_manifest(digests)
+
+
+def load_batch_four_fixtures(directory: Path):
+    """Load the retained 67 fixtures plus the exact eight Electrical ↔ C&A additions."""
+    files = {path.name.removesuffix(".fixture.v1.json"): path for path in directory.glob("*.fixture.v1.json")
+             if path.name.removesuffix(".fixture.v1.json") in CUMULATIVE_BATCH_FOUR_VECTOR_IDS}
+    if set(files) != set(CUMULATIVE_BATCH_FOUR_VECTOR_IDS):
+        raise ValueError("fixture paths must equal the exact cumulative Batch-4 manifest")
+    expected = BATCH_ONE_EXPECTED_RESULTS | BATCH_TWO_EXPECTED_RESULTS | BATCH_THREE_EXPECTED_RESULTS | BATCH_FOUR_EXPECTED_RESULTS
+    payloads, digests = {}, {}
+    for vector_id in CUMULATIVE_BATCH_FOUR_VECTOR_IDS:
+        raw = files[vector_id].read_bytes(); value = json.loads(raw)
+        if set(value) != {"schema_version", "vector_id", "action", "expected"}:
+            raise ValueError(f"noncanonical fixture shape: {vector_id}")
+        if value["schema_version"] != 1 or value["vector_id"] != vector_id or value["expected"] != expected[vector_id]:
+            raise ValueError(f"fixture identity mismatch: {vector_id}")
+        payloads[vector_id] = value; digests[vector_id] = hashlib.sha256(raw).hexdigest()
+    return payloads, build_batch_four_manifest(digests)
 
 
 class ConformanceHarness:

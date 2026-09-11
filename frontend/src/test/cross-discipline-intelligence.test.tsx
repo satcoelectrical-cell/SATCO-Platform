@@ -74,6 +74,22 @@ describe("PATCH-053 Batch-1 frontend foundation",()=>{
     expect(screen.queryByText(/4..20|controller/i)).not.toBeInTheDocument();
   });
 
+  it("renders persisted Electrical↔C&A findings as advisory without inferring operands or topology",async()=>{
+    apiMock.crossDisciplineAssessments.mockResolvedValue({state:"success",data:{items:[{assessment_id:"ec-assessment",aggregate_version:1,status:"completed_with_findings",reason_code:null,result_digest:"b".repeat(64),completed_at:"2026-09-10T00:00:00Z"}],next_cursor:null}});
+    apiMock.crossDisciplineFindings.mockResolvedValue({state:"success",data:{items:[
+      {finding_id:"ec-mcc",assessment_id:"ec-assessment",ordinal:1,category:"incomplete_handoff",subcode:"ec.mcc_command_status",severity:"major",fingerprint:"f".repeat(64),recurrence_key:"r".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true},
+      {finding_id:"ec-path",assessment_id:"ec-assessment",ordinal:2,category:"dependency",subcode:"ec.cabinet_power_path",severity:"major",fingerprint:"g".repeat(64),recurrence_key:"s".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true},
+      {finding_id:"ec-fresh",assessment_id:"ec-assessment",ordinal:3,category:"stale",subcode:"ec.source_freshness",severity:"warning",fingerprint:"h".repeat(64),recurrence_key:"t".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true},
+      {finding_id:"ec-dispute",assessment_id:"ec-assessment",ordinal:4,category:"disputed",subcode:"ec.commitment_dispute",severity:"major",fingerprint:"i".repeat(64),recurrence_key:"u".repeat(64),current_state:"disputed",allowed_actions:[],provenance:{},advisory:true},
+    ],next_cursor:null}});
+    render(<CrossDisciplineIntelligencePanel projectId={7}/>);
+    expect(await screen.findByText("ec.mcc_command_status")).toBeVisible();
+    expect(screen.getByText("ec.cabinet_power_path")).toBeVisible();
+    expect(screen.getByText("ec.source_freshness")).toBeVisible();
+    expect(screen.getByText("ec.commitment_dispute")).toBeVisible();
+    expect(screen.queryByText(/alternate supply|controller|observed at/i)).not.toBeInTheDocument();
+  });
+
   it.each([
     ["unavailable",{state:"unavailable"}],
     ["conflict",{state:"conflict"}],

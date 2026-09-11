@@ -5,7 +5,7 @@ from fastapi import HTTPException
 
 from app.adapters.cross_discipline_sources import (
     AuthorizedScope, SqlAlchemyCrossDisciplineAuthorizer,
-    validate_batch_three_selectors, validate_batch_two_selectors,
+    validate_batch_four_selectors, validate_batch_three_selectors, validate_batch_two_selectors,
 )
 from app.api.v1.routers.cross_discipline_intelligence import (
     _assessment_guard, _protected,
@@ -115,6 +115,19 @@ def test_batch_three_selector_requires_full_i_c_scope_before_any_source_resoluti
         validate_batch_three_selectors(authorized=scope, selectors=(
             f"xdi.sel.v1/control_automation/engineering_object/{control}/hidden_topology",
         ))
+
+
+def test_batch_four_selector_is_closed_before_electrical_or_control_source_lookup():
+    scope = AuthorizedScope(actor_id=7, organization_id=uuid4(), project_id=3, workspace_ids=(1, 2), mutate=False, authorization_scope_digest="a" * 64)
+    electrical = "00000000-0000-4000-8000-000000000081"
+    control = "00000000-0000-4000-8000-000000000082"
+    selected = validate_batch_four_selectors(authorized=scope, selectors=(
+        f"xdi.sel.v1/control_automation/engineering_object/{control}/mcc",
+        f"xdi.sel.v1/electrical/engineering_object/{electrical}/power_endpoint",
+    ))
+    assert {item[0] for item in selected} == {"electrical", "control_automation"}
+    with pytest.raises(ValueError, match="invalid_request"):
+        validate_batch_four_selectors(authorized=scope, selectors=(f"xdi.sel.v1/electrical/engineering_object/{electrical}/power_*",))
 
 
 def test_cursor_is_bound_to_exact_tenant_project_query_and_tamper_collapses():

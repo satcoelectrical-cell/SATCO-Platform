@@ -72,6 +72,24 @@ BATCH_THREE_EXPECTED_RESULTS = {
 }
 CUMULATIVE_BATCH_THREE_VECTOR_IDS = CUMULATIVE_BATCH_TWO_VECTOR_IDS + BATCH_THREE_VECTOR_IDS
 
+BATCH_FOUR_VECTOR_IDS = (
+    "patch053.ec01.command_status_complete", "patch053.ec02.status_missing",
+    "patch053.ec03.cabinet_power_complete", "patch053.ec04.cabinet_power_gap",
+    "patch053.ec05.source_fresh", "patch053.ec06.source_stale",
+    "patch053.ec07.no_dispute", "patch053.ec08.disputed",
+)
+BATCH_FOUR_EXPECTED_RESULTS = {
+    "patch053.ec01.command_status_complete": "MCC command/status handoff satisfied; no Finding",
+    "patch053.ec02.status_missing": "one incomplete_handoff/ec.mcc_command_status",
+    "patch053.ec03.cabinet_power_complete": "cabinet power path satisfied; no Finding",
+    "patch053.ec04.cabinet_power_gap": "one dependency/ec.cabinet_power_path",
+    "patch053.ec05.source_fresh": "source freshness satisfied; no Finding",
+    "patch053.ec06.source_stale": "one stale/ec.source_freshness",
+    "patch053.ec07.no_dispute": "commitment is not disputed; no Finding",
+    "patch053.ec08.disputed": "one disputed/ec.commitment_dispute",
+}
+CUMULATIVE_BATCH_FOUR_VECTOR_IDS = CUMULATIVE_BATCH_THREE_VECTOR_IDS + BATCH_FOUR_VECTOR_IDS
+
 BATCH_ONE_EXPECTED_RESULTS = dict(zip(BATCH_ONE_VECTOR_IDS, (
     "identical snapshot/result digests",
     "canonical order; identical Findings/digest",
@@ -206,3 +224,23 @@ def validate_batch_three_manifest(vectors: tuple[ConformanceVectorV1, ...]) -> N
         raise ValueError("Batch-3 manifest must contain the exact ordered cumulative 67 vectors")
     if len({item.vector_id for item in vectors}) != 67 or not all(item.postgres_required for item in vectors):
         raise ValueError("invalid Batch-3 vector identity or PostgreSQL flag")
+
+
+def build_batch_four_manifest(fixture_digests: dict[str, str]) -> tuple[ConformanceVectorV1, ...]:
+    if set(fixture_digests) != set(CUMULATIVE_BATCH_FOUR_VECTOR_IDS):
+        raise ValueError("exact cumulative Batch-4 fixture set required")
+    vectors = []
+    for vector_id in CUMULATIVE_BATCH_FOUR_VECTOR_IDS:
+        body = {"schema_version": 1, "vector_id": vector_id, "fixture_id": vector_id,
+                "fixture_digest": fixture_digests[vector_id],
+                "owner": vector_id.split(".")[1], "postgres_required": True}
+        vectors.append(ConformanceVectorV1(**body, vector_digest=digest(body)))
+    validate_batch_four_manifest(tuple(vectors))
+    return tuple(vectors)
+
+
+def validate_batch_four_manifest(vectors: tuple[ConformanceVectorV1, ...]) -> None:
+    if len(vectors) != 75 or tuple(item.vector_id for item in vectors) != CUMULATIVE_BATCH_FOUR_VECTOR_IDS:
+        raise ValueError("Batch-4 manifest must contain the exact ordered cumulative 75 vectors")
+    if len({item.vector_id for item in vectors}) != 75 or not all(item.postgres_required for item in vectors):
+        raise ValueError("invalid Batch-4 vector identity or PostgreSQL flag")

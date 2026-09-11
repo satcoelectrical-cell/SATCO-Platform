@@ -14,11 +14,12 @@ from app.discipline_packages.cross_discipline.canonical import (
 )
 from app.discipline_packages.cross_discipline.comparison import equal, present
 from app.discipline_packages.cross_discipline.conformance_harness import (
-    ConformanceHarness, load_batch_one_fixtures, load_batch_three_fixtures, load_batch_two_fixtures,
+    ConformanceHarness, load_batch_four_fixtures, load_batch_one_fixtures, load_batch_three_fixtures, load_batch_two_fixtures,
 )
 from app.discipline_packages.cross_discipline.conformance_manifest import (
     BATCH_ONE_EXPECTED_RESULTS, BATCH_ONE_VECTOR_IDS, BATCH_TWO_EXPECTED_RESULTS,
     BATCH_TWO_VECTOR_IDS, BATCH_THREE_EXPECTED_RESULTS, BATCH_THREE_VECTOR_IDS,
+    BATCH_FOUR_EXPECTED_RESULTS, BATCH_FOUR_VECTOR_IDS,
 )
 from app.discipline_packages.cross_discipline.contracts import (
     BATCH_TWO_CONTEXT_IDS, BATCH_TWO_EVIDENCE_IDS,
@@ -31,10 +32,12 @@ from app.discipline_packages.cross_discipline.definitions.eic_v1 import (
     BATCH_THREE_APPLICABILITY_ID, BATCH_THREE_HANDOFF_APPLICABILITY_ID,
     BATCH_THREE_INTERFACE_ID, BATCH_THREE_PATH_ID,
     BATCH_THREE_RULE_IDS, BATCH_THREE_VERSION, batch_three_rule_definition,
-    batch_two_rule_definition, load_batch_three_definition_set, load_batch_two_definition_set,
+    BATCH_FOUR_APPLICABILITY_ID, BATCH_FOUR_HANDOFF_APPLICABILITY_ID, BATCH_FOUR_INTERFACE_ID,
+    BATCH_FOUR_PATH_ID, BATCH_FOUR_RULE_IDS, BATCH_FOUR_VERSION, batch_four_rule_definition,
+    batch_two_rule_definition, load_batch_four_definition_set, load_batch_three_definition_set, load_batch_two_definition_set,
 )
 from app.discipline_packages.cross_discipline.evaluator import (
-    EvaluationInvariantError, GenericEvaluator, batch_three_evaluator, batch_two_evaluator,
+    EvaluationInvariantError, GenericEvaluator, batch_four_evaluator, batch_three_evaluator, batch_two_evaluator,
 )
 from app.discipline_packages.cross_discipline.graph import (
     BoundedGraph, Edge, GraphLimitExceeded, Node,
@@ -190,6 +193,57 @@ def _execute_batch_three(vector_id, fixture):
         "patch053.ic02.signal_type_mismatch", "patch053.ic04.range_mismatch",
         "patch053.ic06.valve_feedback_gap", "patch053.ic08.commitment_unfulfilled",
     }
+    assert (result.status == "completed_with_findings") is expected_finding
+    assert len(result.findings) == (1 if expected_finding else 0)
+    return 3
+
+
+def _batch_four_identity(rule_id, *, category, subcode):
+    declaration = batch_four_rule_definition(rule_id)
+    interface = load_batch_four_definition_set().interface_definitions[-1]
+    return FindingIdentityInputV1(
+        "00000000-0000-4000-8000-000000000061", "00000000-0000-4000-8000-000000000062",
+        category, subcode, rule_id, BATCH_FOUR_VERSION, declaration.digest,
+        BATCH_FOUR_INTERFACE_ID, BATCH_FOUR_VERSION, interface.digest, "d" * 64,
+        "xdi.sel.v1/electrical/engineering_object/00000000-0000-4000-8000-000000000063/cabinet",
+        (SourceIdentityV1("engineering_object", "00000000-0000-4000-8000-000000000063", "aggregate_version", "1", "a" * 64),),
+        registry_digest="b" * 64, combination_id="cross.ec.v1",
+        workspace_binding_revisions=((1, "electrical", 1), (2, "control_automation", 1)),
+    )
+
+
+def _batch_four_values(vector_id):
+    cabinet, panel, supply = (
+        "00000000-0000-4000-8000-000000000063", "00000000-0000-4000-8000-000000000064", "00000000-0000-4000-8000-000000000065",
+    )
+    if vector_id.startswith("patch053.ec01") or vector_id.startswith("patch053.ec02"):
+        return {BATCH_FOUR_RULE_IDS[0]: {"applicability_id": BATCH_FOUR_APPLICABILITY_ID, "complete": True,
+            "command_presence": "present", "status_presence": "present" if vector_id.endswith("command_status_complete") else "absent",
+            "identity": _batch_four_identity(BATCH_FOUR_RULE_IDS[0], category="incomplete_handoff", subcode="ec.mcc_command_status")}}
+    if vector_id.startswith("patch053.ec03") or vector_id.startswith("patch053.ec04"):
+        edges = () if vector_id.endswith("cabinet_power_gap") else (
+            ExplicitRelationshipV1("engineering_relationship", "00000000-0000-4000-8000-000000000066", 1, "physical", "connected_through", cabinet, panel),
+            ExplicitRelationshipV1("engineering_relationship", "00000000-0000-4000-8000-000000000067", 1, "electrical", "powered_by", panel, supply),
+        )
+        return {BATCH_FOUR_RULE_IDS[1]: {"applicability_id": BATCH_FOUR_APPLICABILITY_ID, "complete": True, "path_id": BATCH_FOUR_PATH_ID,
+            "edges": edges, "cabinet_id": cabinet, "supply_id": supply,
+            "identity": _batch_four_identity(BATCH_FOUR_RULE_IDS[1], category="dependency", subcode="ec.cabinet_power_path")}}
+    if vector_id.startswith("patch053.ec05") or vector_id.startswith("patch053.ec06"):
+        reference = datetime(2026, 1, 31, tzinfo=timezone.utc)
+        age = 2_592_000 if vector_id.endswith("source_fresh") else 2_592_000.000001
+        return {BATCH_FOUR_RULE_IDS[2]: {"applicability_id": BATCH_FOUR_APPLICABILITY_ID, "complete": True,
+            "observed_at": datetime.fromtimestamp(reference.timestamp() - age, tz=timezone.utc), "reference_at": reference,
+            "identity": _batch_four_identity(BATCH_FOUR_RULE_IDS[2], category="stale", subcode="ec.source_freshness")}}
+    return {BATCH_FOUR_RULE_IDS[3]: {"applicability_id": BATCH_FOUR_HANDOFF_APPLICABILITY_ID, "complete": True,
+        "commitment_current_use": True, "commitment_changed": False,
+        "commitment_state": "disputed" if vector_id.endswith("disputed") else "fulfilled_for_stated_use",
+        "identity": _batch_four_identity(BATCH_FOUR_RULE_IDS[3], category="disputed", subcode="ec.commitment_dispute")}}
+
+
+def _execute_batch_four(vector_id, fixture):
+    assert fixture["expected"] == BATCH_FOUR_EXPECTED_RESULTS[vector_id]
+    result = batch_four_evaluator().evaluate(EvaluationInputV1("execution", "snapshot", _batch_four_values(vector_id)))
+    expected_finding = vector_id in {"patch053.ec02.status_missing", "patch053.ec04.cabinet_power_gap", "patch053.ec06.source_stale", "patch053.ec08.disputed"}
     assert (result.status == "completed_with_findings") is expected_finding
     assert len(result.findings) == (1 if expected_finding else 0)
     return 3
@@ -410,5 +464,22 @@ def test_batch_three_vector_executes_its_real_rule_contract(vector_id, db_sessio
     result = ConformanceHarness(
         db_session=db_session,
         executors={item: (lambda fixture, item=item: _execute_batch_three(item, fixture)) for item in BATCH_THREE_VECTOR_IDS},
+    ).execute(by_id[vector_id], fixtures[vector_id])
+    assert result.assertions_executed == 3
+
+
+def test_batch_four_fixture_set_is_exact_cumulative_gate():
+    fixtures, manifest = load_batch_four_fixtures(FIXTURE_DIR)
+    assert tuple(manifest_item.vector_id for manifest_item in manifest)[-8:] == BATCH_FOUR_VECTOR_IDS
+    assert len(fixtures) == 75
+
+
+@pytest.mark.parametrize("vector_id", BATCH_FOUR_VECTOR_IDS)
+def test_batch_four_vector_executes_its_real_rule_contract(vector_id, db_session):
+    fixtures, manifest = load_batch_four_fixtures(FIXTURE_DIR)
+    by_id = {item.vector_id: item for item in manifest}
+    result = ConformanceHarness(
+        db_session=db_session,
+        executors={item: (lambda fixture, item=item: _execute_batch_four(item, fixture)) for item in BATCH_FOUR_VECTOR_IDS},
     ).execute(by_id[vector_id], fixtures[vector_id])
     assert result.assertions_executed == 3

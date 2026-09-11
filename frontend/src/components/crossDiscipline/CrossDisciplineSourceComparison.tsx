@@ -5,6 +5,8 @@ const SOURCE_RULES = new Set([
   "ei.motor_instrument_voltage",
   "ic.signal_type",
   "ic.signal_range",
+  "ec.mcc_command_status",
+  "ec.source_freshness",
 ]);
 
 export function CrossDisciplineSourceComparison({ findings }: { findings: XDIFinding[] | null }) {

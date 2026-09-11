@@ -14,7 +14,7 @@ from app.discipline_packages.cross_discipline.canonical import digest
 from app.discipline_packages.cross_discipline.contracts import (
     BATCH_TWO_PROJECTION_IDS, parse_batch_two_selector,
 )
-from app.discipline_packages.cross_discipline.definitions.eic_v1 import BATCH_THREE_PROJECTION_IDS
+from app.discipline_packages.cross_discipline.definitions.eic_v1 import BATCH_FOUR_PROJECTION_IDS, BATCH_THREE_PROJECTION_IDS
 from app.models.engineering_workspace import EngineeringWorkspace, EngineeringWorkspaceMember
 from app.models.project import Project
 from app.ports.cross_discipline_intelligence import ProtectedResourceError
@@ -220,6 +220,57 @@ def validate_batch_three_selectors(*, authorized: AuthorizedScope, selectors: tu
         if discipline not in {"instrumentation", "control_automation"} or source_kind != "engineering_object":
             raise ValueError("invalid_request")
         if role not in {"signal_endpoint", "valve", "io_channel", "controller", "commitment"}:
+            raise ValueError("invalid_request")
+        try:
+            if str(UUID(canonical_id)) != canonical_id:
+                raise ValueError("invalid_request")
+        except ValueError as error:
+            raise ValueError("invalid_request") from error
+        parsed.append((discipline, source_kind, canonical_id, role))
+    ordered = tuple(sorted(parsed, key=lambda item: (item[0], item[1], UUID(item[2]).bytes, item[3])))
+    if tuple(parsed) != ordered or len({(kind, identifier, role) for _, kind, identifier, role in parsed}) != len(parsed):
+        raise ValueError("invalid_request")
+    return ordered
+
+
+@dataclass(frozen=True, slots=True)
+class BatchFourProjection(BatchThreeProjection):
+    """Minimal immutable Electrical ↔ C&A projection after authorization."""
+
+
+def build_batch_four_projection(*, authorized: AuthorizedScope, projection_id: str,
+                                owner_kind: str, owner_id: str, owner_revision: str,
+                                values: tuple[tuple[str, Any], ...],
+                                context_binding_ids: tuple[str, ...] = (),
+                                evidence_binding_ids: tuple[str, ...] = (),
+                                complete: bool, observed_at: datetime) -> BatchFourProjection:
+    if projection_id not in BATCH_FOUR_PROJECTION_IDS or owner_kind not in {"engineering_object", "interface_commitment"}:
+        raise ValueError("invalid_request")
+    if not authorized.workspace_ids or not owner_id or not owner_revision or observed_at.tzinfo is None:
+        raise ValueError("invalid_request")
+    if tuple(sorted(values, key=lambda item: item[0])) != values or len({key for key, _ in values}) != len(values):
+        raise ValueError("invalid_request")
+    body = {"projection_id": projection_id, "owner_kind": owner_kind, "owner_id": owner_id,
+        "owner_revision": owner_revision, "values": values,
+        "context_binding_ids": tuple(sorted(context_binding_ids)), "evidence_binding_ids": tuple(sorted(evidence_binding_ids)),
+        "complete": complete, "authorization_scope_digest": authorized.authorization_scope_digest, "observed_at": observed_at}
+    return BatchFourProjection(**body, projection_digest=digest(body, "satco:xdi-projection:v1"))
+
+
+def validate_batch_four_selectors(*, authorized: AuthorizedScope, selectors: tuple[str, ...]) -> tuple[tuple[str, str, str, str], ...]:
+    if not authorized.workspace_ids:
+        raise ValueError("invalid_request")
+    parsed = []
+    for value in selectors:
+        if not isinstance(value, str) or any(character.isspace() for character in value):
+            raise ValueError("invalid_request")
+        parts = value.split("/")
+        if len(parts) != 5 or parts[0] != "xdi.sel.v1":
+            raise ValueError("invalid_request")
+        _, discipline, source_kind, canonical_id, role = parts
+        if discipline not in {"electrical", "control_automation"} or source_kind not in {"engineering_object", "interface_commitment"}:
+            raise ValueError("invalid_request")
+        if role not in {"power_endpoint", "mcc", "controller", "motor", "cabinet", "supply_terminal", "source_freshness", "commitment"}:
             raise ValueError("invalid_request")
         try:
             if str(UUID(canonical_id)) != canonical_id:

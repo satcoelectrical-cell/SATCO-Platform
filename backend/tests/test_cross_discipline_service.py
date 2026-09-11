@@ -7,11 +7,13 @@ from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from uuid import UUID, uuid4
 from app.models.discipline_package import RegistryRelease
-from app.adapters.cross_discipline_sources import AuthorizedScope, build_batch_three_projection
+from app.adapters.cross_discipline_sources import AuthorizedScope, build_batch_four_projection, build_batch_three_projection
 from app.discipline_packages.cross_discipline.contracts import FindingIdentityInputV1, RangeV1, SourceIdentityV1
 from app.discipline_packages.cross_discipline.definitions.eic_v1 import (
     BATCH_THREE_APPLICABILITY_ID, BATCH_THREE_INTERFACE_ID, BATCH_THREE_PROJECTION_IDS,
     BATCH_THREE_RULE_IDS, BATCH_THREE_VERSION, batch_three_rule_definition,
+    BATCH_FOUR_APPLICABILITY_ID, BATCH_FOUR_INTERFACE_ID, BATCH_FOUR_PROJECTION_IDS,
+    BATCH_FOUR_RULE_IDS, BATCH_FOUR_VERSION, batch_four_rule_definition, load_batch_four_definition_set,
     load_batch_three_definition_set,
 )
 from datetime import datetime, timezone
@@ -81,6 +83,34 @@ def test_batch_three_projection_is_minimal_immutable_and_scope_bound():
     )
     assert projection.authorization_scope_digest == scope.authorization_scope_digest
     assert projection.values == (("accepted_range", "0..20"), ("quantity_type", "analog_current"))
+
+
+def _batch_four_identity(rule_id, category, subcode):
+    declaration = batch_four_rule_definition(rule_id)
+    interface = load_batch_four_definition_set().interface_definitions[-1]
+    return FindingIdentityInputV1(
+        "00000000-0000-4000-8000-000000000071", "00000000-0000-4000-8000-000000000072",
+        category, subcode, rule_id, BATCH_FOUR_VERSION, declaration.digest,
+        BATCH_FOUR_INTERFACE_ID, BATCH_FOUR_VERSION, interface.digest, "c" * 64,
+        "xdi.sel.v1/electrical/engineering_object/00000000-0000-4000-8000-000000000073/mcc",
+        (SourceIdentityV1("engineering_object", "00000000-0000-4000-8000-000000000073", "aggregate_version", "1", "d" * 64),),
+        registry_digest="e" * 64, combination_id="cross.ec.v1",
+        workspace_binding_revisions=((1, "electrical", 1), (2, "control_automation", 1)),
+    )
+
+
+def test_batch_four_mcc_is_explicit_and_projection_is_scope_bound():
+    service = CrossDisciplineService()
+    values = {BATCH_FOUR_RULE_IDS[0]: {"applicability_id": BATCH_FOUR_APPLICABILITY_ID, "complete": True,
+        "command_presence": "present", "status_presence": "absent",
+        "identity": _batch_four_identity(BATCH_FOUR_RULE_IDS[0], "incomplete_handoff", "ec.mcc_command_status")}}
+    result = service.evaluate_batch_four(execution_id="e", snapshot_id="s", values_by_rule=values)
+    assert result.findings[0].identity.subcode == "ec.mcc_command_status"
+    assert service.evaluate_batch_four(execution_id="e", snapshot_id="s", values_by_rule={BATCH_FOUR_RULE_IDS[0]: {**values[BATCH_FOUR_RULE_IDS[0]], "complete": False}}).reason_code == "source_incomplete"
+    scope = AuthorizedScope(7, uuid4(), 3, (1, 2), False, "a" * 64)
+    projection = build_batch_four_projection(authorized=scope, projection_id=BATCH_FOUR_PROJECTION_IDS[2], owner_kind="engineering_object",
+        owner_id="00000000-0000-4000-8000-000000000074", owner_revision="1", values=(("cabinet", "explicit"),), complete=True, observed_at=datetime.now(timezone.utc))
+    assert projection.authorization_scope_digest == scope.authorization_scope_digest
 
 
 def test_generic_empty_assessment_is_atomic_and_idempotent_on_real_postgresql(db_session, relationship_domain):
