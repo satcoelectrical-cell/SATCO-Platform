@@ -169,6 +169,9 @@ export interface XDIScope { workspace_ids:number[];combination_id:string;interfa
 export interface XDIEligibility { state:"eligible"|"ineligible"|"indeterminate"|"unavailable"|"protected_not_found";reason_codes:string[];definition_digest?:string }
 export interface XDIAssessment { assessment_id:string;aggregate_version:number;status:"completed_no_findings"|"completed_with_findings"|"indeterminate"|"unavailable";reason_code:string|null;result_digest:string;completed_at:string }
 export interface XDIFinding { finding_id:string;assessment_id:string;ordinal:number;category:string;subcode:string;severity:string;fingerprint:string;recurrence_key:string;current_state:string;allowed_actions:string[];provenance:Record<string,unknown>;advisory:true }
+export interface XDIICComparisonPresentation { rule_id:"xdi.ic.signal_type.v1"|"xdi.ic.signal_range.v1"; advisory:true; protected_operands:true }
+export interface XDIICDependencyPresentation { rule_id:"xdi.ic.valve_command_feedback.v1"; advisory:true; persisted_path_only:true }
+export interface XDIICCommitmentPresentation { rule_id:"xdi.ic.commitment_fulfilment.v1"; advisory:true; retained_provenance_only:true }
 export interface XDIPage<T> { items:T[];next_cursor:string|null }
 export interface XDIDisposition { disposition_id:string;sequence:number;action:string;resulting_view_state:string;actor_id:number;rationale:string;occurred_at:string;view_version:number }
 export interface XDILineage { lineage_id:string;kind:"reassessment_of"|"supersedes";predecessor_id:string;successor_id:string;occurred_at:string }

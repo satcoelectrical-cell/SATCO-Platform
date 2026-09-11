@@ -54,6 +54,24 @@ BATCH_TWO_EXPECTED_RESULTS = {
 }
 CUMULATIVE_BATCH_TWO_VECTOR_IDS = BATCH_ONE_VECTOR_IDS + BATCH_TWO_VECTOR_IDS
 
+BATCH_THREE_VECTOR_IDS = (
+    "patch053.ic01.signal_type_equal", "patch053.ic02.signal_type_mismatch",
+    "patch053.ic03.range_contains", "patch053.ic04.range_mismatch",
+    "patch053.ic05.valve_paths", "patch053.ic06.valve_feedback_gap",
+    "patch053.ic07.commitment_fulfilled", "patch053.ic08.commitment_unfulfilled",
+)
+BATCH_THREE_EXPECTED_RESULTS = {
+    "patch053.ic01.signal_type_equal": "signal type rule satisfied; no Finding",
+    "patch053.ic02.signal_type_mismatch": "one inconsistent/ic.signal_type",
+    "patch053.ic03.range_contains": "signal range rule satisfied; no Finding",
+    "patch053.ic04.range_mismatch": "one inconsistent/ic.signal_range",
+    "patch053.ic05.valve_paths": "valve command/feedback dependency satisfied; no Finding",
+    "patch053.ic06.valve_feedback_gap": "one dependency/ic.valve_command_feedback",
+    "patch053.ic07.commitment_fulfilled": "commitment fulfilment satisfied; no Finding",
+    "patch053.ic08.commitment_unfulfilled": "one unfulfilled_commitment/ic.commitment_fulfilment",
+}
+CUMULATIVE_BATCH_THREE_VECTOR_IDS = CUMULATIVE_BATCH_TWO_VECTOR_IDS + BATCH_THREE_VECTOR_IDS
+
 BATCH_ONE_EXPECTED_RESULTS = dict(zip(BATCH_ONE_VECTOR_IDS, (
     "identical snapshot/result digests",
     "canonical order; identical Findings/digest",
@@ -168,3 +186,23 @@ def validate_batch_two_manifest(vectors: tuple[ConformanceVectorV1, ...]) -> Non
         raise ValueError("Batch-2 manifest must contain the exact ordered cumulative 59 vectors")
     if len({item.vector_id for item in vectors}) != 59 or not all(item.postgres_required for item in vectors):
         raise ValueError("invalid Batch-2 vector identity or PostgreSQL flag")
+
+
+def build_batch_three_manifest(fixture_digests: dict[str, str]) -> tuple[ConformanceVectorV1, ...]:
+    if set(fixture_digests) != set(CUMULATIVE_BATCH_THREE_VECTOR_IDS):
+        raise ValueError("exact cumulative Batch-3 fixture set required")
+    vectors = []
+    for vector_id in CUMULATIVE_BATCH_THREE_VECTOR_IDS:
+        body = {"schema_version": 1, "vector_id": vector_id, "fixture_id": vector_id,
+                "fixture_digest": fixture_digests[vector_id],
+                "owner": vector_id.split(".")[1], "postgres_required": True}
+        vectors.append(ConformanceVectorV1(**body, vector_digest=digest(body)))
+    validate_batch_three_manifest(tuple(vectors))
+    return tuple(vectors)
+
+
+def validate_batch_three_manifest(vectors: tuple[ConformanceVectorV1, ...]) -> None:
+    if len(vectors) != 67 or tuple(item.vector_id for item in vectors) != CUMULATIVE_BATCH_THREE_VECTOR_IDS:
+        raise ValueError("Batch-3 manifest must contain the exact ordered cumulative 67 vectors")
+    if len({item.vector_id for item in vectors}) != 67 or not all(item.postgres_required for item in vectors):
+        raise ValueError("invalid Batch-3 vector identity or PostgreSQL flag")

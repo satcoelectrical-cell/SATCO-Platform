@@ -51,11 +51,27 @@ describe("PATCH-053 Batch-1 frontend foundation",()=>{
     apiMock.crossDisciplineAssessments.mockResolvedValue({state:"success",data:{items:[{assessment_id:"ei-assessment",aggregate_version:1,status:"completed_with_findings",reason_code:null,result_digest:"b".repeat(64),completed_at:"2026-09-10T00:00:00Z"}],next_cursor:null}});
     apiMock.crossDisciplineFindings.mockResolvedValue({state:"success",data:{items:[{finding_id:"ei-finding",assessment_id:"ei-assessment",ordinal:1,category:"dependency",subcode:"ei.cable_jb_path",severity:"warning",fingerprint:"f".repeat(64),recurrence_key:"r".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true}],next_cursor:null}});
     render(<CrossDisciplineIntelligencePanel projectId={7}/>);
-    expect(await screen.findByLabelText("Electrical and instrumentation dependency")).toBeVisible();
-    expect(screen.getByText("ei.cable_jb_path")).toBeVisible();
-    expect(screen.getByLabelText("Electrical and instrumentation source comparison")).toHaveTextContent(/does not imply a PASS/i);
-    expect(screen.getByLabelText("Electrical and instrumentation commitment context")).toHaveTextContent(/does not establish completeness/i);
+    expect(await screen.findByLabelText("Cross-discipline dependency")).toBeVisible();
+    expect(await screen.findByText("ei.cable_jb_path")).toBeVisible();
+    expect(screen.getByLabelText("Cross-discipline source comparison")).toHaveTextContent(/does not imply a PASS/i);
+    expect(screen.getByLabelText("Cross-discipline commitment context")).toHaveTextContent(/does not establish fulfilment/i);
     expect(screen.queryByText(/inferred path/i)).not.toBeInTheDocument();
+  });
+
+  it("renders persisted I↔C findings without exposing operands, topology, or fulfilment inference",async()=>{
+    apiMock.crossDisciplineAssessments.mockResolvedValue({state:"success",data:{items:[{assessment_id:"ic-assessment",aggregate_version:1,status:"completed_with_findings",reason_code:null,result_digest:"b".repeat(64),completed_at:"2026-09-10T00:00:00Z"}],next_cursor:null}});
+    apiMock.crossDisciplineFindings.mockResolvedValue({state:"success",data:{items:[
+      {finding_id:"ic-type",assessment_id:"ic-assessment",ordinal:1,category:"inconsistent",subcode:"ic.signal_type",severity:"major",fingerprint:"f".repeat(64),recurrence_key:"r".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true},
+      {finding_id:"ic-range",assessment_id:"ic-assessment",ordinal:2,category:"inconsistent",subcode:"ic.signal_range",severity:"major",fingerprint:"g".repeat(64),recurrence_key:"s".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true},
+      {finding_id:"ic-path",assessment_id:"ic-assessment",ordinal:3,category:"dependency",subcode:"ic.valve_command_feedback",severity:"major",fingerprint:"h".repeat(64),recurrence_key:"t".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true},
+      {finding_id:"ic-commitment",assessment_id:"ic-assessment",ordinal:4,category:"unfulfilled_commitment",subcode:"ic.commitment_fulfilment",severity:"major",fingerprint:"i".repeat(64),recurrence_key:"u".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true},
+    ],next_cursor:null}});
+    render(<CrossDisciplineIntelligencePanel projectId={7}/>);
+    expect(await screen.findByText("ic.signal_type")).toBeVisible();
+    expect(screen.getByText("ic.signal_range")).toBeVisible();
+    expect(screen.getByText("ic.valve_command_feedback")).toBeVisible();
+    expect(screen.getByText("ic.commitment_fulfilment")).toBeVisible();
+    expect(screen.queryByText(/4..20|controller/i)).not.toBeInTheDocument();
   });
 
   it.each([

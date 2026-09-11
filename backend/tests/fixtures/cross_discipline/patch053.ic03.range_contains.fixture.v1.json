@@ -1,0 +1,1 @@
+{"action":"batch_three_rule","expected":"signal range rule satisfied; no Finding","schema_version":1,"vector_id":"patch053.ic03.range_contains"}

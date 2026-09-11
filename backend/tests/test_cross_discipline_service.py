@@ -7,6 +7,15 @@ from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from uuid import UUID, uuid4
 from app.models.discipline_package import RegistryRelease
+from app.adapters.cross_discipline_sources import AuthorizedScope, build_batch_three_projection
+from app.discipline_packages.cross_discipline.contracts import FindingIdentityInputV1, RangeV1, SourceIdentityV1
+from app.discipline_packages.cross_discipline.definitions.eic_v1 import (
+    BATCH_THREE_APPLICABILITY_ID, BATCH_THREE_INTERFACE_ID, BATCH_THREE_PROJECTION_IDS,
+    BATCH_THREE_RULE_IDS, BATCH_THREE_VERSION, batch_three_rule_definition,
+    load_batch_three_definition_set,
+)
+from datetime import datetime, timezone
+from decimal import Decimal
 
 
 def test_batch_one_readiness_and_scope_eligibility():
@@ -25,6 +34,53 @@ def test_single_or_future_discipline_scope_is_not_supported():
     service = CrossDisciplineService()
     result = service.eligibility((1,), combination_id="cross.future.v1")
     assert result == {"state": "ineligible", "reason_codes": ("invalid_scope",)}
+
+
+def _batch_three_identity(rule_id, category, subcode):
+    declaration = batch_three_rule_definition(rule_id)
+    interface = load_batch_three_definition_set().interface_definitions[1]
+    return FindingIdentityInputV1(
+        "00000000-0000-4000-8000-000000000041", "00000000-0000-4000-8000-000000000042",
+        category, subcode, rule_id, BATCH_THREE_VERSION, declaration.digest,
+        BATCH_THREE_INTERFACE_ID, BATCH_THREE_VERSION, interface.digest, "c" * 64,
+        "xdi.sel.v1/instrumentation/engineering_object/00000000-0000-4000-8000-000000000043/signal_endpoint",
+        (SourceIdentityV1("engineering_object", "00000000-0000-4000-8000-000000000043", "aggregate_version", "1", "d" * 64),),
+        registry_digest="e" * 64, combination_id="cross.ic.v1",
+        workspace_binding_revisions=((1, "instrumentation", 1), (2, "control_automation", 1)),
+    )
+
+
+def test_batch_three_signal_rules_fail_closed_and_preserve_shared_evaluator_identity():
+    service = CrossDisciplineService()
+    equal_values = {BATCH_THREE_RULE_IDS[0]: {
+        "applicability_id": BATCH_THREE_APPLICABILITY_ID, "complete": True,
+        "instrumentation_signal_type": "signal_current", "control_io_type": "analog_current",
+        "identity": _batch_three_identity(BATCH_THREE_RULE_IDS[0], "inconsistent", "ic.signal_type"),
+    }}
+    assert service.evaluate_batch_three(execution_id="e", snapshot_id="s", values_by_rule=equal_values).status == "completed_no_findings"
+    range_values = {BATCH_THREE_RULE_IDS[1]: {
+        "applicability_id": BATCH_THREE_APPLICABILITY_ID, "complete": True,
+        "instrumentation_range": RangeV1(Decimal("4"), Decimal("20")),
+        "control_accepted_range": RangeV1(Decimal("0"), Decimal("10")),
+        "identity": _batch_three_identity(BATCH_THREE_RULE_IDS[1], "inconsistent", "ic.signal_range"),
+    }}
+    result = service.evaluate_batch_three(execution_id="e", snapshot_id="s", values_by_rule=range_values)
+    assert result.status == "completed_with_findings"
+    assert result.findings[0].identity.subcode == "ic.signal_range"
+    unknown = {BATCH_THREE_RULE_IDS[0]: {**equal_values[BATCH_THREE_RULE_IDS[0]], "instrumentation_signal_type": "signal_unknown"}}
+    assert service.evaluate_batch_three(execution_id="e", snapshot_id="s", values_by_rule=unknown).reason_code == "unsupported_value"
+
+
+def test_batch_three_projection_is_minimal_immutable_and_scope_bound():
+    scope = AuthorizedScope(7, uuid4(), 3, (1, 2), False, "a" * 64)
+    projection = build_batch_three_projection(
+        authorized=scope, projection_id=BATCH_THREE_PROJECTION_IDS[1], owner_kind="engineering_object",
+        owner_id="00000000-0000-4000-8000-000000000044", owner_revision="1",
+        values=(("accepted_range", "0..20"), ("quantity_type", "analog_current")),
+        complete=True, observed_at=datetime.now(timezone.utc),
+    )
+    assert projection.authorization_scope_digest == scope.authorization_scope_digest
+    assert projection.values == (("accepted_range", "0..20"), ("quantity_type", "analog_current"))
 
 
 def test_generic_empty_assessment_is_atomic_and_idempotent_on_real_postgresql(db_session, relationship_domain):

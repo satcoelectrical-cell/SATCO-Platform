@@ -87,3 +87,9 @@ def batch_two_evaluator() -> GenericEvaluator:
     """Explicit Batch-2 registration; Batch-1 callers retain the empty evaluator."""
     from .rules.eic_v1 import BATCH_TWO_RULE_HANDLERS
     return GenericEvaluator(BATCH_TWO_RULE_HANDLERS)
+
+
+def batch_three_evaluator() -> GenericEvaluator:
+    """Explicit Batch-3 I↔C registration; retained Batch-1/2 evaluators remain frozen."""
+    from .rules.eic_v1 import BATCH_THREE_RULE_HANDLERS
+    return GenericEvaluator(BATCH_THREE_RULE_HANDLERS)

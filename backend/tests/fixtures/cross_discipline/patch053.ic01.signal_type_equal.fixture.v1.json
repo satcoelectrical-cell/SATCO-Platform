@@ -1,0 +1,1 @@
+{"action":"batch_three_rule","expected":"signal type rule satisfied; no Finding","schema_version":1,"vector_id":"patch053.ic01.signal_type_equal"}
