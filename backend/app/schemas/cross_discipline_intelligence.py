@@ -26,7 +26,10 @@ class ScopeSelection(XDIModel):
     interface_definition_ids: tuple[str, ...] = Field(default=(), max_length=16)
     endpoint_selectors: tuple[str, ...] = Field(default=(), max_length=128)
     purpose: AssessmentPurpose = AssessmentPurpose.INTERFACE_ASSESSMENT
-    project_change_id: int | None = Field(default=None, ge=1)
+    # Project Control owns Change as a UUID aggregate.  Keeping this as an
+    # integer made the accepted integrated rule impossible to invoke through
+    # the public command.
+    project_change_id: UUID | None = None
     project_change_version: int | None = Field(default=None, ge=1)
 
     @field_validator("workspace_ids")

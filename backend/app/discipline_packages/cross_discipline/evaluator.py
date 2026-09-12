@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid5
 
 from .canonical import digest, finding_fingerprint, recurrence_key
 from .contracts import (
@@ -55,7 +55,10 @@ class GenericEvaluator:
                     identity.occurrence_key, identity.affected_selector, fingerprint,
                 )
                 findings.append(FindingV1(
-                    str(uuid4()), identity, severity, comparison_outcome,
+                    # The Finding identity is a stable derived artifact, not a
+                    # fresh command-side identifier.  This keeps retained
+                    # snapshot replay byte-for-byte reproducible.
+                    str(uuid5(NAMESPACE_URL, fingerprint)), identity, severity, comparison_outcome,
                     fingerprint, recurrence, sort_key,
                 ))
         try:
@@ -105,3 +108,23 @@ def batch_five_evaluator() -> GenericEvaluator:
     """Explicit Batch-5 registration for the bounded E+I+C change path."""
     from .rules.eic_v1 import BATCH_FIVE_RULE_HANDLERS
     return GenericEvaluator(BATCH_FIVE_RULE_HANDLERS)
+
+
+def release_evaluator() -> GenericEvaluator:
+    """The cumulative PATCH-053 evaluator used only for new assessments.
+
+    Historical batch constructors deliberately remain narrow: retained
+    snapshots identify their exact release.  New production assessments use
+    the accepted cumulative Batch-5 definition set.
+    """
+    from .rules.eic_v1 import (
+        BATCH_TWO_RULE_HANDLERS, BATCH_THREE_RULE_HANDLERS,
+        BATCH_FOUR_RULE_HANDLERS, BATCH_FIVE_RULE_HANDLERS,
+    )
+    handlers = {}
+    for group in (
+        BATCH_TWO_RULE_HANDLERS, BATCH_THREE_RULE_HANDLERS,
+        BATCH_FOUR_RULE_HANDLERS, BATCH_FIVE_RULE_HANDLERS,
+    ):
+        handlers.update(group)
+    return GenericEvaluator(handlers)

@@ -178,6 +178,14 @@ class CrossDisciplineOccurrence(ScopedChild, Base):
     occurrence_digest = Column(String(64), nullable=False)
 
 
+class CrossDisciplineOccurrenceSource(Base):
+    """Existing immutable occurrence-to-projection provenance link."""
+    __tablename__ = "cross_discipline_occurrence_sources"
+    assessment_id = Column(PGUUID(as_uuid=True), primary_key=True)
+    occurrence_id = Column(PGUUID(as_uuid=True), primary_key=True)
+    projection_id = Column(PGUUID(as_uuid=True), primary_key=True)
+
+
 class CrossDisciplineFinding(ScopedChild, Base):
     __tablename__ = "cross_discipline_findings"
     __table_args__ = (
@@ -202,6 +210,24 @@ class CrossDisciplineFinding(ScopedChild, Base):
     affected_selector = Column(String(256), nullable=False)
     payload = Column(JSONB, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class CrossDisciplineFindingSource(Base):
+    """Existing immutable Finding-to-projection provenance link."""
+    __tablename__ = "cross_discipline_finding_sources"
+    assessment_id = Column(PGUUID(as_uuid=True), primary_key=True)
+    finding_id = Column(PGUUID(as_uuid=True), primary_key=True)
+    projection_id = Column(PGUUID(as_uuid=True), primary_key=True)
+    role = Column(String(64), primary_key=True)
+
+
+class CrossDisciplineFindingAttestation(Base):
+    """Existing immutable Finding-to-attestation provenance link."""
+    __tablename__ = "cross_discipline_finding_attestations"
+    assessment_id = Column(PGUUID(as_uuid=True), primary_key=True)
+    finding_id = Column(PGUUID(as_uuid=True), primary_key=True)
+    attestation_id = Column(PGUUID(as_uuid=True), primary_key=True)
+    role = Column(String(64), primary_key=True)
 
 
 class CrossDisciplineDisposition(ScopedChild, Base):

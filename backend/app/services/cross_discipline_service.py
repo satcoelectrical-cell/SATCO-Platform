@@ -3,28 +3,38 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Callable
 from uuid import UUID, NAMESPACE_URL, uuid4, uuid5
 
 from sqlalchemy import select
 
-from app.adapters.cross_discipline_sources import SqlAlchemyCrossDisciplineAuthorizer
+from app.adapters.cross_discipline_sources import (
+    SqlAlchemyCrossDisciplineAuthorizer, SqlAlchemyCrossDisciplineSourceReader,
+)
 from app.discipline_packages.cross_discipline.canonical import canonical_json, digest
 from app.discipline_packages.cross_discipline.definitions.eic_v1 import (
     load_batch_five_definition_set, load_batch_four_definition_set, load_batch_one_definition_set, load_batch_three_definition_set, load_batch_two_definition_set,
     validate_batch_five_definition_set, validate_batch_four_definition_set, validate_batch_three_definition_set, validate_batch_two_definition_set,
 )
-from app.discipline_packages.cross_discipline.evaluator import GenericEvaluator, batch_five_evaluator, batch_four_evaluator, batch_three_evaluator, batch_two_evaluator
-from app.discipline_packages.cross_discipline.contracts import EvaluationInputV1
+from app.discipline_packages.cross_discipline.evaluator import GenericEvaluator, batch_five_evaluator, batch_four_evaluator, batch_three_evaluator, batch_two_evaluator, release_evaluator
+from app.discipline_packages.cross_discipline.contracts import (
+    EvaluationInputV1, ExplicitRelationshipV1, FindingIdentityInputV1,
+    QuantityV1, RangeV1, SourceIdentityV1,
+)
 from app.models.audit_log import AuditLog
 from app.models.discipline_package import RegistryRelease
 from app.models.project_control import ProjectDecision
 from app.models.cross_discipline_intelligence import (
     CrossDisciplineAssessment, CrossDisciplineAssessmentWorkspace,
-    CrossDisciplineDisposition, CrossDisciplineFindingCurrent,
+    CrossDisciplineCompletenessAttestation, CrossDisciplineDisposition,
+    CrossDisciplineFinding, CrossDisciplineFindingAttestation,
+    CrossDisciplineFindingCurrent, CrossDisciplineFindingSource,
     CrossDisciplineIdempotency, CrossDisciplineLineage,
-    CrossDisciplineOutbox, CrossDisciplineSnapshot,
+    CrossDisciplineOccurrence, CrossDisciplineOccurrenceSource,
+    CrossDisciplineOutbox, CrossDisciplineSnapshot, CrossDisciplineSourceProjection,
 )
 from app.ports.cross_discipline_intelligence import ProtectedResourceError
 from app.repositories.cross_discipline_unit_of_work import (
@@ -67,6 +77,10 @@ class InvalidDisposition(ValueError):
 
 
 class RetryExhausted(RuntimeError):
+    pass
+
+
+class SourceChanged(RuntimeError):
     pass
 
 
@@ -170,6 +184,7 @@ class CrossDisciplineService:
         self._batch_three_evaluator = batch_three_evaluator()
         self._batch_four_evaluator = batch_four_evaluator()
         self._batch_five_evaluator = batch_five_evaluator()
+        self._release_evaluator = release_evaluator()
         self._impact_handoff = impact_handoff
         self._ai_explainer = ai_explainer
         self._now = now or (lambda: datetime.now(timezone.utc))
@@ -427,7 +442,14 @@ class CrossDisciplineService:
         and therefore fails closed before persistence.
         """
         if data.scope.interface_definition_ids:
-            return self.unsupported_create()
+            return self._create_selected_assessment(
+                session_factory=session_factory, actor_id=actor_id,
+                actor_role=actor_role, organization_id=organization_id,
+                project_id=project_id, data=data, operation=operation,
+                predecessor_id=predecessor_id,
+                expected_predecessor_version=expected_predecessor_version,
+                declare_supersession=declare_supersession,
+            )
         command_payload = data.model_dump(mode="json", exclude={"correlation_id"})
         request_digest = request_fingerprint(operation, command_payload)
         scope_digest = digest(data.scope.model_dump(mode="json"), "satco:xdi-scope:v1")
@@ -632,6 +654,247 @@ class CrossDisciplineService:
                 last_error = error
         raise RetryExhausted("database retry limit exhausted") from last_error
 
+    def _create_selected_assessment(
+        self, *, session_factory, actor_id, actor_role, organization_id, project_id,
+        data, operation, predecessor_id=None, expected_predecessor_version=None,
+        declare_supersession=False,
+    ):
+        """Run the accepted cumulative release in one assessment UoW."""
+        command_payload = data.model_dump(mode="json", exclude={"correlation_id"})
+        request_digest = request_fingerprint(operation, command_payload)
+        scope_digest = digest(data.scope.model_dump(mode="json"), "satco:xdi-scope:v1")
+        last_source_change = False
+        for _attempt in range(1, 4):
+            try:
+                with CrossDisciplineUnitOfWork(session_factory) as uow:
+                    authorizer = SqlAlchemyCrossDisciplineAuthorizer(uow.session)
+                    authorized = authorizer.authorize_scope(
+                        actor_id=actor_id, role=actor_role,
+                        organization_id=organization_id, project_id=project_id,
+                        workspace_ids=tuple(data.scope.workspace_ids), mutate=True,
+                    )
+                    project, workspaces = authorizer.project_and_workspaces(authorized)
+                    package_keys = tuple(
+                        item.bound_package_key or item.canonical_discipline_id or item.discipline
+                        for item in workspaces
+                    )
+                    eligibility = self.eligibility(
+                        authorized.workspace_ids, combination_id=data.scope.combination_id,
+                        project_status=project.status, package_keys=package_keys,
+                    )
+                    if eligibility["state"] != "eligible":
+                        return {"outcome": "invalid_request", "reason_code": eligibility["reason_codes"][0]}
+                    prior = uow.repository.get_idempotency(
+                        organization_id=organization_id, project_id=project_id,
+                        actor_id=actor_id, operation=operation,
+                        idempotency_key=data.idempotency_key, lock=True,
+                    )
+                    if prior is not None:
+                        return dict(prior.response_json) if prior.request_digest == request_digest else {"outcome": "idempotency_conflict"}
+                    registry = uow.session.scalar(select(RegistryRelease).where(
+                        RegistryRelease.is_current.is_(True),
+                        RegistryRelease.release_id == "patch-052.eic-v1",
+                    ))
+                    if registry is None:
+                        return {"outcome": "unavailable", "reason_code": "artifact_unavailable"}
+                    definition = load_batch_five_definition_set()
+                    interfaces = {item.interface_definition_id: item for item in definition.interface_definitions}
+                    interface_ids = tuple(data.scope.interface_definition_ids)
+                    if (
+                        not interface_ids or len(interface_ids) > 16
+                        or tuple(sorted(set(interface_ids))) != interface_ids
+                        or any(item not in interfaces for item in interface_ids)
+                    ):
+                        return {"outcome": "invalid_request", "reason_code": "invalid_scope"}
+                    # A pair/integrated selection may not smuggle an unrelated
+                    # interface into a different declared combination.
+                    expected_interface = {
+                        "cross.ei.v1": "cross.interface.ei.power_handoff.v1",
+                        "cross.ic.v1": "cross.interface.ic.signal_control.v1",
+                        "cross.ec.v1": "cross.interface.ec.command_power.v1",
+                        "cross.eic.v1": "cross.interface.eic.change_path.v1",
+                    }[data.scope.combination_id]
+                    if any(item != expected_interface for item in interface_ids):
+                        return {"outcome": "invalid_request", "reason_code": "invalid_scope"}
+                    now = self._now()
+                    assessment_id, execution_id, snapshot_id = uuid4(), uuid4(), uuid4()
+                    bindings = tuple(
+                        (item.id, item.canonical_discipline_id or item.discipline,
+                         item.bound_project_configuration_revision or 1)
+                        for item in workspaces
+                    )
+                    reader = SqlAlchemyCrossDisciplineSourceReader(uow.session, authorizer=authorizer)
+                    acquired = reader.acquire(
+                        authorized=authorized, definition=definition, interface_ids=interface_ids,
+                        selectors=tuple(data.scope.endpoint_selectors),
+                        purpose=str(data.scope.purpose), combination_id=data.scope.combination_id,
+                        project_change_id=data.scope.project_change_id,
+                        project_change_version=data.scope.project_change_version,
+                        execution_id=execution_id, snapshot_id=snapshot_id,
+                        registry_digest=registry.registry_digest,
+                        workspace_bindings=bindings, observed_at=now,
+                    )
+                    if not acquired.values_by_rule:
+                        return {"outcome": "invalid_request", "reason_code": "invalid_scope"}
+                    evaluation = self._release_evaluator.evaluate(EvaluationInputV1(
+                        str(execution_id), str(snapshot_id), acquired.values_by_rule,
+                        acquired.sources_by_rule,
+                    ))
+                    if not reader.recheck(authorized=authorized, identities=acquired.recheck_identities):
+                        raise SourceChanged()
+                    root = CrossDisciplineAssessment(
+                        id=assessment_id, organization_id=organization_id, project_id=project_id,
+                        actor_id=actor_id, request_id=uuid4(), purpose=str(data.scope.purpose),
+                        rationale=data.rationale, correlation_id=data.correlation_id,
+                        causation_id=getattr(data, "causation_id", None),
+                        idempotency_key=data.idempotency_key, combination_id=data.scope.combination_id,
+                        request_digest=request_digest, scope_digest=scope_digest,
+                        status=evaluation.status, reason_code=evaluation.reason_code,
+                        aggregate_version=1, created_at=now, completed_at=now,
+                    )
+                    uow.repository.add(root)
+                    for ordinal, workspace in enumerate(workspaces):
+                        package_key = workspace.bound_package_key or workspace.canonical_discipline_id or workspace.discipline
+                        binding_revision = workspace.bound_project_configuration_revision or 1
+                        uow.repository.add(CrossDisciplineAssessmentWorkspace(
+                            organization_id=organization_id, project_id=project_id,
+                            assessment_id=assessment_id, workspace_id=workspace.id,
+                            package_key=package_key, discipline_id=workspace.canonical_discipline_id or workspace.discipline,
+                            role=f"participant_{ordinal}", binding_revision=binding_revision,
+                            binding_digest=digest({"workspace_id": workspace.id, "package_key": package_key, "binding_revision": binding_revision}, "satco:xdi-workspace-binding:v1"),
+                        ))
+                    projection_rows = {}
+                    for projection in acquired.projections:
+                        row = CrossDisciplineSourceProjection(
+                            organization_id=organization_id, project_id=project_id, assessment_id=assessment_id,
+                            projection_id=projection.projection_id, owner_kind=projection.owner_kind,
+                            owner_id=projection.owner_id, revision_kind="aggregate_version",
+                            revision=projection.owner_revision, schema_id=projection.schema_id,
+                            adapter_capability_id=projection.adapter_capability_id, sensitivity="project",
+                            payload=projection.payload, projection_digest=projection.projection_digest,
+                        )
+                        projection_rows[projection.projection_id] = row
+                        uow.repository.add(row)
+                    attestation_rows = {}
+                    for attestation in acquired.attestations:
+                        row = CrossDisciplineCompletenessAttestation(
+                            id=attestation.attestation_id, organization_id=organization_id, project_id=project_id,
+                            assessment_id=assessment_id, owner_kind=attestation.owner_kind, owner_id=attestation.owner_id,
+                            selector_digest=attestation.selector_digest, observed_cardinality=attestation.observed_cardinality,
+                            page_count=1, non_truncated=True, negative_result=attestation.observed_cardinality == 0,
+                            payload=attestation.payload, attestation_digest=attestation.attestation_digest,
+                        )
+                        attestation_rows[attestation.attestation_digest] = row
+                        uow.repository.add(row)
+                    occurrence_rows = {}
+                    for occurrence in acquired.occurrences:
+                        row = CrossDisciplineOccurrence(
+                            id=occurrence.occurrence_id, organization_id=organization_id, project_id=project_id,
+                            assessment_id=assessment_id, occurrence_key=occurrence.occurrence_key,
+                            interface_definition_id=occurrence.interface_definition_id,
+                            provider_workspace_id=occurrence.provider_workspace_id,
+                            consumer_workspace_id=occurrence.consumer_workspace_id,
+                            applicability=occurrence.applicability, payload=occurrence.payload,
+                            occurrence_digest=occurrence.occurrence_digest,
+                        )
+                        occurrence_rows[occurrence.interface_definition_id] = row
+                        uow.repository.add(row)
+                    uow.repository.flush()
+                    for occurrence in occurrence_rows.values():
+                        for projection in projection_rows.values():
+                            uow.repository.add(CrossDisciplineOccurrenceSource(
+                                assessment_id=assessment_id, occurrence_id=occurrence.id,
+                                projection_id=projection.id,
+                            ))
+                    for ordinal, finding in enumerate(evaluation.findings):
+                        identity = finding.identity
+                        finding_id = UUID(finding.finding_id)
+                        row = CrossDisciplineFinding(
+                            id=finding_id, organization_id=organization_id, project_id=project_id,
+                            assessment_id=assessment_id,
+                            occurrence_id=occurrence_rows[identity.interface_definition_id].id,
+                            ordinal=ordinal, rule_id=identity.rule_id, rule_version=identity.rule_version,
+                            rule_digest=identity.rule_digest, category=identity.category, subcode=identity.subcode,
+                            severity=finding.severity, fingerprint=finding.fingerprint,
+                            recurrence_key=finding.recurrence_key, affected_selector=identity.affected_selector,
+                            payload=json.loads(canonical_json({"identity": identity, "comparison_outcome": finding.comparison_outcome})),
+                            created_at=now,
+                        )
+                        uow.repository.add(row)
+                        uow.repository.add(CrossDisciplineFindingCurrent(
+                            organization_id=organization_id, project_id=project_id,
+                            assessment_id=assessment_id, finding_id=finding_id,
+                            projection_version=0, current_state="open",
+                        ))
+                        for projection in projection_rows.values():
+                            uow.repository.add(CrossDisciplineFindingSource(
+                                assessment_id=assessment_id, finding_id=finding_id,
+                                projection_id=projection.id, role="evaluation_input",
+                            ))
+                        for attestation in attestation_rows.values():
+                            uow.repository.add(CrossDisciplineFindingAttestation(
+                                assessment_id=assessment_id, finding_id=finding_id,
+                                attestation_id=attestation.id, role="completeness",
+                            ))
+                    snapshot_payload = {
+                        "schema_version": 1, "assessment_id": str(assessment_id),
+                        "execution_id": str(execution_id), "snapshot_id": str(snapshot_id),
+                        "workspace_ids": authorized.workspace_ids, "registry_release_id": registry.release_id,
+                        "registry_digest": registry.registry_digest, "definition_set_id": definition.definition_set_id,
+                        "definition_digest": definition.digest, "selected_interface_ids": interface_ids,
+                        "rule_ids": tuple(sorted(acquired.values_by_rule)), "status": evaluation.status,
+                        "reason_code": evaluation.reason_code, "result_digest": evaluation.result_digest,
+                        "source_manifest": acquired.source_manifest,
+                        # Inputs are retained as canonical JSON data, never re-read from mutable owners.
+                        "retained_values_by_rule": json.loads(canonical_json(acquired.values_by_rule)),
+                        "retained_sources_by_rule": json.loads(canonical_json(acquired.sources_by_rule)),
+                    }
+                    snapshot_digest = digest(snapshot_payload, "satco:cross-discipline-snapshot:v1")
+                    uow.repository.add(CrossDisciplineSnapshot(
+                        organization_id=organization_id, project_id=project_id, assessment_id=assessment_id,
+                        execution_id=execution_id, snapshot_id=snapshot_id, registry_digest=registry.registry_digest,
+                        definition_digest=definition.digest,
+                        source_manifest_digest=digest(acquired.source_manifest, "satco:xdi-source-manifest:v1"),
+                        finding_set_digest=evaluation.finding_set_digest, snapshot_digest=snapshot_digest,
+                        result_digest=evaluation.result_digest, observed_through=now, completed_at=now,
+                        payload=snapshot_payload,
+                    ))
+                    response = {"outcome": "success", "assessment_id": str(assessment_id),
+                        "aggregate_version": 1, "status": evaluation.status,
+                        "result_digest": evaluation.result_digest}
+                    event_payload = {"schema_version": 1, "outcome": "success", "organization_id": str(organization_id),
+                        "project_id": project_id, "workspace_ids": authorized.workspace_ids,
+                        "assessment_id": str(assessment_id), "execution_id": str(execution_id),
+                        "snapshot_id": str(snapshot_id), "aggregate_version": 1,
+                        "correlation_id": str(data.correlation_id), "idempotency_key": str(data.idempotency_key),
+                        "registry_digest": registry.registry_digest, "definition_digest": definition.digest,
+                        "result_digest": evaluation.result_digest}
+                    terminal = "completed" if evaluation.status.startswith("completed_") else evaluation.status
+                    for event_type in ("cross_discipline_assessment_requested", "cross_discipline_assessment_created", f"cross_discipline_assessment_{terminal}"):
+                        self._stage_event(uow, actor_id=actor_id, project_id=project_id,
+                            assessment_id=assessment_id, event_type=event_type,
+                            payload=event_payload, occurred_at=now)
+                    uow.repository.add(CrossDisciplineIdempotency(
+                        organization_id=organization_id, project_id=project_id, actor_id=actor_id,
+                        operation=operation, idempotency_key=data.idempotency_key,
+                        request_digest=request_digest, response_json=response,
+                        response_digest=digest(response, "satco:xdi-response:v1"),
+                        assessment_id=assessment_id, completed_at=now,
+                    ))
+                    uow.commit()
+                    return response
+            except ProtectedResourceError:
+                return self.safe_protected_result()
+            except SourceChanged:
+                last_source_change = True
+                continue
+            except BaseException as error:
+                if not retryable_database_error(error):
+                    raise
+        if last_source_change:
+            return {"outcome": "indeterminate", "reason_code": "source_changed"}
+        raise RetryExhausted("database retry limit exhausted")
+
     def supersede_assessment(
         self, *, session_factory, actor_id, actor_role, organization_id,
         project_id, predecessor_id, data,
@@ -807,10 +1070,13 @@ class CrossDisciplineService:
                     expected_result_digest=snapshot.result_digest,
                 )
                 if verified["outcome"] == "verified":
-                    replay = self.evaluator.evaluate(EvaluationInputV1(
-                        str(snapshot.execution_id), str(snapshot.snapshot_id), {},
-                    ))
-                    if replay.result_digest != snapshot.result_digest:
+                    try:
+                        replay_input = self._retained_evaluation_input(snapshot)
+                        evaluator = self._release_evaluator if replay_input.values_by_rule else self.evaluator
+                        replay = evaluator.evaluate(replay_input)
+                    except (KeyError, TypeError, ValueError):
+                        replay = None
+                    if replay is None or replay.result_digest != snapshot.result_digest:
                         result = {"outcome": "mismatch", "reason_code": "result_digest_mismatch"}
                         terminal = "cross_discipline_historical_verification_integrity_failed"
                     else:
@@ -826,6 +1092,91 @@ class CrossDisciplineService:
             ))
             uow.commit()
             return result
+
+    @staticmethod
+    def _retained_evaluation_input(snapshot) -> EvaluationInputV1:
+        """Rehydrate the typed, immutable input retained in a snapshot.
+
+        Source owners are intentionally never consulted during historical
+        verification.  The JSON snapshot is the replay authority.
+        """
+        payload = snapshot.payload
+        values = payload.get("retained_values_by_rule", {})
+        sources = payload.get("retained_sources_by_rule", {})
+        if not isinstance(values, dict) or not isinstance(sources, dict):
+            raise ValueError("retained_input_invalid")
+
+        def source(value):
+            if not isinstance(value, dict):
+                raise ValueError("retained_input_invalid")
+            return SourceIdentityV1(
+                value["owner_kind"], value["owner_id"], value["revision_kind"],
+                value["revision"], value["projection_digest"],
+            )
+
+        def identity(value):
+            if not isinstance(value, dict):
+                raise ValueError("retained_input_invalid")
+            return FindingIdentityInputV1(
+                value["assessment_execution_id"], value["assessment_snapshot_id"],
+                value["category"], value["subcode"], value["rule_id"],
+                value["rule_version"], value["rule_digest"],
+                value["interface_definition_id"], value["interface_version"],
+                value["interface_digest"], value["occurrence_key"],
+                value["affected_selector"], tuple(source(item) for item in value["sources"]),
+                tuple(value.get("attestation_digests", ())),
+                tuple(value["commitment"]) if value.get("commitment") is not None else None,
+                tuple(value["change"]) if value.get("change") is not None else None,
+                value.get("registry_digest", ""), value.get("combination_id", ""),
+                value.get("project_configuration_revision", 1),
+                tuple(tuple(item) for item in value.get("workspace_binding_revisions", ())),
+            )
+
+        def edge(value):
+            if not isinstance(value, dict):
+                raise ValueError("retained_input_invalid")
+            return ExplicitRelationshipV1(
+                value["relationship_owner_kind"], value["relationship_id"],
+                value["aggregate_version"], value["relationship_family"],
+                value["relationship_type"], value["source_object_id"],
+                value["target_object_id"],
+            )
+
+        restored = {}
+        for rule_id, raw in values.items():
+            if not isinstance(rule_id, str) or not isinstance(raw, dict):
+                raise ValueError("retained_input_invalid")
+            item = dict(raw)
+            item["identity"] = identity(item["identity"])
+            if "edges" in item:
+                item["edges"] = tuple(edge(value) for value in item["edges"])
+            for key in ("electrical_voltage", "instrument_voltage"):
+                if key in item:
+                    value = item[key]
+                    item[key] = QuantityV1(
+                        value["dimension"], Decimal(value["magnitude"]),
+                        value["source_unit"], Decimal(value["canonical_magnitude"]),
+                    )
+            for key in ("instrumentation_range", "control_accepted_range"):
+                if key in item:
+                    value = item[key]
+                    item[key] = RangeV1(
+                        Decimal(value["lower"]), Decimal(value["upper"]),
+                        value.get("lower_inclusive", True), value.get("upper_inclusive", True),
+                    )
+            for key in ("observed_at", "reference_at"):
+                if key in item and isinstance(item[key], str):
+                    item[key] = datetime.fromisoformat(item[key].replace("Z", "+00:00"))
+            restored[rule_id] = item
+        restored_sources = {
+            rule_id: tuple(source(item) for item in source_values)
+            for rule_id, source_values in sources.items()
+        }
+        if tuple(sorted(restored)) != tuple(sorted(sources)):
+            raise ValueError("retained_input_invalid")
+        return EvaluationInputV1(
+            str(snapshot.execution_id), str(snapshot.snapshot_id), restored, restored_sources,
+        )
 
     @staticmethod
     def _stage_event(
