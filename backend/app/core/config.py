@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     CROSS_DISCIPLINE_AI_PROVIDER_API_KEY: str = ""
     CROSS_DISCIPLINE_AI_TIMEOUT_SECONDS: float = 30.0
     STANDARDS_PLATFORM_CATALOG_ADMIN_USER_IDS: str = ""
+    # Batch-2 has no live provider configuration.  The only adapter is a
+    # server-side static allowlist; production source storage reuses the
+    # existing supporting-file private object-store principal.
+    STANDARDS_STATIC_SOURCE_PROVIDER_ENABLED: bool = False
 
     @field_validator("STANDARDS_PLATFORM_CATALOG_ADMIN_USER_IDS")
     @classmethod

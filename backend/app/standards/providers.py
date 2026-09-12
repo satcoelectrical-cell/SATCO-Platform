@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.core.config import settings
+from app.adapters.standard_source_providers import StaticStandardSourceProvider
 
 
 def platform_catalog_admin_ids() -> frozenset[int]:
@@ -19,4 +20,9 @@ def is_configured_provider(provider_id: str) -> bool:
 
     Retrieval provider registration belongs to Batch 2.
     """
-    return provider_id == "registry_metadata"
+    return provider_id in provider_registry()
+
+
+def provider_registry() -> dict[str, StaticStandardSourceProvider]:
+    """Static server-side allowlist; no runtime provider registration."""
+    return {"registry_metadata": StaticStandardSourceProvider()} if settings.STANDARDS_STATIC_SOURCE_PROVIDER_ENABLED else {}

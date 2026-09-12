@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.orm import deferred
 from sqlalchemy.sql import func
 
 from app.core.database import Base
@@ -118,6 +119,73 @@ class OrganizationRightsBinding(Base):
     rights_digest = Column(String(64), nullable=False)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class StandardSourceSnapshot(Base):
+    __tablename__ = "standard_source_snapshots"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id = Column(PGUUID(as_uuid=True), nullable=False)
+    project_id = Column(Integer, nullable=False)
+    standard_identity_id = Column(PGUUID(as_uuid=True), nullable=False)
+    standard_edition_id = Column(PGUUID(as_uuid=True), nullable=False)
+    source_provider_id = Column(String(80), nullable=False)
+    adapter_policy_id = Column(String(80), nullable=False)
+    adapter_policy_version = Column(String(40), nullable=False)
+    source_location = Column(String(500), nullable=False)
+    availability_status = Column(String(32), nullable=False)
+    request_purpose = Column(String(80), nullable=False)
+    correlation_id = Column(PGUUID(as_uuid=True), nullable=False)
+    object_key = Column(String(500)); object_version = Column(String(240))
+    # This column is deliberately deferred: ordinary runtime reads must use the
+    # separately granted resolver, never a SELECT projection of ciphertext.
+    provider_handle_ciphertext = deferred(Column("provider_handle_ciphertext", LargeBinary, nullable=True))
+    provider_handle_key_version = Column(String(40)); provider_version_digest = Column(String(64))
+    content_sha256 = Column(String(64)); byte_count = Column(Integer); media_type = Column(String(120))
+    rights_binding_id = Column(PGUUID(as_uuid=True), nullable=False); rights_binding_version = Column(BigInteger, nullable=False)
+    rights_digest = Column(String(64), nullable=False); evaluated_capabilities = Column(JSONB, nullable=False)
+    standing_observation_id = Column(PGUUID(as_uuid=True), nullable=False)
+    standing_observation_digest = Column(String(64), nullable=False)
+    source_metadata_digest = Column(String(64), nullable=False)
+    integrity_verified = Column(Boolean, nullable=False); integrity_verified_at = Column(DateTime(timezone=True), nullable=False)
+    snapshot_digest = Column(String(64), nullable=False)
+    retrieved_at = Column(DateTime(timezone=True), nullable=False)
+    retrieved_by = Column(Integer, nullable=False); created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class StandardKnowledgeAssertion(Base):
+    __tablename__ = "standard_knowledge_assertions"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id = Column(PGUUID(as_uuid=True), nullable=False); project_id = Column(Integer, nullable=False)
+    standard_edition_id = Column(PGUUID(as_uuid=True), nullable=False); source_snapshot_id = Column(PGUUID(as_uuid=True), nullable=False)
+    source_location = Column(String(500), nullable=False); source_content_digest = Column(String(64), nullable=False)
+    assertion_kind = Column(String(32), nullable=False); canonical_representation = Column(JSONB, nullable=False)
+    assertion_origin = Column(String(20), nullable=False); extraction_method_id = Column(String(80), nullable=False)
+    extraction_method_version = Column(String(40), nullable=False); extraction_method_digest = Column(String(64), nullable=False)
+    intelligence_run_id = Column(PGUUID(as_uuid=True))
+    assertion_digest = Column(String(64), nullable=False); verification_status = Column(String(24), nullable=False, server_default="unverified")
+    current_verification_event_id = Column(PGUUID(as_uuid=True))
+    rights_binding_id = Column(PGUUID(as_uuid=True), nullable=False); rights_binding_version = Column(BigInteger, nullable=False)
+    rights_digest = Column(String(64), nullable=False); retained_derived_use_eligible = Column(Boolean, nullable=False)
+    evaluated_rights_revision = Column(BigInteger, nullable=False); predecessor_assertion_id = Column(PGUUID(as_uuid=True)); successor_assertion_id = Column(PGUUID(as_uuid=True))
+    version = Column(BigInteger, nullable=False, server_default="1"); created_by = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class StandardAssertionVerificationEvent(Base):
+    __tablename__ = "standard_assertion_verification_events"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    assertion_id = Column(PGUUID(as_uuid=True), nullable=False)
+    event_kind = Column(String(32), nullable=False)
+    status = Column(String(24), nullable=False)
+    reason = Column(String(1000))
+    source_rights_binding_id = Column(PGUUID(as_uuid=True), nullable=False)
+    source_rights_binding_version = Column(BigInteger, nullable=False)
+    source_rights_digest = Column(String(64), nullable=False)
+    assertion_digest = Column(String(64), nullable=False)
+    basis_human_verification_event_id = Column(PGUUID(as_uuid=True))
+    actor_kind = Column(String(24), nullable=False)
+    verified_by = Column(Integer)
+    verified_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class StandardsIdempotency(Base):

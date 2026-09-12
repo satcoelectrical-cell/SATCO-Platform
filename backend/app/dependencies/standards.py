@@ -13,11 +13,15 @@ from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.adapters.standard_source_object_store import StandardSourceObjectStore
+from app.adapters.supporting_file_object_store import InMemoryPrivateSupportingFileObjectStore, S3PrivateSupportingFileObjectStore
 from app.core.database import get_db
 from app.dependencies.auth import AuthenticatedOrganizationContext, get_current_user_organization_context
 from app.repositories.standards_repository import StandardsRepository
 from app.services.standards_service import StandardsService
-from app.standards.providers import platform_catalog_admin_ids
+from app.standards.providers import platform_catalog_admin_ids, provider_registry
+
+_dev_standard_objects = StandardSourceObjectStore(InMemoryPrivateSupportingFileObjectStore())
 
 
 @dataclass(slots=True)
@@ -28,9 +32,26 @@ class StandardsApplication:
     service: StandardsService
 
 
+def _source_objects() -> StandardSourceObjectStore:
+    """Production reuses the existing private S3 exact-key adapter; tests/dev
+    get an isolated in-memory implementation with the same no-list contract."""
+    if settings.SATCO_ENVIRONMENT == "production":
+        store = S3PrivateSupportingFileObjectStore(
+            endpoint_url=settings.SUPPORTING_FILE_OBJECT_ENDPOINT,
+            bucket=settings.SUPPORTING_FILE_OBJECT_BUCKET,
+            region=settings.SUPPORTING_FILE_OBJECT_REGION,
+            access_key=settings.resolved_supporting_file_object_access_key(),
+            secret_key=settings.resolved_supporting_file_object_secret_key(),
+        )
+    else:
+        return _dev_standard_objects
+    return StandardSourceObjectStore(store)
+
+
 def get_standards_application(context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context), db: Session = Depends(get_db)) -> StandardsApplication:
     repository = StandardsRepository(db)
-    return StandardsApplication(context=context, db=db, repository=repository, service=StandardsService(db, repository))
+    return StandardsApplication(context=context, db=db, repository=repository,
+        service=StandardsService(db, repository, providers=provider_registry(), objects=_source_objects()))
 
 
 def is_organization_standards_admin(application: StandardsApplication) -> bool:

@@ -8,7 +8,8 @@ from uuid import UUID
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.models.standards import OrganizationRightsBinding, StandardEdition, StandardEditionStandingObservation, StandardIdentity, StandardsIdempotency
+from app.models.standards import OrganizationRightsBinding, StandardEdition, StandardEditionStandingObservation, StandardIdentity, StandardsIdempotency, StandardSourceSnapshot, StandardKnowledgeAssertion
+from app.models.project import Project
 
 
 class StandardsRepository:
@@ -41,6 +42,9 @@ class StandardsRepository:
     def get_edition(self, edition_id: UUID):
         return self.session.get(StandardEdition, edition_id)
 
+    def get_project(self, project_id: int, organization_id: UUID):
+        return self.session.scalar(select(Project).where(Project.id == project_id, Project.organization_id == organization_id))
+
     def edition_by_key(self, identity_id: UUID, edition_key: str, disambiguator: str):
         return self.session.scalar(select(StandardEdition).where(StandardEdition.standard_identity_id == identity_id, StandardEdition.edition_key == edition_key, StandardEdition.edition_disambiguator == disambiguator))
 
@@ -61,6 +65,11 @@ class StandardsRepository:
         key = f"standards-rights:{organization_id}:{edition_id}:{provider_id}"
         self.session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": key})
 
+    def lock_idempotency_tuple(self, organization_id: UUID, actor_id: int, operation: str, key: str) -> None:
+        """Serialize first-writer creation without exposing a duplicate-key race."""
+        lock_key = f"standards-idempotency:{organization_id}:{actor_id}:{operation}:{key}"
+        self.session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": lock_key})
+
     def get_idempotency(self, organization_id: UUID, actor_id: int, operation: str, key: str, *, lock: bool = False):
         statement = select(StandardsIdempotency).where(StandardsIdempotency.organization_id == organization_id, StandardsIdempotency.actor_id == actor_id, StandardsIdempotency.operation == operation, StandardsIdempotency.idempotency_key == key)
         if lock: statement = statement.with_for_update()
@@ -71,3 +80,24 @@ class StandardsRepository:
         if provider_id: statement = statement.where(OrganizationRightsBinding.source_provider_id == provider_id)
         if before: statement = statement.where(OrganizationRightsBinding.id < before)
         return list(self.session.scalars(statement.order_by(OrganizationRightsBinding.id).limit(limit + 1)))
+
+    def snapshot(self, snapshot_id: UUID, organization_id: UUID, project_id: int, *, lock: bool = False):
+        statement = select(StandardSourceSnapshot).where(StandardSourceSnapshot.id == snapshot_id, StandardSourceSnapshot.organization_id == organization_id, StandardSourceSnapshot.project_id == project_id)
+        if lock: statement = statement.with_for_update()
+        return self.session.scalar(statement)
+
+    def assertion(self, assertion_id: UUID, organization_id: UUID, project_id: int, *, lock: bool = False):
+        statement = select(StandardKnowledgeAssertion).where(StandardKnowledgeAssertion.id == assertion_id, StandardKnowledgeAssertion.organization_id == organization_id, StandardKnowledgeAssertion.project_id == project_id)
+        if lock: statement = statement.with_for_update()
+        return self.session.scalar(statement)
+
+    def resolve_provider_handle(self, snapshot_id: UUID, organization_id: UUID, actor_id: int, purpose: str):
+        return self.session.execute(text("SELECT public.resolve_standard_provider_handle(:s,:o,:a,:p)"), {"s": snapshot_id, "o": organization_id, "a": actor_id, "p": purpose}).scalar_one()
+
+    def assertions_for_rights(self, organization_id: UUID, edition_id: UUID, provider_id: str):
+        return list(self.session.scalars(select(StandardKnowledgeAssertion).join(
+            StandardSourceSnapshot, StandardSourceSnapshot.id == StandardKnowledgeAssertion.source_snapshot_id
+        ).where(StandardKnowledgeAssertion.organization_id == organization_id,
+                StandardKnowledgeAssertion.standard_edition_id == edition_id,
+                StandardSourceSnapshot.source_provider_id == provider_id,
+                StandardKnowledgeAssertion.verification_status == "human_verified").with_for_update()))

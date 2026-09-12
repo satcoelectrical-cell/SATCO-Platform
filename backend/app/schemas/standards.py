@@ -119,6 +119,75 @@ class StandardsPage(StandardsSchema):
     items: list[dict]
     next_cursor: str | None = None
 
+class SourceFragmentRequest(StandardsSchema):
+    location: Annotated[str, Field(min_length=1, max_length=500)]
+    authorized_handle: Annotated[str | None, Field(max_length=2048)] = None
+
+    @field_validator("location")
+    @classmethod
+    def registered_location_only(cls, value: str) -> str:
+        # Locations are provider-local identifiers, never navigable URLs/paths.
+        if any(marker in value for marker in ("://", "\\", "..", "\x00")) or value.startswith("/"):
+            raise ValueError("source location is invalid")
+        return value
+
+class SourceSnapshotCreate(StandardsSchema):
+    edition_id: UUID
+    provider_id: Annotated[str, Field(min_length=1, max_length=80, pattern=r"^[a-z][a-z0-9_]{0,79}$")]
+    purpose: Annotated[str, Field(pattern=r"^(material_support|reference_only)$")]
+    fragments: list[SourceFragmentRequest] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def unique_locations(self):
+        if len({fragment.location for fragment in self.fragments}) != len(self.fragments):
+            raise ValueError("source locations must be unique")
+        return self
+
+class AssertionCreate(StandardsSchema):
+    snapshot_id: UUID
+    source_location: Annotated[str, Field(min_length=1, max_length=500)]
+    assertion_kind: Annotated[str, Field(pattern="^(requirement_statement|defined_term|numeric_constraint|cross_reference)$")]
+    canonical_representation: dict
+    origin: Annotated[str, Field(pattern="^(human|deterministic)$")] = "human"
+
+    @field_validator("canonical_representation")
+    @classmethod
+    def closed_safe_representation(cls, value: dict) -> dict:
+        import json
+        if not value or len(value) > 32 or len(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()) > 8192:
+            raise ValueError("canonical representation is invalid")
+        if any(not isinstance(key, str) or len(key) > 80 for key in value):
+            raise ValueError("canonical representation is invalid")
+        return value
+
+    @model_validator(mode="after")
+    def assertion_kind_shape(self):
+        shapes = {
+            "requirement_statement": {"statement"},
+            "defined_term": {"term", "definition"},
+            "numeric_constraint": {"subject", "operator", "value", "unit"},
+            "cross_reference": {"target"},
+        }
+        required = shapes[self.assertion_kind]
+        if set(self.canonical_representation) != required:
+            raise ValueError("canonical representation does not match assertion kind")
+        if any(not isinstance(value, (str, int, float)) for value in self.canonical_representation.values()):
+            raise ValueError("canonical representation is invalid")
+        if any(isinstance(value, str) and (not value.strip() or len(value) > 4000) for value in self.canonical_representation.values()):
+            raise ValueError("canonical representation is invalid")
+        if self.assertion_kind == "numeric_constraint" and self.canonical_representation["operator"] not in {"<", "<=", "=", ">=", ">"}:
+            raise ValueError("numeric constraint operator is invalid")
+        return self
+
+class AssertionVerification(StandardsSchema):
+    expected_version: Annotated[int, Field(ge=1)]
+    reason: Annotated[str | None, Field(max_length=1000)] = None
+
+
+class AssertionRejection(StandardsSchema):
+    expected_version: Annotated[int, Field(ge=1)]
+    reason: Annotated[str, Field(min_length=1, max_length=1000)]
+
 
 def require_utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() != timezone.utc.utcoffset(value):
