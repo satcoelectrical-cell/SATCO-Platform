@@ -1,6 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,6 +37,19 @@ class Settings(BaseSettings):
     CROSS_DISCIPLINE_AI_PROVIDER_ENDPOINT: str = ""
     CROSS_DISCIPLINE_AI_PROVIDER_API_KEY: str = ""
     CROSS_DISCIPLINE_AI_TIMEOUT_SECONDS: float = 30.0
+    STANDARDS_PLATFORM_CATALOG_ADMIN_USER_IDS: str = ""
+
+    @field_validator("STANDARDS_PLATFORM_CATALOG_ADMIN_USER_IDS")
+    @classmethod
+    def validate_standards_catalog_admins(cls, value: str) -> str:
+        if not value:
+            return value
+        values = [item.strip() for item in value.split(",")]
+        if any(not item or not item.isdecimal() or int(item) < 1 for item in values):
+            raise ValueError("STANDARDS_PLATFORM_CATALOG_ADMIN_USER_IDS must be comma-separated user IDs")
+        if len(set(values)) != len(values):
+            raise ValueError("STANDARDS_PLATFORM_CATALOG_ADMIN_USER_IDS contains duplicates")
+        return ",".join(values)
 
     SATCO_ENVIRONMENT: str = "development"
     SATCO_RELEASE_MANIFEST_PATH: str = ""

@@ -49,6 +49,7 @@ from app.api.v1.routers.cross_discipline_intelligence import router as cross_dis
 from app.api.v1.routers.discipline_packages import router as discipline_package_router
 from app.core.config import settings
 from app.api.v1.routers.discipline_package_operations import router as discipline_package_operation_router
+from app.api.v1.routers.standards import router as standards_router
 from app.discipline_packages.descriptors.releases.release_051_core_v1 import RELEASE_051_CORE_V1
 from app.discipline_packages.registry import assemble_registry
 from app.core.operations import (
@@ -144,6 +145,7 @@ app.include_router(discipline_package_router)
 
 
 app.include_router(discipline_package_operation_router)
+app.include_router(standards_router)
 @app.get("/health/live")
 def health_live():
     return {"status": "alive"}
