@@ -30,3 +30,34 @@ def test_catalog_edition_and_rights_commands_are_atomic(client, admin_headers, d
     from app.models.standards import StandardsOutbox
     assert db_session.query(AuditLog).filter(AuditLog.action == "standards.rights.created").count() == 1
     assert db_session.query(StandardsOutbox).filter(StandardsOutbox.event_id == "standards.rights.replaced").count() == 1
+
+
+@pytest.mark.parametrize("vector", ["P054-APP-01", "P054-APP-02", "P054-APP-03", "P054-APP-04"])
+def test_batch_three_applicability_route_contracts_are_registered(vector):
+    from app.main import app
+
+    expected = {
+        "P054-APP-01": "/projects/{project_id}/standards/applicability",
+        "P054-APP-02": "/projects/{project_id}/standards/candidates",
+        "P054-APP-03": "/projects/{project_id}/standards/applicability",
+        "P054-APP-04": "/projects/{project_id}/standards/applicability/{applicability_id}/retirements",
+    }
+    assert expected[vector] in app.openapi()["paths"]
+
+
+def test_applicability_api_declares_lists_retires_and_replays(client, admin_headers, db_session, admin_user):
+    from tests.test_standards_migrations import _foundation_fixture
+
+    values = _foundation_fixture(db_session, admin_user)
+    request = {"edition_id": str(values["edition"]), "status": "declared_applicable", "applicability_role": "design_basis", "rationale_code": "human_review", "rationale": "Human declaration", "expected_revision": 0}
+    response = client.post(f"/projects/{values['project']}/standards/applicability", headers={**admin_headers, "Idempotency-Key": "p054-app-declare"}, json=request)
+    assert response.status_code == 201
+    declared = response.json()
+    replay = client.post(f"/projects/{values['project']}/standards/applicability", headers={**admin_headers, "Idempotency-Key": "p054-app-declare"}, json=request)
+    assert replay.status_code == 201 and replay.json() == declared
+    assert client.get(f"/projects/{values['project']}/standards/applicability", headers=admin_headers).json()["items"][0]["applicability_id"] == declared["applicability_id"]
+    # APP-02 is a deterministic read: a Project without a frozen package
+    # configuration has no advisory candidates and no side effect.
+    assert client.get(f"/projects/{values['project']}/standards/candidates", headers=admin_headers).json() == {"items": []}
+    retired = client.post(f"/projects/{values['project']}/standards/applicability/{declared['applicability_id']}/retirements", headers={**admin_headers, "Idempotency-Key": "p054-app-retire"}, json={"expected_revision": 1, "reason": "Human retirement"})
+    assert retired.status_code == 201 and retired.json()["status"] == "retired"

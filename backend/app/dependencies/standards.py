@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.adapters.standard_source_object_store import StandardSourceObjectStore
+from app.adapters.standards_package_candidates import StandardsPackageCandidateAdapter
 from app.adapters.supporting_file_object_store import InMemoryPrivateSupportingFileObjectStore, S3PrivateSupportingFileObjectStore
 from app.core.database import get_db
 from app.dependencies.auth import AuthenticatedOrganizationContext, get_current_user_organization_context
@@ -51,7 +52,8 @@ def _source_objects() -> StandardSourceObjectStore:
 def get_standards_application(context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context), db: Session = Depends(get_db)) -> StandardsApplication:
     repository = StandardsRepository(db)
     return StandardsApplication(context=context, db=db, repository=repository,
-        service=StandardsService(db, repository, providers=provider_registry(), objects=_source_objects()))
+        service=StandardsService(db, repository, providers=provider_registry(), objects=_source_objects(),
+            candidates=StandardsPackageCandidateAdapter(db)))
 
 
 def is_organization_standards_admin(application: StandardsApplication) -> bool:

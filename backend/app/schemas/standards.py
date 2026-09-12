@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -118,6 +118,37 @@ class RightsRevocation(StandardsSchema):
 class StandardsPage(StandardsSchema):
     items: list[dict]
     next_cursor: str | None = None
+
+
+class ApplicabilityDeclaration(StandardsSchema):
+    edition_id: UUID
+    status: Literal["declared_applicable", "declared_not_applicable"]
+    applicability_role: Literal["informative", "design_basis", "mandatory"]
+    rationale_code: Annotated[str, Field(min_length=1, max_length=80)]
+    rationale: Annotated[str, Field(min_length=1, max_length=1000)]
+    expected_revision: Annotated[int, Field(ge=0)]
+    candidate_id: UUID | None = None
+    candidate_digest: Annotated[str | None, Field(default=None, pattern=r"^[0-9a-f]{64}$")]
+    mandatory_source_kind: Literal["contract", "regulation", "customer_requirement", "company_policy"] | None = None
+    mandatory_source_reference: Annotated[str | None, Field(default=None, max_length=500)]
+    mandatory_source_digest: Annotated[str | None, Field(default=None, pattern=r"^[0-9a-f]{64}$")]
+
+    @model_validator(mode="after")
+    def authoritative_shape(self):
+        if (self.candidate_id is None) != (self.candidate_digest is None):
+            raise ValueError("candidate id and digest must be supplied together")
+        basis = (self.mandatory_source_kind, self.mandatory_source_reference, self.mandatory_source_digest)
+        if self.applicability_role == "mandatory":
+            if self.status != "declared_applicable" or any(value is None or not str(value).strip() for value in basis):
+                raise ValueError("mandatory applicability requires attributable basis")
+        elif any(value is not None for value in basis):
+            raise ValueError("mandatory basis is only valid for mandatory applicability")
+        return self
+
+
+class ApplicabilityRetirement(StandardsSchema):
+    expected_revision: Annotated[int, Field(ge=1)]
+    reason: Annotated[str, Field(min_length=1, max_length=1000)]
 
 class SourceFragmentRequest(StandardsSchema):
     location: Annotated[str, Field(min_length=1, max_length=500)]

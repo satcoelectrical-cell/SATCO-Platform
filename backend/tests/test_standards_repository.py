@@ -17,7 +17,7 @@ def test_organization_private_identity_is_scoped(db_session):
     assert StandardsRepository(db_session).get_identity(uuid4(), organization_id) is None
 
 
-@pytest.mark.parametrize("vector", ["P054-AUD-03"])
+@pytest.mark.parametrize("vector", ["P054-AUD-03", "P054-AUD-04"])
 def test_aud03_outbox_and_audit_are_atomic_and_payload_safe(db_session, admin_user, vector):
     aggregate_id = uuid4()
     StandardsService(db_session, StandardsRepository(db_session))._stage_event(
@@ -25,11 +25,11 @@ def test_aud03_outbox_and_audit_are_atomic_and_payload_safe(db_session, admin_us
         organization_id=None,
         aggregate_type="standard_source_snapshot",
         aggregate_id=aggregate_id,
-        event_id="standards.source.retrieval_succeeded",
+        event_id="standards.applicability.declared" if vector == "P054-AUD-04" else "standards.source.retrieval_succeeded",
         details={"digest": "a" * 64, "version": 1, "object_key": "must-not-escape", "provider_token": "must-not-escape"},
     )
     db_session.flush()
     audit = db_session.query(AuditLog).filter(AuditLog.entity_uuid == aggregate_id).one()
     outbox = db_session.query(StandardsOutbox).filter(StandardsOutbox.aggregate_id == aggregate_id).one()
     expected = {"event_id", "aggregate_id", "digest", "version"}
-    assert set(audit.details) == expected and set(outbox.payload) == expected and vector == "P054-AUD-03"
+    assert set(audit.details) == expected and set(outbox.payload) == expected

@@ -162,6 +162,19 @@ class StandardsApplicabilityHookV1(_FrozenStrictModel):
     output_schema_id: str = Field(pattern=_ID_PATTERN, min_length=1, max_length=128)
     max_results: int = Field(ge=0, le=1000)
     timeout_ms: int = Field(ge=1, le=60_000)
+    candidates: tuple["StandardsApplicabilityCandidateV1", ...] = Field(default=(), max_length=64)
+
+
+class StandardsApplicabilityCandidateV1(_FrozenStrictModel):
+    """Static, non-authoritative descriptor input for an advisory candidate."""
+
+    designation_key: str = Field(pattern=_ID_PATTERN, min_length=1, max_length=240)
+    family_key: str | None = Field(default=None, pattern=_ID_PATTERN, max_length=128)
+    suggested_role: Literal["informative", "design_basis"]
+    rationale_code: str = Field(pattern=_ID_PATTERN, min_length=1, max_length=80)
+
+
+StandardsApplicabilityHookV1.model_rebuild()
 
 
 class InterfaceDeclarationV1(_FrozenStrictModel):

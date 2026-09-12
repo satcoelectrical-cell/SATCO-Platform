@@ -9,9 +9,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditLog
-from app.models.standards import OrganizationRightsBinding, StandardAssertionVerificationEvent, StandardEdition, StandardEditionStandingObservation, StandardIdentity, StandardKnowledgeAssertion, StandardSourceSnapshot, StandardsIdempotency, StandardsOutbox
+from app.models.standards import OrganizationRightsBinding, ProjectStandardApplicability, StandardAssertionVerificationEvent, StandardEdition, StandardEditionStandingObservation, StandardIdentity, StandardKnowledgeAssertion, StandardSourceSnapshot, StandardsIdempotency, StandardsOutbox
 from app.repositories.standards_repository import StandardsRepository
-from app.schemas.standards import AssertionCreate, AssertionRejection, AssertionVerification, RightsBindingReplace, RightsRevocation, SourceSnapshotCreate, StandardEditionCreate, StandardIdentityCreate, StandingObservationCreate
+from app.schemas.standards import ApplicabilityDeclaration, ApplicabilityRetirement, AssertionCreate, AssertionRejection, AssertionVerification, RightsBindingReplace, RightsRevocation, SourceSnapshotCreate, StandardEditionCreate, StandardIdentityCreate, StandingObservationCreate
 from app.standards.canonical import NORMALIZATION_VERSION, canonical_digest, normalize_standard_key
 from app.standards.handles import OpaqueAuthorizedHandleInvalid, issue_handle, open_provider_token, seal_provider_token, verify_handle
 
@@ -23,8 +23,8 @@ class StandardsError(RuntimeError):
 
 
 class StandardsService:
-    def __init__(self, session: Session, repository: StandardsRepository, *, providers=None, objects=None) -> None:
-        self.session, self.repository, self.providers, self.objects = session, repository, providers or {}, objects
+    def __init__(self, session: Session, repository: StandardsRepository, *, providers=None, objects=None, candidates=None) -> None:
+        self.session, self.repository, self.providers, self.objects, self.candidates = session, repository, providers or {}, objects, candidates
 
     @staticmethod
     def _identity_payload(row: StandardIdentity) -> dict:
@@ -37,6 +37,21 @@ class StandardsService:
     @staticmethod
     def _rights_payload(row: OrganizationRightsBinding) -> dict:
         return {"rights_binding_id": str(row.id), "edition_id": str(row.standard_edition_id), "source_provider_id": row.source_provider_id, "rights_basis": row.rights_basis, "rights_status": row.rights_status, "capabilities": {"metadata_visibility": row.allow_metadata_visibility, "content_storage": row.allow_content_storage, "indexing": row.allow_indexing, "excerpt_display": row.allow_excerpt_display, "source_retrieval": row.allow_source_retrieval, "derived_retention": row.allow_derived_retention, "derived_current_use": row.allow_derived_current_use}, "ai_processing_permission": row.ai_processing_permission, "approved_processor_policy_ids": row.approved_processor_policy_ids, "effective_from": row.effective_from.isoformat(), "effective_until": None if row.effective_until is None else row.effective_until.isoformat(), "version": row.version, "rights_digest": row.rights_digest}
+
+    @staticmethod
+    def _applicability_payload(row: ProjectStandardApplicability) -> dict:
+        return {
+            "applicability_id": str(row.id), "project_id": row.project_id,
+            "edition_id": None if row.standard_edition_id is None else str(row.standard_edition_id),
+            "candidate_designation_key": row.candidate_designation_key, "status": row.status,
+            "applicability_role": row.applicability_role, "rationale_code": row.rationale_code,
+            "rationale": row.rationale, "origin_reference": row.origin_reference,
+            "source_candidate_reference": row.source_candidate_reference,
+            "revision": row.revision, "is_current": row.is_current,
+            "predecessor_id": None if row.predecessor_id is None else str(row.predecessor_id),
+            "successor_id": None if row.successor_id is None else str(row.successor_id),
+            "applicability_digest": row.applicability_digest,
+        }
 
     def _stage_event(self, *, actor_id: int, organization_id: UUID | None, aggregate_type: str, aggregate_id: UUID, event_id: str, details: dict) -> None:
         safe = {"event_id": event_id, "aggregate_id": str(aggregate_id), "digest": details.get("digest"), "version": details.get("version")}
@@ -106,6 +121,131 @@ class StandardsService:
         record.state, record.resource_type, record.resource_id = "completed", resource_type, resource_id
         record.response_status, record.response_body, record.completed_at, record.version = status, body, datetime.now(timezone.utc), record.version + 1
         return body
+
+    def list_applicability(self, *, organization_id: UUID, project_id: int, state: str | None, limit: int, before: UUID | None = None) -> list[ProjectStandardApplicability]:
+        if self.repository.get_project(project_id, organization_id) is None:
+            raise StandardsError("PROTECTED_NOT_FOUND", 404)
+        return self.repository.list_applicability(organization_id, project_id, state=state, limit=limit, before=before)
+
+    def package_candidates(self, *, organization_id: UUID, project_id: int, package_version: str | None = None) -> list[dict]:
+        if self.repository.get_project(project_id, organization_id) is None:
+            raise StandardsError("PROTECTED_NOT_FOUND", 404)
+        if self.candidates is None:
+            return []
+        return self.candidates.candidates(organization_id=organization_id, project_id=project_id, package_version=package_version)
+
+    def _candidate_reference(self, *, organization_id: UUID, project_id: int, candidate_id: UUID, candidate_digest: str) -> tuple[str, dict]:
+        candidate = next((item for item in self.package_candidates(organization_id=organization_id, project_id=project_id)
+                          if item["candidate_id"] == str(candidate_id) and item["candidate_digest"] == candidate_digest), None)
+        if candidate is None:
+            raise StandardsError("VERSION_CONFLICT")
+        return f"{candidate_id}:{candidate_digest}", candidate
+
+    def _append_candidate(self, *, actor_id: int, organization_id: UUID, project_id: int, reference: str, candidate: dict) -> ProjectStandardApplicability:
+        existing = self.repository.candidate_by_reference(organization_id, project_id, reference)
+        if existing is not None:
+            return existing
+        digest = canonical_digest({"candidate_reference": reference, "candidate_digest": candidate["candidate_digest"], "project_id": project_id})
+        row = ProjectStandardApplicability(
+            organization_id=organization_id, project_id=project_id,
+            standard_edition_id=None, candidate_designation_key=candidate["designation_key"],
+            status="candidate_advisory", applicability_role=candidate["suggested_role"],
+            rationale_code=candidate["rationale_code"], rationale="Static discipline-package advisory candidate",
+            origin_reference=f"package:{candidate['package_key']}@{candidate['package_version']}:{candidate['hook_id']}",
+            source_candidate_reference=reference, expected_predecessor_revision=None,
+            applicability_digest=digest, declared_by=actor_id,
+        )
+        self.session.add(row); self.session.flush()
+        self._stage_event(actor_id=actor_id, organization_id=organization_id,
+            aggregate_type="project_standard_applicability", aggregate_id=row.id,
+            event_id="standards.applicability.candidate_recorded",
+            details={"digest": digest, "version": row.revision})
+        return row
+
+    def declare_applicability(self, *, actor_id: int, organization_id: UUID, project_id: int, data: ApplicabilityDeclaration, idempotency_key: str) -> tuple[int, dict]:
+        if self.repository.get_project(project_id, organization_id) is None:
+            raise StandardsError("PROTECTED_NOT_FOUND", 404)
+        edition = self.repository.get_edition(data.edition_id)
+        if edition is None or self.repository.get_identity(edition.standard_identity_id, organization_id) is None:
+            # An opaque edition identifier is a protected catalog lookup;
+            # foreign/private and absent identities remain indistinguishable.
+            raise StandardsError("PROTECTED_NOT_FOUND", 404)
+        record, _ = self._reserve(organization_id=organization_id, actor_id=actor_id, operation="APP-03", key=idempotency_key,
+            fingerprint={"project_id": project_id, **data.model_dump(mode="json")})
+        if record.state == "completed":
+            return record.response_status, record.response_body
+        self.repository.lock_applicability_tuple(project_id, edition.id)
+        candidate_reference, candidate = (None, None)
+        if data.candidate_id is not None:
+            candidate_reference, candidate = self._candidate_reference(organization_id=organization_id, project_id=project_id,
+                candidate_id=data.candidate_id, candidate_digest=data.candidate_digest)
+            self.repository.lock_candidate_reference(project_id, candidate_reference)
+            self._append_candidate(actor_id=actor_id, organization_id=organization_id, project_id=project_id,
+                reference=candidate_reference, candidate=candidate)
+        previous = self.repository.current_applicability(organization_id, project_id, edition.id, lock=True)
+        actual = 0 if previous is None else previous.revision
+        if actual != data.expected_revision:
+            raise StandardsError("VERSION_CONFLICT")
+        row_id = uuid4()
+        if previous is not None:
+            previous.is_current, previous.successor_id, previous.revision = False, row_id, previous.revision + 1
+        revision = 1 if previous is None else previous.revision
+        digest = canonical_digest({"organization_id": organization_id, "project_id": project_id, "edition_id": edition.id,
+            "status": data.status, "role": data.applicability_role, "rationale_code": data.rationale_code,
+            "rationale": data.rationale, "mandatory_kind": data.mandatory_source_kind,
+            "mandatory_reference": data.mandatory_source_reference, "mandatory_digest": data.mandatory_source_digest,
+            "candidate_reference": candidate_reference, "predecessor_id": None if previous is None else previous.id,
+            "revision": revision, "declared_by": actor_id})
+        row = ProjectStandardApplicability(
+            id=row_id, organization_id=organization_id, project_id=project_id, standard_edition_id=edition.id,
+            status=data.status, applicability_role=data.applicability_role, rationale_code=data.rationale_code,
+            rationale=data.rationale, origin_reference=f"human:{actor_id}", source_candidate_reference=candidate_reference,
+            mandatory_source_kind=data.mandatory_source_kind, mandatory_source_reference=data.mandatory_source_reference,
+            mandatory_source_digest=data.mandatory_source_digest, expected_predecessor_revision=None if previous is None else data.expected_revision,
+            predecessor_id=None if previous is None else previous.id, revision=revision, applicability_digest=digest,
+            declared_by=actor_id,
+        )
+        self.session.add(row); self.session.flush()
+        self._stage_event(actor_id=actor_id, organization_id=organization_id,
+            aggregate_type="project_standard_applicability", aggregate_id=row.id,
+            event_id="standards.applicability.declared", details={"digest": digest, "version": revision})
+        body = self._complete(record, resource_type="project_standard_applicability", resource_id=row.id,
+            status=201, body=self._applicability_payload(row))
+        self.session.commit()
+        return 201, body
+
+    def retire_applicability(self, *, actor_id: int, organization_id: UUID, project_id: int, applicability_id: UUID, data: ApplicabilityRetirement, idempotency_key: str) -> tuple[int, dict]:
+        current = self.repository.applicability(applicability_id, organization_id, project_id)
+        if current is None or not current.is_current or current.status == "candidate_advisory":
+            raise StandardsError("PROTECTED_NOT_FOUND", 404)
+        record, _ = self._reserve(organization_id=organization_id, actor_id=actor_id, operation="APP-04", key=idempotency_key,
+            fingerprint={"project_id": project_id, "applicability_id": applicability_id, **data.model_dump(mode="json")})
+        if record.state == "completed":
+            return record.response_status, record.response_body
+        self.repository.lock_applicability_tuple(project_id, current.standard_edition_id)
+        current = self.repository.applicability(applicability_id, organization_id, project_id, lock=True)
+        if current is None or not current.is_current or current.revision != data.expected_revision:
+            raise StandardsError("VERSION_CONFLICT")
+        successor_id, revision = uuid4(), current.revision + 1
+        current.is_current, current.successor_id, current.revision = False, successor_id, revision
+        role = "design_basis" if current.applicability_role == "mandatory" else current.applicability_role
+        digest = canonical_digest({"retired": current.id, "reason": data.reason, "revision": revision,
+            "predecessor_digest": current.applicability_digest, "actor": actor_id})
+        row = ProjectStandardApplicability(
+            id=successor_id, organization_id=organization_id, project_id=project_id,
+            standard_edition_id=current.standard_edition_id, status="retired", applicability_role=role,
+            rationale_code="retired", rationale=data.reason, origin_reference=f"human:{actor_id}",
+            expected_predecessor_revision=data.expected_revision, predecessor_id=current.id,
+            revision=revision, applicability_digest=digest, declared_by=actor_id,
+        )
+        self.session.add(row); self.session.flush()
+        self._stage_event(actor_id=actor_id, organization_id=organization_id,
+            aggregate_type="project_standard_applicability", aggregate_id=row.id,
+            event_id="standards.applicability.retired", details={"digest": digest, "version": revision})
+        body = self._complete(record, resource_type="project_standard_applicability", resource_id=row.id,
+            status=201, body=self._applicability_payload(row))
+        self.session.commit()
+        return 201, body
 
     def register_identity(self, *, actor_id: int, organization_id: UUID, data: StandardIdentityCreate, idempotency_key: str) -> tuple[int, dict]:
         if data.catalog_scope.value == "global_trusted": scope_org = None

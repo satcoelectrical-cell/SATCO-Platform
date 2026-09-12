@@ -14,6 +14,7 @@ from app.discipline_packages.contributions import (
     EvidenceRequirementDeclarationV1, FrontendMetadataV1, InterfaceDeclarationV1,
     ObjectTypeDeclarationV1, PackageContributionsV1, RelationshipTypeDeclarationV1,
     ResourceDeclarationV1, RoleRequirementDeclarationV1, StandardsApplicabilityHookV1,
+    StandardsApplicabilityCandidateV1,
     TaxonomyFamilyDeclarationV1,
 )
 from app.discipline_packages.contracts import DisciplinePackageDescriptorV1
@@ -423,7 +424,19 @@ def _contributions(package_key: str) -> PackageContributionsV1:
         deliverables=deliverables,
         evidence_requirements=tuple(EvidenceRequirementDeclarationV1(id=f"{package_key}.{name}", version="1.0.0", owner="PACKAGE", ordinal=index, display_name=name.replace("_", " ").title(), evidence_kind_id="human_review" if index == 4 else "engineering_record", minimum_count=1, applicable_operation_id=f"{package_key}.deliverable_issue" if index == 4 else f"{package_key}.evaluate_readiness", human_verification_required=True) for index, name in enumerate(_EVIDENCE[package_key], 1)),
         deterministic_rule_hooks=tuple(DeterministicRuleHookDeclarationV1(id=spec.rule_id, version="1.0.0", owner="PACKAGE", ordinal=index, display_name=spec.rule_id, hook_id=spec.hook_id, hook_version="1.0.0", input_schema_id=spec.input_schema_id, output_schema_id=spec.output_schema_id, max_findings=spec.max_findings, timeout_ms=spec.timeout_ms) for index, spec in enumerate(rules, 1)),
-        standards_hooks=(StandardsApplicabilityHookV1(hook_id=standard_id, version="1.0.0", input_schema_id="package.standards_applicability_input.v1", output_schema_id="package.standards_applicability_output.v1", max_results=0, timeout_ms=1),),
+        standards_hooks=(StandardsApplicabilityHookV1(
+            hook_id=standard_id, version="1.0.0",
+            input_schema_id="package.standards_applicability_input.v1",
+            output_schema_id="package.standards_applicability_output.v1",
+            max_results=4, timeout_ms=100,
+            candidates=(
+                StandardsApplicabilityCandidateV1(
+                    designation_key=f"{package_key}.design_basis.standard",
+                    family_key=package_key, suggested_role="design_basis",
+                    rationale_code="package_design_basis_advisory",
+                ),
+            ),
+        ),),
         cross_discipline_interfaces=(InterfaceDeclarationV1(interface_type_id=interface_id, source_discipline_id=source, target_discipline_id=target, dependency_kind=kind, version="1.0.0"),),
         role_requirements=tuple(RoleRequirementDeclarationV1(id=f"{package_key}.role.{operation}", version="1.0.0", owner="PACKAGE", ordinal=index, display_name=f"{operation} role", operation_id=f"{package_key}.{operation}", accepted_human_role_ids=("admin", "engineer"), minimum_authority_predicate_id=f"owner.workspace_{'mutation' if operation == 'mutate' else 'read'}_authorized") for index, operation in enumerate(("mutate", "evaluate"), 1)),
         authorization_requirements=tuple(AuthorizationRequirementDeclarationV1(id=f"{package_key}.authorization.{operation}", version="1.0.0", owner="PACKAGE", ordinal=index, display_name=f"{operation} authorization", operation_id=f"{package_key}.{operation}", source_owner_policy_id=f"owner.workspace_and_{'aggregate_mutation' if operation == 'mutate' else 'sources_read'}", package_policy_id=f"package.executable_bound_{'mutation' if operation == 'mutate' else 'evaluation'}") for index, operation in enumerate(("mutate", "evaluate"), 1)),

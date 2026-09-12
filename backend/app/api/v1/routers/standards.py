@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app.dependencies.standards import StandardsApplication, decode_standards_cursor, encode_standards_cursor, get_standards_application, is_organization_standards_admin, is_platform_catalog_admin
 from app.models.standards import StandardEdition
-from app.schemas.standards import AssertionCreate, AssertionRejection, AssertionVerification, RightsBindingReplace, RightsRevocation, SourceSnapshotCreate, StandardEditionCreate, StandardIdentityCreate, StandingObservationCreate
+from app.schemas.standards import ApplicabilityDeclaration, ApplicabilityRetirement, AssertionCreate, AssertionRejection, AssertionVerification, RightsBindingReplace, RightsRevocation, SourceSnapshotCreate, StandardEditionCreate, StandardIdentityCreate, StandingObservationCreate
 from app.services.standards_service import StandardsError
 
 router = APIRouter(tags=["Standards"])
@@ -103,6 +103,44 @@ def replace_standard_rights(edition_id: UUID, source_provider_id: str, data: Rig
 def revoke_standard_rights(rights_binding_id: UUID, data: RightsRevocation, idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=160), application: StandardsApplication = Depends(get_standards_application)):
     if not is_organization_standards_admin(application): return _protected()
     try: status, body = application.service.revoke_rights(actor_id=application.context.user.id, organization_id=application.context.organization_id, binding_id=rights_binding_id, data=data, idempotency_key=_idempotency(idempotency_key)); return JSONResponse(status_code=status, content=body)
+    except StandardsError as error: application.db.rollback(); return _error(error)
+
+
+@router.get("/projects/{project_id}/standards/applicability", operation_id="list_standard_applicability")
+def list_standard_applicability(project_id: int, state: str | None = Query(None, pattern="^(candidate_advisory|declared_applicable|declared_not_applicable|retired)$"), cursor: str | None = Query(None, max_length=2048), page_size: int = Query(20, ge=1, le=100), application: StandardsApplication = Depends(get_standards_application)):
+    if not _project_authorized(application, project_id): return _protected()
+    try:
+        scope = {"route": "APP-01", "organization_id": str(application.context.organization_id), "project_id": project_id, "state": state, "page_size": page_size}
+        position = decode_standards_cursor(cursor, scope=scope)
+        rows = application.service.list_applicability(organization_id=application.context.organization_id, project_id=project_id, state=state, limit=page_size, before=UUID(position) if position else None)
+        visible = rows[:page_size]
+        return {"items": [application.service._applicability_payload(row) for row in visible], "next_cursor": encode_standards_cursor(scope=scope, position=str(visible[-1].id)) if len(rows) > page_size and visible else None}
+    except StandardsError as error: application.db.rollback(); return _error(error)
+
+
+@router.get("/projects/{project_id}/standards/candidates", operation_id="list_standard_applicability_candidates")
+def list_standard_applicability_candidates(project_id: int, package_version: str | None = Query(None, max_length=32), application: StandardsApplication = Depends(get_standards_application)):
+    if not _project_authorized(application, project_id): return _protected()
+    try:
+        return {"items": application.service.package_candidates(organization_id=application.context.organization_id, project_id=project_id, package_version=package_version)}
+    except StandardsError as error: application.db.rollback(); return _error(error)
+
+
+@router.post("/projects/{project_id}/standards/applicability", operation_id="declare_standard_applicability", status_code=201)
+def declare_standard_applicability(project_id: int, data: ApplicabilityDeclaration, idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=160), application: StandardsApplication = Depends(get_standards_application)):
+    if not _project_authorized(application, project_id): return _protected()
+    try:
+        status, body = application.service.declare_applicability(actor_id=application.context.user.id, organization_id=application.context.organization_id, project_id=project_id, data=data, idempotency_key=_idempotency(idempotency_key))
+        return JSONResponse(status_code=status, content=body)
+    except StandardsError as error: application.db.rollback(); return _error(error)
+
+
+@router.post("/projects/{project_id}/standards/applicability/{applicability_id}/retirements", operation_id="retire_standard_applicability", status_code=201)
+def retire_standard_applicability(project_id: int, applicability_id: UUID, data: ApplicabilityRetirement, idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=160), application: StandardsApplication = Depends(get_standards_application)):
+    if not _project_authorized(application, project_id): return _protected()
+    try:
+        status, body = application.service.retire_applicability(actor_id=application.context.user.id, organization_id=application.context.organization_id, project_id=project_id, applicability_id=applicability_id, data=data, idempotency_key=_idempotency(idempotency_key))
+        return JSONResponse(status_code=status, content=body)
     except StandardsError as error: application.db.rollback(); return _error(error)
 
 

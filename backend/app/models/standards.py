@@ -121,6 +121,34 @@ class OrganizationRightsBinding(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class ProjectStandardApplicability(Base):
+    """Append-only Project applicability decision history (PATCH-054 Batch 3)."""
+
+    __tablename__ = "project_standard_applicability"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id = Column(PGUUID(as_uuid=True), nullable=False)
+    project_id = Column(Integer, nullable=False)
+    standard_edition_id = Column(PGUUID(as_uuid=True))
+    candidate_designation_key = Column(String(240))
+    status = Column(String(32), nullable=False)
+    applicability_role = Column(String(20), nullable=False)
+    rationale_code = Column(String(80), nullable=False)
+    rationale = Column(String(1000), nullable=False)
+    origin_reference = Column(String(240), nullable=False)
+    source_candidate_reference = Column(String(240))
+    mandatory_source_kind = Column(String(32))
+    mandatory_source_reference = Column(String(500))
+    mandatory_source_digest = Column(String(64))
+    expected_predecessor_revision = Column(BigInteger)
+    predecessor_id = Column(PGUUID(as_uuid=True))
+    successor_id = Column(PGUUID(as_uuid=True))
+    is_current = Column(Boolean, nullable=False, server_default="true")
+    revision = Column(BigInteger, nullable=False, server_default="1")
+    applicability_digest = Column(String(64), nullable=False)
+    declared_by = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class StandardSourceSnapshot(Base):
     __tablename__ = "standard_source_snapshots"
     id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

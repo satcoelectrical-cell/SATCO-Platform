@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.models.standards import OrganizationRightsBinding, StandardEdition, StandardEditionStandingObservation, StandardIdentity, StandardsIdempotency, StandardSourceSnapshot, StandardKnowledgeAssertion
+from app.models.standards import OrganizationRightsBinding, ProjectStandardApplicability, StandardEdition, StandardEditionStandingObservation, StandardIdentity, StandardsIdempotency, StandardSourceSnapshot, StandardKnowledgeAssertion
 from app.models.project import Project
 
 
@@ -101,3 +101,51 @@ class StandardsRepository:
                 StandardKnowledgeAssertion.standard_edition_id == edition_id,
                 StandardSourceSnapshot.source_provider_id == provider_id,
                 StandardKnowledgeAssertion.verification_status == "human_verified").with_for_update()))
+
+    def lock_applicability_tuple(self, project_id: int, edition_id: UUID) -> None:
+        self.session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": f"standards-applicability:{project_id}:{edition_id}"})
+
+    def lock_candidate_reference(self, project_id: int, reference: str) -> None:
+        self.session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": f"standards-candidate:{project_id}:{reference}"})
+
+    def current_applicability(self, organization_id: UUID, project_id: int, edition_id: UUID, *, lock: bool = False):
+        statement = select(ProjectStandardApplicability).where(
+            ProjectStandardApplicability.organization_id == organization_id,
+            ProjectStandardApplicability.project_id == project_id,
+            ProjectStandardApplicability.standard_edition_id == edition_id,
+            ProjectStandardApplicability.is_current.is_(True),
+            ProjectStandardApplicability.status != "candidate_advisory",
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
+
+    def applicability(self, applicability_id: UUID, organization_id: UUID, project_id: int, *, lock: bool = False):
+        statement = select(ProjectStandardApplicability).where(
+            ProjectStandardApplicability.id == applicability_id,
+            ProjectStandardApplicability.organization_id == organization_id,
+            ProjectStandardApplicability.project_id == project_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
+
+    def candidate_by_reference(self, organization_id: UUID, project_id: int, reference: str):
+        return self.session.scalar(select(ProjectStandardApplicability).where(
+            ProjectStandardApplicability.organization_id == organization_id,
+            ProjectStandardApplicability.project_id == project_id,
+            ProjectStandardApplicability.source_candidate_reference == reference,
+            ProjectStandardApplicability.status == "candidate_advisory",
+        ))
+
+    def list_applicability(self, organization_id: UUID, project_id: int, *, state: str | None, limit: int, before: UUID | None = None):
+        statement = select(ProjectStandardApplicability).where(
+            ProjectStandardApplicability.organization_id == organization_id,
+            ProjectStandardApplicability.project_id == project_id,
+            ProjectStandardApplicability.is_current.is_(True),
+        )
+        if state:
+            statement = statement.where(ProjectStandardApplicability.status == state)
+        if before:
+            statement = statement.where(ProjectStandardApplicability.id < before)
+        return list(self.session.scalars(statement.order_by(ProjectStandardApplicability.id).limit(limit + 1)))
