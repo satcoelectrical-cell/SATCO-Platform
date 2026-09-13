@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import hmac
 from datetime import datetime
 from enum import Enum
 from typing import Final, Self
 from uuid import UUID
 
+from sqlalchemy import and_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -50,6 +53,16 @@ from app.models.engineering_workspace import (
 from app.models.organization import Organization, UserOrganizationMembership
 from app.models.project import Project
 from app.models.user import User
+from app.models.standards import (
+    OrganizationRightsBinding,
+    ProjectStandardApplicability,
+    StandardAssertionVerificationEvent,
+    StandardEdition,
+    StandardEditionStandingObservation,
+    StandardIdentity,
+    StandardKnowledgeAssertion,
+    StandardSourceSnapshot,
+)
 from app.models.technical_report import (
     TechnicalReportProvenanceRecord,
     TechnicalReportRecord,
@@ -66,14 +79,18 @@ from app.models.technical_report_command import (
     EvidenceHistoricalBasisV1,
     EvidenceHistoricalBasisV2,
     HistoricalBasis,
+    StandardHistoricalBasisV1,
     TechnicalReportCommandResult,
     TechnicalReportDomainEvent,
+    TechnicalReportStandardsDomainEvent,
     TechnicalReportDraftRevision,
     TechnicalReportIdempotencyRecord,
     TechnicalReportOutboxRecord,
     historical_basis_digest,
     verify_historical_basis_digest,
+    standard_basis_digest,
 )
+from app.standards.handles import OpaqueAuthorizedHandleInvalid, verify_handle
 from app.services.supporting_file_service import (
     SqlAlchemySupportingFileTechnicalReportCollaborator,
 )
@@ -134,18 +151,23 @@ class SqlAlchemyTechnicalReportAuditRecorder:
         self.session = session
 
     def record(self, record: TechnicalReportAuditRecord) -> None:
+        details = {
+            "outcome": "succeeded",
+            "organization_id": str(record.organization_id),
+            "command_id": str(record.command_id),
+            "correlation_id": str(record.correlation_id),
+        }
+        if record.event_id is not None:
+            details["event_id"] = str(record.event_id)
+        if record.standards_basis_digest is not None:
+            details["standards_basis_digest"] = record.standards_basis_digest
         self.session.add(
             AuditLog(
                 user_id=record.actor_id,
                 action=record.operation,
                 entity="TECHNICAL_REPORT",
                 entity_uuid=record.report_id,
-                details={
-                    "outcome": "succeeded",
-                    "organization_id": str(record.organization_id),
-                    "command_id": str(record.command_id),
-                    "correlation_id": str(record.correlation_id),
-                },
+                details=details,
                 created_at=record.occurred_at,
             )
         )
@@ -159,56 +181,9 @@ class SqlAlchemyTechnicalReportDomainEventRecorder:
 
     def record(self, events: tuple[TechnicalReportDomainEvent, ...]) -> None:
         for event in events:
-            self.session.add(
-                TechnicalReportOutboxRecord(
-                    event_id=event.event_id,
-                    aggregate_id=event.report_id,
-                    aggregate_version=event.aggregate_version,
-                    event_type=event.event_type,
-                    schema_version=1,
-                    payload={
-                        "report_id": str(event.report_id),
-                        "aggregate_version": event.aggregate_version,
-                        "command_id": str(event.command_id),
-                        "correlation_id": str(event.correlation_id),
-                        "occurred_at": event.occurred_at.isoformat(),
-                        "organization_id": str(event.organization_id),
-                        "workspace_id": event.workspace_id,
-                        "project_id": event.project_id,
-                        "purpose": event.purpose.value,
-                        "lifecycle": event.lifecycle,
-                        "draft_revision_id": str(event.draft_revision_id),
-                        "actor_id": event.actor_id,
-                        "causation_id": str(event.causation_id),
-                        "predecessor_report_id": (
-                            None if event.predecessor_report_id is None
-                            else str(event.predecessor_report_id)
-                        ),
-                        "source_entry_count": event.source_entry_count,
-                    },
-                    occurred_at=event.occurred_at,
-                )
-            )
-
-
-def _result_payload(result: TechnicalReportCommandResult) -> dict[str, object]:
-    return {
-        "safe_result_schema_version": 1,
-        "report_id": str(result.report_id),
-        "previous_version": result.previous_version,
-        "version": result.version,
-        "draft_revision": {
-            "revision_id": str(result.draft_revision.revision_id),
-            "revision_number": result.draft_revision.revision_number,
-        },
-        "command_type": result.command_type,
-        "correlation_id": str(result.correlation_id),
-        "events": [
-            {
-                "event_id": str(event.event_id),
+            payload = {
                 "report_id": str(event.report_id),
                 "aggregate_version": event.aggregate_version,
-                "event_type": event.event_type,
                 "command_id": str(event.command_id),
                 "correlation_id": str(event.correlation_id),
                 "occurred_at": event.occurred_at.isoformat(),
@@ -226,8 +201,69 @@ def _result_payload(result: TechnicalReportCommandResult) -> dict[str, object]:
                 ),
                 "source_entry_count": event.source_entry_count,
             }
-            for event in result.events
-        ],
+            standards_basis_digest = getattr(event, "standards_basis_digest", None)
+            if standards_basis_digest is not None:
+                payload["standards_basis_ids"] = [
+                    str(basis_id) for basis_id in event.standards_basis_ids
+                ]
+                payload["standards_basis_digest"] = standards_basis_digest
+            self.session.add(
+                TechnicalReportOutboxRecord(
+                    event_id=event.event_id,
+                    aggregate_id=event.report_id,
+                    aggregate_version=event.aggregate_version,
+                    event_type=event.event_type,
+                    schema_version=1,
+                    payload=payload,
+                    occurred_at=event.occurred_at,
+                )
+            )
+
+
+def _result_payload(result: TechnicalReportCommandResult) -> dict[str, object]:
+    def event_payload(event: TechnicalReportDomainEvent) -> dict[str, object]:
+        payload = {
+            "event_id": str(event.event_id),
+            "report_id": str(event.report_id),
+            "aggregate_version": event.aggregate_version,
+            "event_type": event.event_type,
+            "command_id": str(event.command_id),
+            "correlation_id": str(event.correlation_id),
+            "occurred_at": event.occurred_at.isoformat(),
+            "organization_id": str(event.organization_id),
+            "workspace_id": event.workspace_id,
+            "project_id": event.project_id,
+            "purpose": event.purpose.value,
+            "lifecycle": event.lifecycle,
+            "draft_revision_id": str(event.draft_revision_id),
+            "actor_id": event.actor_id,
+            "causation_id": str(event.causation_id),
+            "predecessor_report_id": (
+                None if event.predecessor_report_id is None
+                else str(event.predecessor_report_id)
+            ),
+            "source_entry_count": event.source_entry_count,
+        }
+        standards_basis_digest = getattr(event, "standards_basis_digest", None)
+        if standards_basis_digest is not None:
+            payload["standards_basis_ids"] = [
+                str(basis_id) for basis_id in event.standards_basis_ids
+            ]
+            payload["standards_basis_digest"] = standards_basis_digest
+        return payload
+
+    return {
+        "safe_result_schema_version": 1,
+        "report_id": str(result.report_id),
+        "previous_version": result.previous_version,
+        "version": result.version,
+        "draft_revision": {
+            "revision_id": str(result.draft_revision.revision_id),
+            "revision_number": result.draft_revision.revision_number,
+        },
+        "command_type": result.command_type,
+        "correlation_id": str(result.correlation_id),
+        "events": [event_payload(event) for event in result.events],
     }
 
 
@@ -257,7 +293,7 @@ def _result_from_payload(payload: object) -> TechnicalReportCommandResult:
             command_type=payload["command_type"],
             correlation_id=UUID(payload["correlation_id"]),
             events=tuple(
-                TechnicalReportDomainEvent(
+                (TechnicalReportStandardsDomainEvent if item.get("standards_basis_digest") is not None else TechnicalReportDomainEvent)(
                     event_id=UUID(item["event_id"]),
                     report_id=UUID(item["report_id"]),
                     aggregate_version=item["aggregate_version"],
@@ -278,11 +314,20 @@ def _result_from_payload(payload: object) -> TechnicalReportCommandResult:
                         else UUID(item["predecessor_report_id"])
                     ),
                     source_entry_count=item["source_entry_count"],
+                    **(
+                        {
+                            "standards_basis_ids": tuple(
+                                UUID(value) for value in item["standards_basis_ids"]
+                            ),
+                            "standards_basis_digest": item["standards_basis_digest"],
+                        }
+                        if item.get("standards_basis_digest") is not None else {}
+                    ),
                 )
                 for item in events
             ),
         )
-    except (KeyError, TypeError, ValueError) as exc:
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
         raise TechnicalReportValidationError("idempotency result is invalid") from exc
 
 
@@ -298,7 +343,7 @@ class SqlAlchemyTechnicalReportIdempotencyStore:
             actor_id=key.actor_id,
             command_type=key.command_type,
             idempotency_id=key.idempotency_id,
-        ).first()
+        ).with_for_update().first()
         if row is None:
             return None
         if row.request_fingerprint != request_fingerprint or row.status != "completed" or row.result is None:
@@ -422,6 +467,7 @@ class SqlAlchemyTechnicalReportUnitOfWork:
         self.final_recheck = SqlAlchemyTechnicalReportFinalRecheckPolicy(
             self.session, self.authorization, self.references, self.historical
         )
+        self.standards = SqlAlchemyTechnicalReportStandardsPolicy(self.session)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
@@ -599,6 +645,369 @@ class SqlAlchemyTechnicalReportFinalRecheckPolicy:
                 except Exception as exc:
                     raise TechnicalReportHistoricalBasisIncomplete() from exc
             self.historical.resolve(source)
+
+
+class SqlAlchemyTechnicalReportStandardsPolicy:
+    """Report-owned standards locks, handle resolution, and final rechecks."""
+
+    _CAPABILITY_COLUMNS = {
+        "metadata_visibility": "allow_metadata_visibility",
+        "content_storage": "allow_content_storage",
+        "indexing": "allow_indexing",
+        "excerpt_display": "allow_excerpt_display",
+        "source_retrieval": "allow_source_retrieval",
+        "derived_retention": "allow_derived_retention",
+        "derived_current_use": "allow_derived_current_use",
+    }
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    @staticmethod
+    def _rights_active(rights: OrganizationRightsBinding, now: datetime) -> bool:
+        return (
+            rights.is_current is True
+            and rights.rights_status == "active"
+            and rights.effective_from <= now
+            and (rights.effective_until is None or rights.effective_until > now)
+        )
+
+    def _candidate_query(self, actor, scope, now, *, lock: bool):
+        query = (
+            self.session.query(
+                StandardSourceSnapshot, StandardEdition, StandardIdentity,
+                StandardEditionStandingObservation, OrganizationRightsBinding,
+            )
+            .join(StandardEdition, StandardEdition.id == StandardSourceSnapshot.standard_edition_id)
+            .join(StandardIdentity, StandardIdentity.id == StandardEdition.standard_identity_id)
+            .join(StandardEditionStandingObservation, and_(
+                StandardEditionStandingObservation.standard_edition_id == StandardEdition.id,
+                StandardEditionStandingObservation.is_current.is_(True),
+            ))
+            .join(OrganizationRightsBinding, and_(
+                OrganizationRightsBinding.organization_id == scope.organization_id,
+                OrganizationRightsBinding.standard_edition_id == StandardEdition.id,
+                OrganizationRightsBinding.source_provider_id == StandardSourceSnapshot.source_provider_id,
+                OrganizationRightsBinding.is_current.is_(True),
+            ))
+            .filter(
+                StandardSourceSnapshot.organization_id == scope.organization_id,
+                StandardSourceSnapshot.project_id == scope.project_id,
+                OrganizationRightsBinding.rights_status == "active",
+                OrganizationRightsBinding.effective_from <= now,
+                (OrganizationRightsBinding.effective_until.is_(None)
+                 | (OrganizationRightsBinding.effective_until > now)),
+                OrganizationRightsBinding.allow_metadata_visibility.is_(True),
+                StandardIdentity.retired_from_new_selection.is_(False),
+                StandardSourceSnapshot.request_purpose.in_((
+                    "reference_only", "material_support",
+                )),
+                ((StandardIdentity.catalog_scope == "global_trusted")
+                 | (StandardIdentity.organization_id == scope.organization_id)),
+            )
+            .order_by(
+                StandardIdentity.issuer_key, StandardIdentity.designation_key,
+                StandardEdition.edition_key, StandardSourceSnapshot.source_provider_id,
+                StandardSourceSnapshot.source_location, StandardSourceSnapshot.id,
+            )
+        )
+        # Snapshot/edition history is DB-immutable and the runtime role has no
+        # UPDATE authority on it.  Lock only mutable current heads plus the
+        # identity retirement flag; immutable rows are read in the same MVCC
+        # snapshot and are protected by their history guards.
+        return query.with_for_update(of=(
+            StandardIdentity, StandardEditionStandingObservation,
+            OrganizationRightsBinding,
+        )) if lock else query
+
+    def list_candidates(self, actor, scope, now):
+        if scope.project_id is None:
+            return ()
+        visible = []
+        for rows in self._candidate_query(actor, scope, now, lock=False).limit(64).all():
+            source, _edition, _identity, standing, rights = rows
+            material = source.request_purpose == "material_support"
+            eligible_material = (
+                source.availability_status == "available"
+                and source.integrity_verified is True
+                and rights.allow_source_retrieval is True
+                and source.byte_count is not None
+                and (source.content_sha256 is not None or source.provider_version_digest is not None)
+            )
+            if material and not eligible_material:
+                continue
+            visible.append(rows)
+        visible.sort(key=lambda rows: (
+            0 if rows[0].request_purpose == "material_support" else 1,
+            rows[2].issuer_key, rows[2].designation_key, rows[1].edition_key,
+            rows[0].source_location, str(rows[0].id),
+        ))
+        return tuple(visible[:12])
+
+    def resolve_selection(self, actor, scope, handle, materiality, assertion_id, now):
+        if scope.project_id is None:
+            raise TechnicalReportAuthorizationDenied()
+        for source, edition, identity, standing, rights in self._candidate_query(
+            actor, scope, now, lock=True,
+        ).limit(64).all():
+            try:
+                verify_handle(
+                    handle, actor_id=actor.actor_id,
+                    organization_id=str(scope.organization_id), project_id=scope.project_id,
+                    operation="RPT-02", resource_id=str(source.id),
+                    edition_id=str(edition.id), rights_binding_id=str(rights.id),
+                    rights_version=rights.version, rights_digest=rights.rights_digest,
+                    purpose=source.request_purpose, provider_id=source.source_provider_id,
+                    source_location=source.source_location,
+                    integrity_digest=source.snapshot_digest,
+                )
+            except OpaqueAuthorizedHandleInvalid:
+                continue
+            if source.request_purpose != materiality:
+                break
+            if materiality == "material_support" and (
+                source.availability_status != "available"
+                or source.integrity_verified is not True
+                or source.byte_count is None
+                or rights.allow_source_retrieval is not True
+                or (source.content_sha256 is None and source.provider_version_digest is None)
+            ):
+                break
+            applicability = self.session.query(ProjectStandardApplicability).filter_by(
+                organization_id=scope.organization_id, project_id=scope.project_id,
+                standard_edition_id=edition.id, is_current=True,
+            ).with_for_update().one_or_none()
+            assertion = verifier = None
+            if assertion_id is not None:
+                assertion = self.session.query(StandardKnowledgeAssertion).filter_by(
+                    id=assertion_id, organization_id=scope.organization_id,
+                    project_id=scope.project_id, source_snapshot_id=source.id,
+                ).with_for_update().one_or_none()
+                if assertion is None or assertion.current_verification_event_id is None:
+                    break
+                verifier = self.session.query(StandardAssertionVerificationEvent).filter_by(
+                    id=assertion.current_verification_event_id,
+                    assertion_id=assertion.id,
+                ).with_for_update().one_or_none()
+                if verifier is None:
+                    break
+            sealed = None
+            if materiality == "material_support" and source.provider_version_digest is not None:
+                sealed = self.session.execute(text(
+                    "SELECT public.resolve_standard_provider_handle(:s,:o,:a,'retrieval')"
+                ), {"s": source.id, "o": scope.organization_id, "a": actor.actor_id}).scalar_one_or_none()
+                if sealed is None:
+                    break
+            return source, edition, identity, standing, rights, applicability, assertion, verifier, sealed
+        raise TechnicalReportAuthorizationDenied()
+
+    def require_current(self, actor, scope, bases, now):
+        """Execute the standards-owned portion of all 13 acceptance rechecks."""
+        if len(bases) > 16 or len({item.basis_id for item in bases}) != len(bases):
+            raise TechnicalReportHistoricalBasisIncomplete()
+        ordered = tuple(sorted(bases, key=lambda item: str(item.basis_id)))
+        if any(item.accepted_report_id is not None for item in ordered):
+            raise TechnicalReportHistoricalBasisIncomplete()
+
+        def selected(model, identifiers, *, lock):
+            values = tuple(sorted(set(identifiers), key=str))
+            if not values:
+                return {}
+            query = (
+                self.session.query(model)
+                .filter(model.id.in_(values))
+                .order_by(model.id)
+            )
+            rows = (query.with_for_update() if lock else query).all()
+            return {row.id: row for row in rows}
+
+        # Accepted IDS §19 lock order: every identity, edition/standing, right,
+        # applicability head, source, assertion/event, then intelligence run.
+        identities = selected(
+            StandardIdentity, (item.standard_identity_id for item in ordered), lock=True,
+        )
+        editions = selected(
+            StandardEdition, (item.standard_edition_id for item in ordered), lock=False,
+        )
+        standings = selected(
+            StandardEditionStandingObservation,
+            (item.standing_observation_id for item in ordered),
+            lock=True,
+        )
+        rights_rows = selected(
+            OrganizationRightsBinding, (item.rights_binding_id for item in ordered), lock=True,
+        )
+        applicability_rows = selected(
+            ProjectStandardApplicability,
+            (item.applicability_id for item in ordered if item.applicability_id is not None),
+            lock=True,
+        )
+        sources = selected(
+            StandardSourceSnapshot, (item.source_snapshot_id for item in ordered), lock=False,
+        )
+        assertions = selected(
+            StandardKnowledgeAssertion,
+            (item.assertion_id for item in ordered if item.assertion_id is not None),
+            lock=True,
+        )
+        verifications = selected(
+            StandardAssertionVerificationEvent,
+            (
+                item.current_verification_event_id
+                for item in assertions.values()
+                if item.current_verification_event_id is not None
+            ),
+            lock=False,
+        )
+
+        intelligence = {}
+        for interaction_id in sorted({
+            item.intelligence_interaction_id for item in ordered
+            if item.intelligence_interaction_id is not None
+        }, key=str):
+            row = self.session.execute(text(
+                "SELECT id,provider_id,provider_model,template_digest,input_digest,output_digest,processor_policy_id "
+                "FROM public.standard_intelligence_runs "
+                "WHERE id=:id AND organization_id=:org AND project_id=:project FOR UPDATE"
+            ), {"id": interaction_id, "org": scope.organization_id, "project": scope.project_id}).mappings().one_or_none()
+            if row is not None:
+                intelligence[row["id"]] = row
+
+        for basis in ordered:
+            identity = identities.get(basis.standard_identity_id)
+            edition = editions.get(basis.standard_edition_id)
+            standing = standings.get(basis.standing_observation_id)
+            rights = rights_rows.get(basis.rights_binding_id)
+            source = sources.get(basis.source_snapshot_id)
+            if identity is None or edition is None or standing is None or rights is None or source is None:
+                raise TechnicalReportHistoricalBasisIncomplete()
+            if (
+                not (
+                    identity.catalog_scope == "global_trusted"
+                    or identity.organization_id == scope.organization_id
+                )
+                or identity.retired_from_new_selection is True
+                or identity.identity_digest != basis.identity_digest
+                or identity.issuer_display != basis.issuer
+                or identity.designation != basis.designation
+                or identity.title != basis.title
+                or edition.standard_identity_id != basis.standard_identity_id
+                or edition.edition_digest != basis.edition_digest
+                or edition.edition_designation != basis.edition_designation
+                or edition.official_publication_identifier != basis.official_publication_identifier
+                or edition.publication_date != basis.publication_date
+                or standing.standard_edition_id != basis.standard_edition_id
+                or standing.is_current is not True
+                or standing.standing != basis.standing.value
+                or standing.observation_digest != basis.standing_observation_digest
+                or rights.organization_id != scope.organization_id
+                or rights.standard_edition_id != basis.standard_edition_id
+                or rights.source_provider_id != basis.source_provider_id
+                or rights.is_current is not True
+                or rights.version != basis.rights_binding_version
+                or rights.rights_digest != basis.rights_digest
+                or rights.rights_basis != basis.rights_basis.value
+                or rights.rights_status != basis.rights_status.value
+                or rights.ai_processing_permission != basis.ai_processing_permission.value
+                or not self._rights_active(rights, now)
+                or source.organization_id != scope.organization_id
+                or source.project_id != scope.project_id
+                or source.standard_identity_id != basis.standard_identity_id
+                or source.standard_edition_id != basis.standard_edition_id
+                or source.source_provider_id != basis.source_provider_id
+                or source.source_location != basis.source_location
+                or source.snapshot_digest != basis.snapshot_digest
+                or source.availability_status != basis.source_availability_status
+                or source.byte_count != basis.byte_count
+                or source.content_sha256 != basis.content_digest
+                or source.request_purpose != basis.materiality
+                or basis.selected_by_id != actor.actor_id
+                or standard_basis_digest(basis) != basis.basis_digest
+            ):
+                raise TechnicalReportHistoricalBasisIncomplete()
+            if basis.immutable_provider_token is not None and (
+                source.provider_version_digest != basis.provider_version_digest
+                or source.provider_handle_key_version != basis.provider_handle_key_version
+            ):
+                raise TechnicalReportHistoricalBasisIncomplete()
+            current_capabilities = {
+                key: bool(getattr(rights, column))
+                for key, column in self._CAPABILITY_COLUMNS.items()
+            }
+            if current_capabilities != basis.evaluated_capabilities:
+                raise TechnicalReportHistoricalBasisIncomplete()
+            if not rights.allow_metadata_visibility:
+                raise TechnicalReportAuthorizationDenied()
+            if basis.materiality == "material_support" and (
+                not rights.allow_source_retrieval
+                or source.availability_status != "available"
+                or source.integrity_verified is not True
+                or basis.byte_count is None
+            ):
+                raise TechnicalReportHistoricalBasisIncomplete()
+            if basis.immutable_provider_token is not None:
+                sealed = self.session.execute(text(
+                    "SELECT public.resolve_standard_provider_handle(:s,:o,:a,'retrieval')"
+                ), {"s": source.id, "o": scope.organization_id, "a": actor.actor_id}).scalar_one_or_none()
+                if sealed is None or not hmac.compare_digest(
+                    base64.b64encode(sealed).decode("ascii"), basis.immutable_provider_token,
+                ):
+                    raise TechnicalReportHistoricalBasisIncomplete()
+            if basis.applicability_id is not None:
+                applicability = applicability_rows.get(basis.applicability_id)
+                if applicability is None or (
+                    applicability.organization_id != scope.organization_id
+                    or applicability.project_id != scope.project_id
+                    or applicability.standard_edition_id != basis.standard_edition_id
+                    or applicability.is_current is not True
+                    or applicability.revision != basis.applicability_revision
+                    or applicability.applicability_digest != basis.applicability_digest
+                    or applicability.status != basis.applicability_status
+                    or applicability.applicability_role != basis.applicability_role
+                ):
+                    raise TechnicalReportHistoricalBasisIncomplete()
+            if basis.standing in {"superseded", "withdrawn"} and (
+                basis.applicability_id is None
+                or basis.standing_acknowledged_by_id != actor.actor_id
+                or not basis.standing_acknowledgement_rationale
+            ):
+                raise TechnicalReportHistoricalBasisIncomplete()
+            if basis.assertion_id is not None:
+                assertion = assertions.get(basis.assertion_id)
+                verifier = (
+                    None if assertion is None
+                    else verifications.get(assertion.current_verification_event_id)
+                )
+                if assertion is None or verifier is None or (
+                    assertion.organization_id != scope.organization_id
+                    or assertion.project_id != scope.project_id
+                    or assertion.standard_edition_id != basis.standard_edition_id
+                    or assertion.source_snapshot_id != basis.source_snapshot_id
+                    or assertion.assertion_digest != basis.assertion_digest
+                    or assertion.assertion_kind != basis.assertion_kind
+                    or assertion.assertion_origin != basis.assertion_origin
+                    or assertion.verification_status != basis.assertion_verification_status
+                    or assertion.retained_derived_use_eligible != basis.assertion_current_use_eligible
+                    or verifier.assertion_id != assertion.id
+                    or verifier.verified_by != basis.assertion_verified_by_id
+                    or (basis.materiality == "material_support" and (
+                        assertion.verification_status != "human_verified"
+                        or assertion.retained_derived_use_eligible is not True
+                        or not rights.allow_derived_current_use
+                    ))
+                ):
+                    raise TechnicalReportHistoricalBasisIncomplete()
+            if basis.intelligence_interaction_id is not None:
+                run = intelligence.get(basis.intelligence_interaction_id)
+                if run is None or (
+                    run["provider_id"] != basis.intelligence_provider_id
+                    or run["provider_model"] != basis.intelligence_model
+                    or run["template_digest"] != basis.intelligence_template_digest
+                    or run["input_digest"] != basis.intelligence_input_digest
+                    or run["output_digest"] != basis.intelligence_output_digest
+                    or run["processor_policy_id"] != basis.intelligence_processor_decision
+                ):
+                    raise TechnicalReportHistoricalBasisIncomplete()
 
 
 class SqlAlchemyTechnicalReportHistoricalResolver:

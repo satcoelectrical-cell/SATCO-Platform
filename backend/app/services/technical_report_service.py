@@ -2,21 +2,32 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Callable
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from app.enums.technical_report import TechnicalReportLifecycle, TechnicalReportSourceClass
+from app.enums.technical_report import (
+    TechnicalReportAvailabilityStatus,
+    TechnicalReportIntegrityAlgorithm,
+    TechnicalReportLifecycle,
+    TechnicalReportSourceClass,
+    TechnicalReportSourceType,
+    TechnicalReportVerificationStatus,
+)
 from app.exceptions.technical_report import (
     TechnicalReportAcceptanceAuthorityDenied,
     TechnicalReportAcceptedImmutable,
     TechnicalReportAssistantUnavailable,
     TechnicalReportAuthorizationDenied,
+    TechnicalReportHistoricalBasisIncomplete,
     TechnicalReportVersionConflict,
 )
 from app.models.technical_report import TechnicalReport
+from app.standards.handles import issue_handle
+from app.ai.technical_report_assistant import safe_report_source_context
 from app.models.technical_report_command import (
     AcceptExactTechnicalReportDraft,
     CaptureHistoricalBasisV1,
@@ -31,10 +42,15 @@ from app.models.technical_report_command import (
     EvidenceHistoricalBasisV1,
     EvidenceHistoricalBasisV2,
     ReviseTechnicalReportDraft,
+    ReviseTechnicalReportStandardsBasis,
+    StandardHistoricalBasisV1,
+    StandardLocator,
+    TechnicalReportStandardBasisSelection,
     TechnicalReportActor,
     TechnicalReportCommandResult,
     TechnicalReportProvenanceEntry,
     canonical_json,
+    standard_basis_payload_digest,
 )
 from app.ports.technical_report import (
     AcceptExactDraftHistoricalAuthority,
@@ -223,9 +239,13 @@ class TechnicalReportService:
                 if replay is not None:
                     state = self._replay_state(command, replay, report)
                     return TechnicalReportMutationResponse(self._view(uow, command.metadata.actor, state), replay)
+                acceptance_now = self._clock.now()
                 authority = AcceptExactDraftHistoricalAuthority(report.id, report.owner_id)
                 requests = self._validate_provenance(
                     uow, command.metadata.actor, scope, authority, report.provenance
+                )
+                self._recheck_standards_basis(
+                    uow, command.metadata.actor, scope, report, acceptance_now,
                 )
                 uow.idempotency.reserve(key, fingerprint)
                 uow.final_recheck.require_current(
@@ -239,7 +259,7 @@ class TechnicalReportService:
                         sources=requests,
                     )
                 )
-                result = report.accept_exact_draft(command, self._clock.now())
+                result = report.accept_exact_draft(command, acceptance_now)
                 if not uow.technical_reports.persist_acceptance_expected_version(
                     report, command.confirmation.expected_version
                 ):
@@ -252,13 +272,211 @@ class TechnicalReportService:
             raise
         except TechnicalReportAcceptedImmutable:
             self._record_rejection(
-                uow,
-                command,
-                TechnicalReportRejectionReason.ACCEPTED_STATE_MUTATION,
+                uow, command, TechnicalReportRejectionReason.ACCEPTED_STATE_MUTATION,
                 command.report_id,
             )
             raise
 
+    def standards_candidates(self, actor: TechnicalReportActor, report_id: UUID) -> tuple[dict, ...]:
+        """RPT-01: bound opaque choices only; no provider or raw locator input."""
+        with self._uow_factory() as uow:
+            report, scope = self._protected_report(uow, actor, report_id, "get")
+            if report.lifecycle is not TechnicalReportLifecycle.DRAFT or scope.project_id is None:
+                raise TechnicalReportAuthorizationDenied()
+            result = []
+            now = self._clock.now()
+            for source, edition, identity, standing, rights in uow.standards.list_candidates(
+                actor, scope, now,
+            ):
+                material = source.request_purpose == "material_support"
+                acknowledgement = standing.standing in {"superseded", "withdrawn"}
+                eligibility = (
+                    "standing_acknowledgement_required"
+                    if acknowledgement and material else "eligible"
+                )
+                result.append({
+                    "authorized_handle": issue_handle(actor_id=actor.actor_id, organization_id=str(scope.organization_id), project_id=scope.project_id, operation="RPT-02", resource_id=str(source.id), edition_id=str(edition.id), rights_binding_id=str(rights.id), rights_version=rights.version, rights_digest=rights.rights_digest, purpose=source.request_purpose, provider_id=source.source_provider_id, source_location=source.source_location, integrity_digest=source.snapshot_digest),
+                    "standard_identity_id": identity.id, "edition_id": edition.id,
+                    "issuer": identity.issuer_display, "designation": identity.designation,
+                    "edition_designation": edition.edition_designation, "standing": standing.standing,
+                    "materiality": source.request_purpose, "eligibility": eligibility,
+                    "warnings": ([] if eligibility == "eligible" else [eligibility.upper()]),
+                })
+            return tuple(result)
+
+    def attach_standards_basis(self, command: ReviseTechnicalReportStandardsBasis) -> TechnicalReportMutationResponse:
+        """RPT-02: compose and freeze every basis field inside one report lock."""
+        with self._uow_factory() as uow:
+            actor = command.metadata.actor
+            report, scope = self._protected_report(uow, actor, command.report_id, "revise_draft")
+            replay, key, fingerprint = self._idempotency(uow, command)
+            if replay is not None:
+                current = uow.technical_reports.get_scoped(replay.report_id, actor.organization_id)
+                if current is None:
+                    raise TechnicalReportAuthorizationDenied()
+                return TechnicalReportMutationResponse(self._view(uow, actor, current), replay)
+            if (scope.project_id is None or report.version != command.expected_version
+                    or report.draft_revision_id != command.expected_draft_revision_id):
+                raise TechnicalReportVersionConflict()
+            uow.idempotency.reserve(key, fingerprint)
+            now = self._clock.now()
+            next_revision_id = uuid4()
+            standard_entries = tuple(
+                self._compose_standard_entry(
+                    uow, actor, scope, report, selection, next_revision_id, now, ordinal,
+                )
+                for ordinal, selection in enumerate(command.selections)
+            )
+            source_keys = tuple(
+                (
+                    item.locator.standard_edition_id,
+                    item.locator.source_provider_id,
+                    item.locator.source_location,
+                )
+                for item in standard_entries
+            )
+            if len(set(source_keys)) != len(source_keys):
+                raise TechnicalReportHistoricalBasisIncomplete(
+                    "duplicate or conflicting standards sources are prohibited",
+                )
+            retained = tuple(
+                entry for entry in report.provenance
+                if entry.source_type is not TechnicalReportSourceType.STANDARD
+            )
+            if len(retained) + len(standard_entries) > 32:
+                raise TechnicalReportHistoricalBasisIncomplete("Technical Report provenance limit exceeded")
+            provenance = tuple(
+                replace(entry, ordinal=index)
+                for index, entry in enumerate(retained + standard_entries)
+            )
+            result = report.revise_standards_basis(
+                command, provenance, now, next_revision_id=next_revision_id,
+            )
+            if not uow.technical_reports.persist_draft_expected_version(
+                report, command.expected_version,
+            ):
+                raise TechnicalReportVersionConflict()
+            self._stage_success(uow, command, result)
+            uow.commit()
+            return TechnicalReportMutationResponse(self._view(uow, actor, report), result)
+
+    @staticmethod
+    def _compose_standard_entry(uow, actor, scope, report, selection, revision_id, now, ordinal):
+        source, edition, identity, standing, rights, applicability, assertion, verifier, sealed = (
+            uow.standards.resolve_selection(
+                actor, scope, selection.authorized_handle, selection.materiality,
+                selection.assertion_id, now,
+            )
+        )
+        noncurrent = standing.standing in {"superseded", "withdrawn"}
+        if selection.materiality == "material_support" and (
+            (noncurrent and (applicability is None or not selection.standing_acknowledgement))
+            or standing.standing == "unknown"
+        ):
+            raise TechnicalReportHistoricalBasisIncomplete()
+        if selection.materiality == "material_support" and assertion is not None and (
+            assertion.verification_status != "human_verified"
+            or assertion.retained_derived_use_eligible is not True
+            or verifier is None
+        ):
+            raise TechnicalReportHistoricalBasisIncomplete()
+        capabilities = {
+            "metadata_visibility": bool(rights.allow_metadata_visibility),
+            "content_storage": bool(rights.allow_content_storage),
+            "indexing": bool(rights.allow_indexing),
+            "excerpt_display": bool(rights.allow_excerpt_display),
+            "source_retrieval": bool(rights.allow_source_retrieval),
+            "derived_retention": bool(rights.allow_derived_retention),
+            "derived_current_use": bool(rights.allow_derived_current_use),
+        }
+        payload = {
+            "schema_version": "standard_historical_basis_v1",
+            "basis_id": uuid4(), "materiality": selection.materiality,
+            "selection_rationale": selection.selection_rationale,
+            "standard_identity_id": identity.id, "issuer": identity.issuer_display,
+            "designation": identity.designation, "title": identity.title,
+            "identity_digest": identity.identity_digest,
+            "standard_edition_id": edition.id,
+            "edition_designation": edition.edition_designation,
+            "official_publication_identifier": edition.official_publication_identifier,
+            "publication_date": edition.publication_date,
+            "edition_digest": edition.edition_digest,
+            "standing_observation_id": standing.id, "standing": standing.standing,
+            "standing_observation_digest": standing.observation_digest,
+            "standing_acknowledged_by_id": actor.actor_id if noncurrent else None,
+            "standing_acknowledgement_rationale": selection.standing_acknowledgement if noncurrent else None,
+            "source_snapshot_id": source.id,
+            "source_provider_id": source.source_provider_id,
+            "source_location": source.source_location,
+            "immutable_provider_token": None if sealed is None else base64.b64encode(sealed).decode("ascii"),
+            "provider_version_digest": (
+                source.provider_version_digest if sealed is not None else None
+            ),
+            "provider_handle_key_version": (
+                source.provider_handle_key_version if sealed is not None else None
+            ),
+            "source_availability_status": source.availability_status,
+            "byte_count": source.byte_count, "snapshot_digest": source.snapshot_digest,
+            "content_digest": source.content_sha256,
+            "rights_binding_id": rights.id, "rights_binding_version": rights.version,
+            "rights_digest": rights.rights_digest, "rights_basis": rights.rights_basis,
+            "rights_status": rights.rights_status,
+            "evaluated_capabilities": capabilities,
+            "ai_processing_permission": rights.ai_processing_permission,
+            "rights_decided_at": now,
+            "applicability_id": None if applicability is None else applicability.id,
+            "applicability_revision": None if applicability is None else applicability.revision,
+            "applicability_digest": None if applicability is None else applicability.applicability_digest,
+            "applicability_status": None if applicability is None else applicability.status,
+            "applicability_role": None if applicability is None else applicability.applicability_role,
+            "assertion_id": None if assertion is None else assertion.id,
+            "assertion_kind": None if assertion is None else assertion.assertion_kind,
+            "assertion_digest": None if assertion is None else assertion.assertion_digest,
+            "assertion_origin": None if assertion is None else assertion.assertion_origin,
+            "assertion_verification_status": None if assertion is None else assertion.verification_status,
+            "assertion_verified_by_id": None if verifier is None else verifier.verified_by,
+            "assertion_current_use_eligible": None if assertion is None else assertion.retained_derived_use_eligible,
+            "intelligence_interaction_id": None, "intelligence_provider_id": None,
+            "intelligence_model": None, "intelligence_template_digest": None,
+            "intelligence_input_digest": None, "intelligence_output_digest": None,
+            "intelligence_processor_decision": None,
+            "selected_by_id": actor.actor_id, "selected_at": now,
+            "report_revision_id": revision_id,
+            "accepted_report_id": None, "accepted_report_version": None,
+            "accepted_at": None,
+        }
+        basis = StandardHistoricalBasisV1(
+            **payload, basis_digest=standard_basis_payload_digest(payload),
+        )
+        material = selection.materiality == "material_support"
+        return TechnicalReportProvenanceEntry(
+            basis.basis_id, ordinal, TechnicalReportSourceClass.STANDARDS_MATERIAL,
+            TechnicalReportSourceType.STANDARD, material, None,
+            f"standards_{selection.materiality}",
+            TechnicalReportVerificationStatus.VERIFIED,
+            (TechnicalReportAvailabilityStatus.AVAILABLE
+             if source.availability_status == "available"
+             else TechnicalReportAvailabilityStatus.UNAVAILABLE),
+            identity.issuer_display,
+            (("reference_only; not claim-supporting material",) if not material else ()),
+            basis,
+            TechnicalReportIntegrityAlgorithm.SHA256 if material else None,
+            hashlib.sha256(canonical_json(basis)).hexdigest() if material else None,
+        )
+
+    def _recheck_standards_basis(self, uow, actor, scope, report, now):
+        if any(isinstance(item.locator, StandardLocator) for item in report.provenance):
+            raise TechnicalReportHistoricalBasisIncomplete(
+                "legacy standards provenance must be converted before acceptance",
+            )
+        bases = tuple(
+            item.locator for item in report.provenance
+            if isinstance(item.locator, StandardHistoricalBasisV1)
+        )
+        if bases:
+            if any(item.report_revision_id != report.draft_revision_id for item in bases):
+                raise TechnicalReportHistoricalBasisIncomplete()
+            uow.standards.require_current(actor, scope, bases, now)
     def create_successor(self, command: CreateTechnicalReportSuccessor):
         with self._uow_factory() as uow:
             predecessor, scope = self._protected_report(
@@ -270,6 +488,10 @@ class TechnicalReportService:
                 selected = tuple(selected_by_id[item] for item in command.selected_copy_references)
             except KeyError as exc:
                 raise TechnicalReportAuthorizationDenied() from exc
+            if any(item.source_type is TechnicalReportSourceType.STANDARD for item in selected):
+                raise TechnicalReportHistoricalBasisIncomplete(
+                    "successor Reports require a new canonical standards selection",
+                )
             self._validate_provenance(uow, command.metadata.actor, scope, authority, selected)
             self._validate_provenance(uow, command.metadata.actor, scope, authority, command.provenance)
             combined = command.provenance + selected
@@ -450,7 +672,7 @@ class TechnicalReportService:
                     "draft_revision_id": report.draft_revision_id,
                     "draft_content": report.content,
                 }).decode("utf-8"),
-                *(canonical_json(selected[item].locator).decode("utf-8") for item in selected_source_entry_ids),
+                *(safe_report_source_context(selected[item].locator) for item in selected_source_entry_ids),
             )
         return self._assistant.propose(
             TechnicalReportAIRequest(actor, report_id, bounded_context)
@@ -567,12 +789,21 @@ class TechnicalReportService:
             type(command).__name__,
             metadata.idempotency_id,
         )
-        fingerprint = hashlib.sha256(canonical_json(command)).hexdigest()
+        # Correlation and command identities are transport-generated per
+        # attempt.  They must not turn the same authorized idempotent request
+        # into a digest mismatch on retry; the original values remain frozen
+        # in the stored canonical result and events.
+        stable_metadata = replace(
+            metadata, correlation_id=UUID(int=0), command_id=UUID(int=0),
+        )
+        fingerprint = hashlib.sha256(canonical_json(
+            replace(command, metadata=stable_metadata),
+        )).hexdigest()
         return uow.idempotency.find(key, fingerprint), key, fingerprint
 
     def _stage_success(self, uow, command, result):
         metadata = command.metadata
-        now = self._clock.now()
+        now = result.occurred_at
         uow.audit.record(
             TechnicalReportAuditRecord(
                 metadata.actor.actor_id,
@@ -582,6 +813,8 @@ class TechnicalReportService:
                 metadata.command_id,
                 metadata.correlation_id,
                 now,
+                result.events[0].event_id,
+                getattr(result.events[0], "standards_basis_digest", None),
             )
         )
         uow.domain_events.record(result.events)

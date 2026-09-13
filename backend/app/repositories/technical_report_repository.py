@@ -25,6 +25,7 @@ from app.models.technical_report_command import (
     ExternalHumanLocator,
     PreliminaryQualification,
     StandardLocator,
+    StandardHistoricalBasisV1,
     TechnicalReportAcceptanceRecord,
     TechnicalReportAcceptedSnapshot,
     TechnicalReportContent,
@@ -141,6 +142,17 @@ def _record_for_entry(report_id: UUID, entry: TechnicalReportProvenanceEntry) ->
             submitted_at=locator.submitted_at,
             minimal_historical_representation=payload,
         )
+    elif isinstance(locator, StandardHistoricalBasisV1):
+        values.update(
+            standard_basis_schema_version=locator.schema_version,
+            standard_basis=payload,
+            standard_basis_digest=locator.basis_digest,
+            standards_basis_materiality=locator.materiality,
+            standard_edition_id=locator.standard_edition_id,
+            standard_source_snapshot_id=locator.source_snapshot_id,
+            standard_assertion_id=locator.assertion_id,
+            standard_intelligence_run_id=locator.intelligence_interaction_id,
+        )
     elif isinstance(locator, StandardLocator):
         values.update(
             standard_identity=locator.standard_identity,
@@ -162,6 +174,8 @@ def _entry_from_record(record: TechnicalReportProvenanceRecord) -> TechnicalRepo
         locator_payload: object = {
             "context_id": str(record.context_id), "owning_context": record.owning_context
         }
+    elif record.source_type == "standard" and record.standard_basis is not None:
+        locator_payload = record.standard_basis
     else:
         locator_payload = record.minimal_historical_representation
     locator = _locator_from_payload(locator_payload, record.source_type)
@@ -293,6 +307,8 @@ class SqlAlchemyTechnicalReportRepository:
     def persist_acceptance_expected_version(self, report: TechnicalReport, expected_version: int) -> bool:
         if report.lifecycle is not TechnicalReportLifecycle.ACCEPTED or report.accepted_snapshot is None:
             raise TechnicalReportValidationError("acceptance persistence requires accepted state")
+        self._replace_provenance(report)
+        self.session.flush()
         result = self.session.execute(
             update(TechnicalReportRecord).where(
                 TechnicalReportRecord.id == report.id,
@@ -403,6 +419,7 @@ class SqlAlchemyTechnicalReportRepository:
             project_id=report.project_id,
             owner_id=report.owner_id,
             purpose=report.purpose.value,
+            predecessor_report_id=report.predecessor_report_id,
             **SqlAlchemyTechnicalReportRepository._mutable_values(report),
             created_at=report.created_at,
         )
@@ -425,7 +442,6 @@ class SqlAlchemyTechnicalReportRepository:
             "draft_revision_id": report.draft_revision_id,
             "draft_revision_number": report.draft_revision.revision_number,
             "lifecycle": report.lifecycle.value,
-            "predecessor_report_id": report.predecessor_report_id,
             "version": report.version,
             "accepted_snapshot": null() if snapshot is None else accepted_snapshot_payload(snapshot),
             "accepted_snapshot_digest": None if snapshot is None else snapshot.integrity_digest,

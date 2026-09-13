@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+from dataclasses import replace
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -32,13 +34,18 @@ from app.models.technical_report_command import (
     CreateTechnicalReportSuccessor,
     PreliminaryQualification,
     ReviseTechnicalReportDraft,
+    ReviseTechnicalReportStandardsBasis,
     TechnicalReportAcceptedSnapshot,
     TechnicalReportAcceptanceRecord,
     TechnicalReportCommandResult,
     TechnicalReportContent,
     TechnicalReportDomainEvent,
+    TechnicalReportStandardsDomainEvent,
     TechnicalReportDraftRevision,
     TechnicalReportProvenanceEntry,
+    StandardHistoricalBasisV1,
+    StandardLocator,
+    canonical_json,
     historical_basis_from_payload,
     validate_accepted_snapshot_payload,
     _aware,
@@ -127,13 +134,13 @@ class TechnicalReport:
     def create(cls, command: CreateTechnicalReportDraft, now: datetime) -> tuple[TechnicalReport, TechnicalReportCommandResult]:
         _aware(now, "now")
         if command.organization_id != command.metadata.actor.organization_id or command.owner_id != command.metadata.actor.actor_id: raise TechnicalReportAuthorizationDenied()
-        cls._validate_provenance(command.provenance)
+        cls._validate_provenance(command.provenance, prohibit_legacy_standards=True)
         report = cls._build(id=uuid4(), organization_id=command.organization_id, workspace_id=command.workspace_id, project_id=command.project_id, owner_id=command.owner_id, purpose=command.purpose, content=command.content, qualification=command.qualification, provenance=tuple(command.provenance), draft_revision=TechnicalReportDraftRevision(uuid4(), 1), lifecycle=TechnicalReportLifecycle.DRAFT, predecessor_report_id=None, version=1, accepted_snapshot=None, acceptance_record=None, created_at=now, updated_at=now)
         return report, report._make_result(report.id, report.version, report.draft_revision, command, None, now, "TechnicalReportDraftCreated", TechnicalReportLifecycle.DRAFT, report.provenance)
 
     def revise(self, command: ReviseTechnicalReportDraft, now: datetime) -> TechnicalReportCommandResult:
         _aware(now, "now")
-        self._require_owner(command.metadata.actor.actor_id, command.metadata.actor.organization_id); self._require_draft(); self._require_identity_version(command.report_id, command.expected_version, command.expected_draft_revision_id); self._validate_provenance(command.provenance)
+        self._require_owner(command.metadata.actor.actor_id, command.metadata.actor.organization_id); self._require_draft(); self._require_identity_version(command.report_id, command.expected_version, command.expected_draft_revision_id); self._validate_provenance(command.provenance, prohibit_legacy_standards=True)
         if command.content == self.content and command.qualification == self.qualification and command.provenance == self.provenance: raise TechnicalReportValidationError("draft revision must change semantic state")
         previous = self.version; next_version = previous + 1
         next_revision = TechnicalReportDraftRevision(uuid4(), self.draft_revision.revision_number + 1)
@@ -141,14 +148,62 @@ class TechnicalReport:
         object.__setattr__(self, "_content", command.content); object.__setattr__(self, "_qualification", command.qualification); object.__setattr__(self, "_provenance", tuple(command.provenance)); object.__setattr__(self, "_draft_revision", next_revision); object.__setattr__(self, "_version", next_version); object.__setattr__(self, "_updated_at", now)
         return result
 
+    def revise_standards_basis(
+        self,
+        command: ReviseTechnicalReportStandardsBasis,
+        provenance: tuple[TechnicalReportProvenanceEntry, ...],
+        now: datetime,
+        *,
+        next_revision_id: UUID,
+    ) -> TechnicalReportCommandResult:
+        _aware(now, "now")
+        self._require_owner(command.metadata.actor.actor_id, command.metadata.actor.organization_id)
+        self._require_draft()
+        self._require_identity_version(
+            command.report_id, command.expected_version,
+            command.expected_draft_revision_id,
+        )
+        self._validate_provenance(provenance, prohibit_legacy_standards=True)
+        if provenance == self.provenance:
+            raise TechnicalReportValidationError("standards basis revision must change semantic state")
+        previous = self.version
+        next_version = previous + 1
+        next_revision = TechnicalReportDraftRevision(
+            next_revision_id, self.draft_revision.revision_number + 1,
+        )
+        result = self._make_result(
+            self.id, next_version, next_revision, command, previous, now,
+            "technical_report.standards_basis.attached",
+            TechnicalReportLifecycle.DRAFT, provenance,
+        )
+        object.__setattr__(self, "_provenance", provenance)
+        object.__setattr__(self, "_draft_revision", next_revision)
+        object.__setattr__(self, "_version", next_version)
+        object.__setattr__(self, "_updated_at", now)
+        return result
+
     def accept_exact_draft(self, command: AcceptExactTechnicalReportDraft, now: datetime) -> TechnicalReportCommandResult:
         _aware(now, "now")
         self._require_owner(command.metadata.actor.actor_id, command.metadata.actor.organization_id); self._require_draft(); self._require_identity_version(command.report_id, command.confirmation.expected_version, command.confirmation.exact_draft_revision_id); self._validate_provenance(self.provenance, True)
         previous = self.version; resulting = previous + 1
-        snapshot = TechnicalReportAcceptedSnapshot(self.id, self.purpose, self.organization_id, self.workspace_id, self.project_id, self.content, self.qualification, self.provenance, self.draft_revision, resulting, command.metadata.actor.actor_id, now, self.predecessor_report_id)
+        accepted_entries = []
+        for entry in self.provenance:
+            if not isinstance(entry.locator, StandardHistoricalBasisV1):
+                accepted_entries.append(entry)
+                continue
+            locator = entry.locator.accepted(self.id, resulting, now)
+            accepted_entries.append(replace(
+                entry, locator=locator,
+                integrity_digest=(
+                    hashlib.sha256(canonical_json(locator)).hexdigest()
+                    if entry.is_material else None
+                ),
+            ))
+        accepted_provenance = tuple(accepted_entries)
+        snapshot = TechnicalReportAcceptedSnapshot(self.id, self.purpose, self.organization_id, self.workspace_id, self.project_id, self.content, self.qualification, accepted_provenance, self.draft_revision, resulting, command.metadata.actor.actor_id, now, self.predecessor_report_id)
         record = TechnicalReportAcceptanceRecord(command.metadata.actor.actor_id, now, self.draft_revision, resulting, snapshot.integrity_digest)
-        result = self._make_result(self.id, resulting, self.draft_revision, command, previous, now, "TechnicalReportAccepted", TechnicalReportLifecycle.ACCEPTED, self.provenance)
-        object.__setattr__(self, "_lifecycle", TechnicalReportLifecycle.ACCEPTED); object.__setattr__(self, "_version", resulting); object.__setattr__(self, "_accepted_snapshot", snapshot); object.__setattr__(self, "_acceptance_record", record); object.__setattr__(self, "_updated_at", now)
+        result = self._make_result(self.id, resulting, self.draft_revision, command, previous, now, "TechnicalReportAccepted", TechnicalReportLifecycle.ACCEPTED, accepted_provenance)
+        object.__setattr__(self, "_provenance", accepted_provenance); object.__setattr__(self, "_lifecycle", TechnicalReportLifecycle.ACCEPTED); object.__setattr__(self, "_version", resulting); object.__setattr__(self, "_accepted_snapshot", snapshot); object.__setattr__(self, "_acceptance_record", record); object.__setattr__(self, "_updated_at", now)
         return result
 
     def create_successor(self, command: CreateTechnicalReportSuccessor, now: datetime) -> tuple[TechnicalReport, TechnicalReportCommandResult]:
@@ -170,18 +225,44 @@ class TechnicalReport:
         if report_id != self.id: raise TechnicalReportValidationError("Technical Report identity mismatch")
         if expected_version != self.version or revision_id != self.draft_revision_id: raise TechnicalReportVersionConflict()
     @staticmethod
-    def _validate_provenance(entries: tuple[TechnicalReportProvenanceEntry, ...], require_material: bool = False) -> None:
+    def _validate_provenance(entries: tuple[TechnicalReportProvenanceEntry, ...], require_material: bool = False, prohibit_legacy_standards: bool = False) -> None:
         ordinals = [entry.ordinal for entry in entries]
         if ordinals != list(range(len(entries))): raise TechnicalReportValidationError("provenance ordinals must be unique and contiguous")
+        if len(entries) > 32 or sum(isinstance(entry.locator, StandardHistoricalBasisV1) for entry in entries) > 16:
+            raise TechnicalReportHistoricalBasisIncomplete("Technical Report provenance limit exceeded")
         if require_material and not any(entry.is_material for entry in entries): raise TechnicalReportHistoricalBasisIncomplete("acceptance requires at least one material source")
+        if prohibit_legacy_standards and any(isinstance(entry.locator, StandardLocator) for entry in entries):
+            raise TechnicalReportHistoricalBasisIncomplete("legacy standard locators require conversion to an authorized standards handle")
     def _make_result(self, report_id: UUID, version: int, revision: TechnicalReportDraftRevision, command: object, previous: int | None, now: datetime, event_type: str, lifecycle: TechnicalReportLifecycle, provenance: tuple[TechnicalReportProvenanceEntry, ...]) -> TechnicalReportCommandResult:
         metadata = command.metadata
-        event = TechnicalReportDomainEvent(
+        standards_digests = tuple(
+            entry.locator.basis_digest for entry in provenance
+            if isinstance(entry.locator, StandardHistoricalBasisV1)
+        )
+        standards_basis_ids = tuple(
+            entry.locator.basis_id for entry in provenance
+            if isinstance(entry.locator, StandardHistoricalBasisV1)
+        )
+        standards_basis_digest = (
+            hashlib.sha256(canonical_json(standards_digests)).hexdigest()
+            if standards_digests else None
+        )
+        event_type_contract = (
+            TechnicalReportStandardsDomainEvent
+            if standards_basis_digest is not None else TechnicalReportDomainEvent
+        )
+        event_values = (
             uuid4(), report_id, version, event_type, metadata.command_id,
             metadata.correlation_id, now, self.organization_id, self.workspace_id,
             self.project_id, self.purpose, lifecycle.value, revision.revision_id,
             metadata.actor.actor_id, metadata.command_id, self.predecessor_report_id,
             len(provenance),
+        )
+        event = (
+            event_type_contract(
+                *event_values, standards_basis_ids, standards_basis_digest,
+            )
+            if standards_basis_digest is not None else event_type_contract(*event_values)
         )
         return TechnicalReportCommandResult(report_id, previous, version, revision, type(command).__name__, metadata.correlation_id, (event,))
 
@@ -277,7 +358,7 @@ class TechnicalReportProvenanceRecord(Base):
             "(source_type='engineering_relationship' AND engineering_relationship_id IS NOT NULL AND engineering_relationship_version IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND cross_discipline_assessment_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
             "(source_type='cross_discipline_assessment' AND cross_discipline_assessment_id IS NOT NULL AND cross_discipline_assessment_version IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
             "(source_type='external_or_human' AND report_local_source_id IS NOT NULL AND external_reference IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND cross_discipline_assessment_id IS NULL AND standard_identity IS NULL AND context_id IS NULL) OR "
-            "(source_type='standard' AND standard_identity IS NOT NULL AND issuing_authority IS NOT NULL AND edition IS NOT NULL AND clause_or_location IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND cross_discipline_assessment_id IS NULL AND report_local_source_id IS NULL AND context_id IS NULL) OR "
+            "(source_type='standard' AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND cross_discipline_assessment_id IS NULL AND report_local_source_id IS NULL AND context_id IS NULL AND (((standard_identity IS NOT NULL AND issuing_authority IS NOT NULL AND edition IS NOT NULL AND clause_or_location IS NOT NULL) AND standard_basis IS NULL) OR ((standard_identity IS NULL AND issuing_authority IS NULL AND edition IS NULL AND clause_or_location IS NULL) AND standard_basis IS NOT NULL))) OR "
             "(source_type='contextual' AND context_id IS NOT NULL AND owning_context IS NOT NULL AND capture_id IS NULL AND evidence_id IS NULL AND engineering_object_id IS NULL AND engineering_relationship_id IS NULL AND cross_discipline_assessment_id IS NULL AND report_local_source_id IS NULL AND standard_identity IS NULL)",
             name="ck_technical_report_provenance_locator_shape",
         ),
@@ -288,7 +369,7 @@ class TechnicalReportProvenanceRecord(Base):
             "(source_type='engineering_relationship' AND source_class='canonical_material' AND owning_capability='engineering_relationship' AND is_material) OR "
             "(source_type='cross_discipline_assessment' AND source_class='canonical_material' AND owning_capability='cross_discipline_assessment' AND is_material) OR "
             "(source_type='external_or_human' AND source_class='external_or_human_material' AND owning_capability IS NULL AND is_material) OR "
-            "(source_type='standard' AND source_class='standards_material' AND owning_capability IS NULL AND is_material) OR "
+            "(source_type='standard' AND source_class='standards_material' AND owning_capability IS NULL AND (is_material OR standards_basis_materiality='reference_only')) OR "
             "(source_type='contextual' AND source_class='contextual_non_material' AND owning_capability IS NULL AND NOT is_material)",
             name="ck_technical_report_provenance_owner_coherence",
         ),
@@ -296,9 +377,15 @@ class TechnicalReportProvenanceRecord(Base):
         CheckConstraint("integrity_digest IS NULL OR integrity_digest ~ '^[0-9a-f]{64}$'", name="ck_technical_report_provenance_digest_format"),
         CheckConstraint(
             "(source_class='canonical_material' AND ((canonical_snapshot_id IS NOT NULL AND minimal_historical_representation IS NULL) OR (canonical_snapshot_id IS NULL AND minimal_historical_representation IS NOT NULL))) OR "
-            "(source_class IN ('external_or_human_material','standards_material') AND canonical_snapshot_id IS NULL AND minimal_historical_representation IS NOT NULL) OR "
+            "(source_class='external_or_human_material' AND canonical_snapshot_id IS NULL AND minimal_historical_representation IS NOT NULL) OR "
+            "(source_class='standards_material' AND canonical_snapshot_id IS NULL AND ((standard_basis IS NULL AND minimal_historical_representation IS NOT NULL) OR (standard_basis IS NOT NULL AND minimal_historical_representation IS NULL))) OR "
             "(source_class='contextual_non_material' AND canonical_snapshot_id IS NULL AND minimal_historical_representation IS NULL AND integrity_algorithm IS NULL AND integrity_digest IS NULL)",
             name="ck_technical_report_provenance_historical_basis",
+        ),
+        CheckConstraint(
+            "(source_type<>'standard' AND standard_basis_schema_version IS NULL AND standard_basis IS NULL AND standard_basis_digest IS NULL AND standards_basis_materiality IS NULL AND standard_edition_id IS NULL AND standard_source_snapshot_id IS NULL AND standard_assertion_id IS NULL AND standard_intelligence_run_id IS NULL) OR "
+            "(source_type='standard' AND ((standard_basis IS NULL AND standard_basis_schema_version IS NULL AND standard_basis_digest IS NULL AND standards_basis_materiality IS NULL AND standard_edition_id IS NULL AND standard_source_snapshot_id IS NULL AND standard_assertion_id IS NULL AND standard_intelligence_run_id IS NULL) OR (standard_basis IS NOT NULL AND standard_basis_schema_version='standard_historical_basis_v1' AND standard_basis_digest IS NOT NULL AND standards_basis_materiality IN ('reference_only','material_support') AND standard_edition_id IS NOT NULL AND standard_source_snapshot_id IS NOT NULL)))",
+            name="ck_technical_report_standard_basis_exclusive",
         ),
         Index("ix_technical_report_provenance_report", "technical_report_id", "ordinal"),
         Index("ix_technical_report_provenance_capture", "capture_id", postgresql_where=text("capture_id IS NOT NULL")),
@@ -344,6 +431,16 @@ class TechnicalReportProvenanceRecord(Base):
     issuing_authority = Column(Text)
     edition = Column(Text)
     clause_or_location = Column(Text)
+    standard_basis_schema_version = Column(String(40))
+    standard_basis = Column(JSONB)
+    standard_basis_digest = Column(String(64))
+    standards_basis_materiality = Column(String(24))
+    standard_edition_id = Column(PGUUID(as_uuid=True), ForeignKey("standard_editions.id", ondelete="RESTRICT"))
+    standard_source_snapshot_id = Column(PGUUID(as_uuid=True), ForeignKey("standard_source_snapshots.id", ondelete="RESTRICT"))
+    standard_assertion_id = Column(PGUUID(as_uuid=True), ForeignKey("standard_knowledge_assertions.id", ondelete="RESTRICT"))
+    # The physical FK targets the Batch-1 table.  Its ORM mapping is deferred
+    # to Batch 5, so this column deliberately avoids a premature mapper edge.
+    standard_intelligence_run_id = Column(PGUUID(as_uuid=True))
     context_id = Column(PGUUID(as_uuid=True))
     owning_context = Column(String(128))
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

@@ -2,6 +2,7 @@
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 from typing import Annotated
 from uuid import UUID, uuid4
@@ -26,6 +27,7 @@ from app.models.technical_report_command import (
     AcceptExactTechnicalReportDraft, AcceptanceConfirmation,
     CreateTechnicalReportDraft, CreateTechnicalReportSuccessor,
     PreliminaryQualification, ReviseTechnicalReportDraft, TechnicalReportActor,
+    ReviseTechnicalReportStandardsBasis, TechnicalReportStandardBasisSelection,
     TechnicalReportCommandMetadata, TechnicalReportContent, canonical_json,
 )
 from app.ports.technical_report import TechnicalReportReadCriteria, TechnicalReportScope
@@ -39,6 +41,8 @@ from app.schemas.technical_report import (
     TechnicalReportFilter, TechnicalReportLineageResponse,
     TechnicalReportListResponse, TechnicalReportProvenanceSchema,
     TechnicalReportReviseDraftRequest, TechnicalReportSummary,
+    TechnicalReportStandardCandidateList, TechnicalReportStandardsBasisRevisionRequest,
+    TechnicalReportStandardsBasisRevisionResponse,
 )
 from app.services.technical_report_service import TechnicalReportService
 from app.dependencies.supporting_file import SupportingFileApplication, get_supporting_file_application
@@ -128,12 +132,20 @@ def _qualification(value): return PreliminaryQualification(**value.model_dump())
 def _provenance(values): return tuple(value.to_domain() for value in values)
 
 
-def _provenance_dto(value):
+def _provenance_dto(value, *, legacy_draft: bool = False):
     payload = json.loads(canonical_json(value))
-    if "source_category" not in payload["locator"]:
-        payload["locator"]["locator_type"] = {
-            "external_or_human": "external_or_human", "standard": "standard", "contextual": "contextual"
-        }[payload["source_type"]]
+    if payload["locator"].get("schema_version") == "standard_historical_basis_v1":
+        token = payload["locator"].pop("immutable_provider_token")
+        payload["locator"]["immutable_provider_token_digest"] = (
+            None if token is None else hashlib.sha256(token.encode("utf-8")).hexdigest()
+        )
+        payload["locator"]["locator_type"] = "standard_historical_basis_v1"
+    elif "source_category" not in payload["locator"]:
+        payload["locator"]["locator_type"] = (
+            "legacy_conversion_required" if legacy_draft and payload["source_type"] == "standard"
+            else "legacy_unattested_reference" if payload["source_type"] == "standard"
+            else {"external_or_human": "external_or_human", "contextual": "contextual"}[payload["source_type"]]
+        )
     return TechnicalReportProvenanceSchema.model_validate(payload)
 
 
@@ -156,7 +168,7 @@ def _draft(report):
         **_summary(report).model_dump(),
         content=TechnicalReportContentSchema.model_validate(asdict(report.content)),
         qualification=PreliminaryQualificationSchema.model_validate(asdict(report.qualification)),
-        provenance=[_provenance_dto(item) for item in report.provenance],
+        provenance=[_provenance_dto(item, legacy_draft=True) for item in report.provenance],
     )
 
 
@@ -302,6 +314,35 @@ def revise_report(report_id: UUID, data: TechnicalReportReviseDraftRequest,
                   app: TechnicalReportApplication = Depends(get_technical_report_application)):
     command = ReviseTechnicalReportDraft(_metadata(app, data.rationale, correlation_id, idempotency_id), report_id, data.expected_version, data.expected_draft_revision_id, _content(data.content), _qualification(data.qualification), _provenance(data.provenance))
     return _detail(app.service.revise_draft(command).report)
+
+
+@router.get("/technical-reports/{report_id}/standards/candidates",
+            response_model=TechnicalReportStandardCandidateList)
+def standards_candidates(report_id: UUID,
+                         app: TechnicalReportApplication = Depends(get_technical_report_application)):
+    return TechnicalReportStandardCandidateList(items=list(app.service.standards_candidates(app.actor, report_id)))
+
+
+@router.post("/technical-reports/{report_id}/standards-basis-revisions",
+             response_model=TechnicalReportStandardsBasisRevisionResponse)
+def revise_standards_basis(report_id: UUID, data: TechnicalReportStandardsBasisRevisionRequest,
+                           correlation_id: CorrelationId, idempotency_id: IdempotencyId,
+                           app: TechnicalReportApplication = Depends(get_technical_report_application)):
+    command = ReviseTechnicalReportStandardsBasis(
+        _metadata(app, data.rationale, correlation_id, idempotency_id),
+        report_id, data.expected_version, data.expected_draft_revision_id,
+        tuple(TechnicalReportStandardBasisSelection(
+            item.authorized_handle, item.materiality, item.selection_rationale,
+            item.standing_acknowledgement, item.assertion_id,
+        ) for item in data.selections),
+    )
+    response = app.service.attach_standards_basis(command)
+    basis_ids = response.result.events[0].standards_basis_ids
+    return TechnicalReportStandardsBasisRevisionResponse(
+        report_id=report_id, version=response.version,
+        draft_revision_id=response.draft_revision.revision_id,
+        basis_ids=list(basis_ids),
+    )
 
 
 @router.post("/technical-reports/{report_id}/acceptance",

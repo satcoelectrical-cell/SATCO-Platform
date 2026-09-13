@@ -19,11 +19,23 @@ EXPECTED_TABLES = {
     "technical_report_idempotency",
 }
 
+EXPECTED_STANDARD_BASIS_COLUMNS = {
+    "standard_basis_schema_version",
+    "standard_basis",
+    "standard_basis_digest",
+    "standards_basis_materiality",
+    "standard_edition_id",
+    "standard_source_snapshot_id",
+    "standard_assertion_id",
+    "standard_intelligence_run_id",
+}
+
 
 def test_repository_head_preserves_patch_032_in_current_chain() -> None:
     script = ScriptDirectory.from_config(alembic_config)
-    assert TEST_DATABASE_REVISION == "e05300000002"
-    assert script.get_heads() == ["e05300000002"]
+    assert TEST_DATABASE_REVISION == "e05400000005"
+    assert script.get_heads() == ["e05400000005"]
+    assert script.get_revision("e05400000005").down_revision == "e05400000004"
     assert script.get_revision("e03400000001").down_revision == "e03200000001"
 
 
@@ -46,6 +58,8 @@ def test_technical_report_schema_matches_authorized_persistence() -> None:
         column["name"] for column in inspector.get_columns("technical_report_provenance_entries")
     }
     assert {"source_class", "source_type", "owning_capability", "capture_id", "evidence_id", "engineering_object_id", "engineering_relationship_id", "report_local_source_id", "standard_identity", "context_id", "minimal_historical_representation", "integrity_digest"} <= provenance_columns
+    assert EXPECTED_STANDARD_BASIS_COLUMNS <= provenance_columns
+    assert "technical_report_standards_basis" not in inspector.get_table_names()
     assert {"event_id", "aggregate_id", "aggregate_version", "payload"} <= {
         column["name"] for column in inspector.get_columns("technical_report_outbox")
     }
@@ -65,14 +79,28 @@ def test_technical_report_schema_matches_authorized_persistence() -> None:
             "('technical_report_canonical_json','technical_report_canonical_utc_valid',"
             "'technical_report_text_valid','technical_report_historical_basis_valid',"
             "'technical_report_provenance_json_valid','technical_report_root_accepted_immutable',"
-            "'technical_report_provenance_accepted_immutable')"
+            "'technical_report_provenance_accepted_immutable',"
+            "'technical_report_standard_basis_valid',"
+            "'technical_report_patch054_provenance_guard',"
+            "'technical_report_patch054_root_guard',"
+            "'technical_report_patch054_final_guard')"
         )).scalars())
-    assert trigger_names == {"trg_technical_reports_accepted_immutable", "trg_technical_report_provenance_accepted_immutable"}
+    assert trigger_names == {
+        "trg_technical_reports_accepted_immutable",
+        "trg_technical_report_provenance_accepted_immutable",
+        "trg_technical_report_patch054_provenance_guard",
+        "trg_technical_report_patch054_root_guard",
+        "trg_technical_report_patch054_final_guard",
+    }
     assert function_names == {
         "technical_report_canonical_json", "technical_report_canonical_utc_valid",
         "technical_report_text_valid", "technical_report_historical_basis_valid",
         "technical_report_provenance_json_valid", "technical_report_root_accepted_immutable",
         "technical_report_provenance_accepted_immutable",
+        "technical_report_standard_basis_valid",
+        "technical_report_patch054_provenance_guard",
+        "technical_report_patch054_root_guard",
+        "technical_report_patch054_final_guard",
     }
     provenance_constraints = {item["name"] for item in inspector.get_check_constraints("technical_report_provenance_entries")}
     assert {

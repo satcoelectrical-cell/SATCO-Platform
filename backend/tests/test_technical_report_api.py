@@ -111,6 +111,8 @@ def test_exact_approved_route_surface_and_prohibited_routes():
         ("/technical-reports/evidence-source-candidates", "get"),
         ("/technical-reports/{report_id}", "get"),
         ("/technical-reports/{report_id}/draft-revisions", "post"),
+        ("/technical-reports/{report_id}/standards/candidates", "get"),
+        ("/technical-reports/{report_id}/standards-basis-revisions", "post"),
         ("/technical-reports/{report_id}/acceptance", "post"),
         ("/technical-reports/{report_id}/successors", "post"),
         ("/technical-reports/{report_id}/lineage", "get"),

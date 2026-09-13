@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from app.models.technical_report_command import StandardHistoricalBasisV1, StandardLocator, canonical_json
+
 from app.exceptions.technical_report import (
     TechnicalReportAssistantUnavailable,
     TechnicalReportValidationError,
@@ -51,3 +53,29 @@ class ProviderNeutralTechnicalReportAssistant:
             proposal_text=proposal_text.strip(),
             attribution=attribution.strip(),
         )
+
+
+def safe_report_source_context(locator: object) -> str:
+    """Return only the safe standards representation permitted before Batch 5."""
+
+    if isinstance(locator, StandardLocator):
+        return canonical_json({
+            "kind": "legacy_unattested_reference",
+            "standard_identity": locator.standard_identity,
+            "issuing_authority": locator.issuing_authority,
+            "edition": locator.edition,
+            "clause_or_location": locator.clause_or_location,
+        }).decode("utf-8")
+    if isinstance(locator, StandardHistoricalBasisV1):
+        return canonical_json({
+            "kind": "authorized_standard_basis",
+            "basis_id": locator.basis_id,
+            "materiality": locator.materiality,
+            "issuer": locator.issuer,
+            "designation": locator.designation,
+            "title": locator.title,
+            "edition_designation": locator.edition_designation,
+            "standing": locator.standing,
+            "basis_digest": locator.basis_digest,
+        }).decode("utf-8")
+    return canonical_json(locator).decode("utf-8")

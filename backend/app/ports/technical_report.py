@@ -12,6 +12,7 @@ from app.exceptions.technical_report import TechnicalReportValidationError
 from app.models.technical_report import TechnicalReport
 from app.models.technical_report_command import (
     HistoricalBasis,
+    StandardHistoricalBasisV1,
     TechnicalReportActor,
     TechnicalReportCommandResult,
     TechnicalReportDomainEvent,
@@ -196,6 +197,8 @@ class TechnicalReportAuditRecord:
     command_id: UUID
     correlation_id: UUID
     occurred_at: datetime
+    event_id: UUID | None = None
+    standards_basis_digest: str | None = None
 
 
 class TechnicalReportRejectionReason(StrEnum):
@@ -342,6 +345,12 @@ class TechnicalReportFinalRecheckPolicy(Protocol):
     def require_current(self, request: TechnicalReportFinalRecheckRequest) -> None: ...
 
 
+class TechnicalReportStandardsPolicy(Protocol):
+    def list_candidates(self, actor: TechnicalReportActor, scope: TechnicalReportScope, now: datetime) -> tuple[tuple[object, ...], ...]: ...
+    def resolve_selection(self, actor: TechnicalReportActor, scope: TechnicalReportScope, handle: str, materiality: str, assertion_id: UUID | None, now: datetime) -> tuple[object, ...]: ...
+    def require_current(self, actor: TechnicalReportActor, scope: TechnicalReportScope, bases: tuple[StandardHistoricalBasisV1, ...], now: datetime) -> None: ...
+
+
 class TechnicalReportUnitOfWork(Protocol):
     technical_reports: TechnicalReportRepository
     authorization: TechnicalReportAuthorizationPolicy
@@ -351,6 +360,7 @@ class TechnicalReportUnitOfWork(Protocol):
     domain_events: TechnicalReportDomainEventRecorder
     idempotency: TechnicalReportIdempotencyStore
     final_recheck: TechnicalReportFinalRecheckPolicy
+    standards: TechnicalReportStandardsPolicy
     rejection_audit: TechnicalReportRejectionAuditRecorder
     def __enter__(self) -> TechnicalReportUnitOfWork: ...
     def __exit__(self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: object | None) -> bool | None: ...

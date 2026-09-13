@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
 import hashlib
@@ -46,6 +46,7 @@ from app.enums.technical_report import (
     TechnicalReportSourceType,
     TechnicalReportVerificationStatus,
 )
+from app.enums.standards import AIProcessingPermission, RightsBasis, RightsStatus, StandardStanding
 from app.exceptions.technical_report import (
     TechnicalReportHistoricalBasisIncomplete,
     TechnicalReportIntegrityMismatch,
@@ -424,6 +425,228 @@ class CrossDisciplineAssessmentHistoricalBasisV1:
         _aware(self.completed_at, "completed_at")
 
 
+_STANDARD_CAPABILITY_KEYS = frozenset({
+    "metadata_visibility", "content_storage", "indexing", "excerpt_display",
+    "source_retrieval", "derived_retention", "derived_current_use",
+})
+
+
+@dataclass(frozen=True, slots=True)
+class StandardHistoricalBasisV1:
+    """Exact, server-composed PATCH-054 standards basis.
+
+    The sealed provider token is retained only for exact future re-resolution;
+    transport serializers replace it with its digest.  ``basis_digest`` covers
+    this entire object except the digest field itself.
+    """
+
+    schema_version: str
+    basis_id: UUID
+    materiality: str
+    selection_rationale: str
+    standard_identity_id: UUID
+    issuer: str
+    designation: str
+    title: str
+    identity_digest: str
+    standard_edition_id: UUID
+    edition_designation: str
+    official_publication_identifier: str | None
+    publication_date: datetime | None
+    edition_digest: str
+    standing_observation_id: UUID
+    standing: StandardStanding
+    standing_observation_digest: str
+    standing_acknowledged_by_id: int | None
+    standing_acknowledgement_rationale: str | None
+    source_snapshot_id: UUID
+    source_provider_id: str
+    source_location: str
+    immutable_provider_token: str | None
+    provider_version_digest: str | None
+    provider_handle_key_version: str | None
+    source_availability_status: str
+    byte_count: int | None
+    snapshot_digest: str
+    content_digest: str | None
+    rights_binding_id: UUID
+    rights_binding_version: int
+    rights_digest: str
+    rights_basis: RightsBasis
+    rights_status: RightsStatus
+    evaluated_capabilities: dict[str, bool]
+    ai_processing_permission: AIProcessingPermission
+    rights_decided_at: datetime
+    applicability_id: UUID | None
+    applicability_revision: int | None
+    applicability_digest: str | None
+    applicability_status: str | None
+    applicability_role: str | None
+    assertion_id: UUID | None
+    assertion_kind: str | None
+    assertion_digest: str | None
+    assertion_origin: str | None
+    assertion_verification_status: str | None
+    assertion_verified_by_id: int | None
+    assertion_current_use_eligible: bool | None
+    intelligence_interaction_id: UUID | None
+    intelligence_provider_id: str | None
+    intelligence_model: str | None
+    intelligence_template_digest: str | None
+    intelligence_input_digest: str | None
+    intelligence_output_digest: str | None
+    intelligence_processor_decision: str | None
+    selected_by_id: int
+    selected_at: datetime
+    report_revision_id: UUID
+    accepted_report_id: UUID | None
+    accepted_report_version: int | None
+    accepted_at: datetime | None
+    basis_digest: str
+
+    def __post_init__(self) -> None:
+        if self.schema_version != "standard_historical_basis_v1":
+            raise TechnicalReportValidationError("invalid Standard historical basis discriminator")
+        for name in (
+            "basis_id", "standard_identity_id", "standard_edition_id",
+            "standing_observation_id", "source_snapshot_id", "rights_binding_id",
+            "report_revision_id",
+        ):
+            _uuid(getattr(self, name), name)
+        for name in ("accepted_report_id", "applicability_id", "assertion_id", "intelligence_interaction_id"):
+            _optional_uuid(getattr(self, name), name)
+        if self.materiality not in {"reference_only", "material_support"}:
+            raise TechnicalReportValidationError("standards materiality is invalid")
+        for name, maximum in (
+            ("selection_rationale", 2000), ("issuer", 240),
+            ("designation", 240), ("title", 500),
+            ("edition_designation", 240), ("source_provider_id", 80),
+            ("source_location", 500),
+        ):
+            object.__setattr__(self, name, _nonempty(getattr(self, name), name, maximum))
+        if self.official_publication_identifier is not None:
+            object.__setattr__(self, "official_publication_identifier", _single_line(
+                self.official_publication_identifier, "official_publication_identifier", 240,
+            ))
+        for name in (
+            "identity_digest", "edition_digest", "standing_observation_digest",
+            "snapshot_digest", "rights_digest", "basis_digest",
+        ):
+            _sha256(getattr(self, name), name)
+        for name in ("provider_version_digest", "content_digest", "applicability_digest", "assertion_digest",
+                     "intelligence_template_digest", "intelligence_input_digest", "intelligence_output_digest"):
+            value = getattr(self, name)
+            if value is not None:
+                _sha256(value, name)
+        object.__setattr__(self, "standing", StandardStanding(self.standing))
+        object.__setattr__(self, "rights_basis", RightsBasis(self.rights_basis))
+        object.__setattr__(self, "rights_status", RightsStatus(self.rights_status))
+        object.__setattr__(self, "ai_processing_permission", AIProcessingPermission(self.ai_processing_permission))
+        if set(self.evaluated_capabilities) != _STANDARD_CAPABILITY_KEYS or any(
+            type(value) is not bool for value in self.evaluated_capabilities.values()
+        ):
+            raise TechnicalReportValidationError("evaluated standards capabilities are invalid")
+        object.__setattr__(self, "evaluated_capabilities", {
+            key: self.evaluated_capabilities[key] for key in sorted(_STANDARD_CAPABILITY_KEYS)
+        })
+        for name in ("rights_binding_version", "selected_by_id"):
+            _positive(getattr(self, name), name)
+        for name in ("applicability_revision", "assertion_verified_by_id", "accepted_report_version"):
+            value = getattr(self, name)
+            if value is not None:
+                _positive(value, name)
+        if self.byte_count is not None and (
+            isinstance(self.byte_count, bool) or not 1 <= self.byte_count <= 8192
+        ):
+            raise TechnicalReportValidationError("standards byte_count is invalid")
+        for name in ("publication_date", "rights_decided_at", "selected_at", "accepted_at"):
+            value = getattr(self, name)
+            if value is not None:
+                _aware(value, name)
+        applicability = (
+            self.applicability_id, self.applicability_revision, self.applicability_digest,
+            self.applicability_status, self.applicability_role,
+        )
+        if any(value is not None for value in applicability) != all(value is not None for value in applicability):
+            raise TechnicalReportValidationError("standards applicability basis is incomplete")
+        assertion = (
+            self.assertion_id, self.assertion_kind, self.assertion_digest,
+            self.assertion_origin, self.assertion_verification_status,
+            self.assertion_current_use_eligible,
+        )
+        if any(value is not None for value in assertion) != all(value is not None for value in assertion):
+            raise TechnicalReportValidationError("standards assertion basis is incomplete")
+        if self.assertion_id is None and self.assertion_verified_by_id is not None:
+            raise TechnicalReportValidationError("standards assertion verifier is incoherent")
+        interaction = (
+            self.intelligence_interaction_id, self.intelligence_provider_id,
+            self.intelligence_model, self.intelligence_template_digest,
+            self.intelligence_input_digest, self.intelligence_output_digest,
+            self.intelligence_processor_decision,
+        )
+        if any(value is not None for value in interaction) != all(value is not None for value in interaction):
+            raise TechnicalReportValidationError("standards intelligence basis is incomplete")
+        accepted = (self.accepted_report_id, self.accepted_report_version, self.accepted_at)
+        if any(value is not None for value in accepted) != all(value is not None for value in accepted):
+            raise TechnicalReportValidationError("accepted Report standards basis is incomplete")
+        acknowledgement = (
+            self.standing_acknowledged_by_id,
+            self.standing_acknowledgement_rationale,
+        )
+        if any(value is not None for value in acknowledgement) != all(
+            value is not None for value in acknowledgement
+        ):
+            raise TechnicalReportValidationError("standards standing acknowledgement is incomplete")
+        if self.materiality == "material_support":
+            if (self.source_availability_status != "available" or self.byte_count is None
+                    or not self.evaluated_capabilities["source_retrieval"]
+                    or self.rights_status is not RightsStatus.ACTIVE
+                    or (self.immutable_provider_token is None and self.content_digest is None)):
+                raise TechnicalReportHistoricalBasisIncomplete("material standards basis is incomplete")
+            if self.assertion_id is not None and (
+                self.assertion_verification_status != "human_verified"
+                or self.assertion_current_use_eligible is not True
+            ):
+                raise TechnicalReportHistoricalBasisIncomplete("material assertion is ineligible")
+            if self.standing in {StandardStanding.SUPERSEDED, StandardStanding.WITHDRAWN} and (
+                self.applicability_id is None or self.standing_acknowledged_by_id is None
+                or self.standing_acknowledgement_rationale is None
+            ):
+                raise TechnicalReportHistoricalBasisIncomplete("noncurrent material basis requires Human acknowledgement")
+            if self.standing is StandardStanding.UNKNOWN:
+                raise TechnicalReportHistoricalBasisIncomplete("unknown standing cannot support Report material")
+        if self.immutable_provider_token is not None:
+            _nonempty(self.immutable_provider_token, "immutable_provider_token", 16384)
+            if self.provider_version_digest is None or self.provider_handle_key_version is None:
+                raise TechnicalReportValidationError("provider handle basis is incomplete")
+        elif self.provider_version_digest is not None or self.provider_handle_key_version is not None:
+            raise TechnicalReportValidationError("provider handle basis is incoherent")
+        expected = standard_basis_digest(self)
+        if not hmac.compare_digest(expected, self.basis_digest):
+            raise TechnicalReportIntegrityMismatch()
+
+    def accepted(self, report_id: UUID, report_version: int, accepted_at: datetime) -> "StandardHistoricalBasisV1":
+        payload = {
+            field.name: getattr(self, field.name)
+            for field in fields(self) if field.name != "basis_digest"
+        }
+        payload.update(
+            accepted_report_id=report_id,
+            accepted_report_version=report_version,
+            accepted_at=accepted_at,
+        )
+        return replace(self, **payload, basis_digest=standard_basis_payload_digest(payload))
+
+
+def standard_basis_digest(value: StandardHistoricalBasisV1) -> str:
+    payload = {field.name: getattr(value, field.name) for field in fields(value) if field.name != "basis_digest"}
+    return standard_basis_payload_digest(payload)
+
+
+def standard_basis_payload_digest(payload: dict[str, object]) -> str:
+    return hashlib.sha256(canonical_json(payload)).hexdigest()
+
+
 HistoricalBasis: TypeAlias = CaptureHistoricalBasisV1 | CaptureHistoricalBasisV2 | EvidenceHistoricalBasisV1 | EvidenceHistoricalBasisV2 | EngineeringObjectHistoricalBasisV1 | EngineeringObjectHistoricalBasisV2 | EngineeringRelationshipHistoricalBasisV1 | EngineeringRelationshipHistoricalBasisV2 | CrossDisciplineAssessmentHistoricalBasisV1
 _HISTORICAL_TYPES = (CaptureHistoricalBasisV1, CaptureHistoricalBasisV2, EvidenceHistoricalBasisV1, EvidenceHistoricalBasisV2, EngineeringObjectHistoricalBasisV1, EngineeringObjectHistoricalBasisV2, EngineeringRelationshipHistoricalBasisV1, EngineeringRelationshipHistoricalBasisV2, CrossDisciplineAssessmentHistoricalBasisV1)
 
@@ -459,7 +682,7 @@ class ContextualLocator:
     def __post_init__(self) -> None: _uuid(self.context_id, "context_id"); object.__setattr__(self, "owning_context", _single_line(self.owning_context, "owning_context", 128))
 
 
-ProvenanceLocator: TypeAlias = HistoricalBasis | ExternalHumanLocator | StandardLocator | ContextualLocator
+ProvenanceLocator: TypeAlias = HistoricalBasis | ExternalHumanLocator | StandardLocator | StandardHistoricalBasisV1 | ContextualLocator
 
 
 def _canonical(value: object, *, field_name: str | None = None) -> object:
@@ -518,7 +741,14 @@ class TechnicalReportProvenanceEntry:
         elif self.source_class is TechnicalReportSourceClass.EXTERNAL_OR_HUMAN_MATERIAL:
             if self.owning_capability is not None or not self.is_material or self.source_type is not TechnicalReportSourceType.EXTERNAL_OR_HUMAN or not isinstance(self.locator, ExternalHumanLocator): raise TechnicalReportHistoricalBasisIncomplete("external/Human locator is incoherent")
         elif self.source_class is TechnicalReportSourceClass.STANDARDS_MATERIAL:
-            if self.owning_capability is not None or not self.is_material or self.source_type is not TechnicalReportSourceType.STANDARD or not isinstance(self.locator, StandardLocator): raise TechnicalReportHistoricalBasisIncomplete("standards locator is incoherent")
+            legacy = isinstance(self.locator, StandardLocator)
+            canonical = isinstance(self.locator, StandardHistoricalBasisV1)
+            if (self.owning_capability is not None
+                    or self.source_type is not TechnicalReportSourceType.STANDARD
+                    or not (legacy or canonical)
+                    or (legacy and not self.is_material)
+                    or (canonical and self.is_material != (self.locator.materiality == "material_support"))):
+                raise TechnicalReportHistoricalBasisIncomplete("standards locator is incoherent")
         elif self.source_class is TechnicalReportSourceClass.CONTEXTUAL_NON_MATERIAL:
             if self.owning_capability is not None or self.is_material or self.source_type is not TechnicalReportSourceType.CONTEXTUAL or not isinstance(self.locator, ContextualLocator): raise TechnicalReportHistoricalBasisIncomplete("contextual locator is incoherent")
         else: raise TechnicalReportHistoricalBasisIncomplete("unknown source class")
@@ -526,6 +756,9 @@ class TechnicalReportProvenanceEntry:
             if self.integrity_algorithm is not TechnicalReportIntegrityAlgorithm.SHA256 or self.integrity_digest is None: raise TechnicalReportHistoricalBasisIncomplete("material source requires SHA-256 integrity")
             digest = _sha256(self.integrity_digest, "integrity_digest")
             if not hmac.compare_digest(hashlib.sha256(canonical_json(self.locator)).hexdigest(), digest): raise TechnicalReportIntegrityMismatch()
+        elif isinstance(self.locator, StandardHistoricalBasisV1):
+            if self.integrity_algorithm is not None or self.integrity_digest is not None:
+                raise TechnicalReportValidationError("reference-only standards basis cannot carry material integrity")
         elif self.integrity_algorithm is not None or self.integrity_digest is not None: raise TechnicalReportValidationError("contextual source cannot carry material integrity")
 
 
@@ -731,6 +964,26 @@ def _locator_from_payload(payload: object, source_type: str) -> ProvenanceLocato
             minimal_representation=value["minimal_representation"],
         )
     if source_type == "standard":
+        if isinstance(payload, dict) and payload.get("schema_version") == "standard_historical_basis_v1":
+            value = _closed_payload(
+                payload,
+                {field.name for field in fields(StandardHistoricalBasisV1)},
+                "Standard historical basis",
+            )
+            data = dict(value)
+            for name in (
+                "basis_id", "standard_identity_id", "standard_edition_id",
+                "standing_observation_id", "source_snapshot_id", "rights_binding_id",
+                "report_revision_id",
+            ):
+                data[name] = _payload_uuid(data[name], name)
+            for name in ("accepted_report_id", "applicability_id", "assertion_id", "intelligence_interaction_id"):
+                data[name] = _payload_optional_uuid(data[name], name)
+            for name in ("publication_date", "accepted_at"):
+                data[name] = _payload_optional_datetime(data[name], name)
+            for name in ("rights_decided_at", "selected_at"):
+                data[name] = _payload_datetime(data[name], name)
+            return StandardHistoricalBasisV1(**data)
         value = _closed_payload(payload, {field.name for field in fields(StandardLocator)}, "standard locator")
         return StandardLocator(
             standard_identity=value["standard_identity"], issuing_authority=value["issuing_authority"],
@@ -868,9 +1121,29 @@ class TechnicalReportDomainEvent:
             "TechnicalReportDraftRevised",
             "TechnicalReportAccepted",
             "TechnicalReportSuccessorCreated",
+            "technical_report.standards_basis.attached",
         }:
             raise TechnicalReportValidationError("event_type is invalid")
         object.__setattr__(self, "event_type", event_type); _aware(self.occurred_at, "occurred_at")
+
+
+@dataclass(frozen=True, slots=True)
+class TechnicalReportStandardsDomainEvent(TechnicalReportDomainEvent):
+    """Safe event extension used only when a Report carries standards basis."""
+
+    standards_basis_ids: tuple[UUID, ...]
+    standards_basis_digest: str
+
+    def __post_init__(self) -> None:
+        super(TechnicalReportStandardsDomainEvent, self).__post_init__()
+        if (
+            not 1 <= len(self.standards_basis_ids) <= 16
+            or len(set(self.standards_basis_ids)) != len(self.standards_basis_ids)
+        ):
+            raise TechnicalReportValidationError("standards basis identities are invalid")
+        for basis_id in self.standards_basis_ids:
+            _uuid(basis_id, "standards_basis_id")
+        _sha256(self.standards_basis_digest, "standards_basis_digest")
 
 
 @dataclass(frozen=True, slots=True)
@@ -915,6 +1188,53 @@ class ReviseTechnicalReportDraft:
         _instance(self.metadata, TechnicalReportCommandMetadata, "metadata"); _instance(self.content, TechnicalReportContent, "content"); _instance(self.qualification, PreliminaryQualification, "qualification")
         if any(not isinstance(entry, TechnicalReportProvenanceEntry) for entry in self.provenance): raise TechnicalReportValidationError("provenance contains an invalid contract")
         _uuid(self.report_id, "report_id"); _uuid(self.expected_draft_revision_id, "expected_draft_revision_id"); _positive(self.expected_version, "expected_version")
+
+
+@dataclass(frozen=True, slots=True)
+class TechnicalReportStandardBasisSelection:
+    authorized_handle: str
+    materiality: str
+    selection_rationale: str
+    standing_acknowledgement: str | None = None
+    assertion_id: UUID | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "authorized_handle", _single_line(
+            self.authorized_handle, "authorized_handle", 2048,
+        ))
+        if self.materiality not in {"reference_only", "material_support"}:
+            raise TechnicalReportValidationError("standards materiality is invalid")
+        object.__setattr__(self, "selection_rationale", _nonempty(
+            self.selection_rationale, "selection_rationale", 2000,
+        ))
+        if self.standing_acknowledgement is not None:
+            object.__setattr__(self, "standing_acknowledgement", _nonempty(
+                self.standing_acknowledgement, "standing_acknowledgement", 2000,
+            ))
+        _optional_uuid(self.assertion_id, "assertion_id")
+
+
+@dataclass(frozen=True, slots=True)
+class ReviseTechnicalReportStandardsBasis:
+    metadata: TechnicalReportCommandMetadata
+    report_id: UUID
+    expected_version: int
+    expected_draft_revision_id: UUID
+    selections: tuple[TechnicalReportStandardBasisSelection, ...]
+
+    def __post_init__(self) -> None:
+        _instance(self.metadata, TechnicalReportCommandMetadata, "metadata")
+        _uuid(self.report_id, "report_id")
+        _positive(self.expected_version, "expected_version")
+        _uuid(self.expected_draft_revision_id, "expected_draft_revision_id")
+        if not 1 <= len(self.selections) <= 16 or any(
+            not isinstance(item, TechnicalReportStandardBasisSelection)
+            for item in self.selections
+        ):
+            raise TechnicalReportValidationError("standards selections must contain 1..16 items")
+        handles = tuple(item.authorized_handle for item in self.selections)
+        if len(set(handles)) != len(handles):
+            raise TechnicalReportValidationError("standard handles must be unique")
 
 
 @dataclass(frozen=True, slots=True)

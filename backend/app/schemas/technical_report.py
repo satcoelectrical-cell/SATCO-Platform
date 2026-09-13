@@ -39,6 +39,7 @@ from app.models.technical_report_command import (
 )
 from app.models.supporting_file_command import SupportingFileHistoricalBasisV1
 from app.enums.supporting_file import SupportingFileMediaType
+from app.enums.standards import AIProcessingPermission, RightsBasis, RightsStatus, StandardStanding
 
 
 PositiveIdentifier = Annotated[int, Field(gt=0)]
@@ -398,7 +399,13 @@ class ExternalHumanLocatorSchema(StrictTechnicalReportSchema):
 
 
 class StandardLocatorSchema(StrictTechnicalReportSchema):
-    locator_type: Literal["standard"] = "standard"
+    # Legacy rows are input-compatible for historical parsing only.  Every
+    # post-cutover write path rejects the resulting StandardLocator in the
+    # Aggregate; response serializers choose one of the two explicit legacy
+    # states below.
+    locator_type: Literal[
+        "standard", "legacy_unattested_reference", "legacy_conversion_required",
+    ] = "standard"
     standard_identity: BoundedText
     issuing_authority: BoundedText
     edition: BoundedText
@@ -407,6 +414,75 @@ class StandardLocatorSchema(StrictTechnicalReportSchema):
     retrieved_at: AwareDatetime | None = None
     def to_domain(self) -> StandardLocator:
         return StandardLocator(**self.model_dump(exclude={"locator_type"}))
+
+
+class StandardHistoricalBasisSchema(StrictTechnicalReportSchema):
+    """Safe rendering of the server-owned basis; sealed tokens never cross HTTP."""
+
+    locator_type: Literal["standard_historical_basis_v1"] = "standard_historical_basis_v1"
+    schema_version: Literal["standard_historical_basis_v1"]
+    basis_id: UUID
+    materiality: Literal["reference_only", "material_support"]
+    selection_rationale: Rationale
+    standard_identity_id: UUID
+    issuer: Annotated[str, Field(min_length=1, max_length=240)]
+    designation: Annotated[str, Field(min_length=1, max_length=240)]
+    title: Annotated[str, Field(min_length=1, max_length=500)]
+    identity_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    standard_edition_id: UUID
+    edition_designation: Annotated[str, Field(min_length=1, max_length=240)]
+    official_publication_identifier: Annotated[str | None, Field(max_length=240)]
+    publication_date: AwareDatetime | None
+    edition_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    standing_observation_id: UUID
+    standing: StandardStanding
+    standing_observation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    standing_acknowledged_by_id: PositiveIdentifier | None
+    standing_acknowledgement_rationale: Annotated[str | None, Field(max_length=2000)]
+    source_snapshot_id: UUID
+    source_provider_id: Annotated[str, Field(min_length=1, max_length=80)]
+    source_location: Annotated[str, Field(min_length=1, max_length=500)]
+    immutable_provider_token_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    provider_version_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    provider_handle_key_version: Annotated[str | None, Field(max_length=40)]
+    source_availability_status: Literal["available", "temporarily_unavailable", "permanently_unavailable", "rights_restricted", "integrity_failed"]
+    byte_count: Annotated[int | None, Field(ge=1, le=8192)]
+    snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    content_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    rights_binding_id: UUID
+    rights_binding_version: PositiveVersion
+    rights_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    rights_basis: RightsBasis
+    rights_status: RightsStatus
+    evaluated_capabilities: dict[str, StrictBool]
+    ai_processing_permission: AIProcessingPermission
+    rights_decided_at: AwareDatetime
+    applicability_id: UUID | None
+    applicability_revision: PositiveVersion | None
+    applicability_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    applicability_status: str | None
+    applicability_role: str | None
+    assertion_id: UUID | None
+    assertion_kind: str | None
+    assertion_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    assertion_origin: str | None
+    assertion_verification_status: str | None
+    assertion_verified_by_id: PositiveIdentifier | None
+    assertion_current_use_eligible: StrictBool | None
+    intelligence_interaction_id: UUID | None
+    intelligence_provider_id: str | None
+    intelligence_model: str | None
+    intelligence_template_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    intelligence_input_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    intelligence_output_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    intelligence_processor_decision: str | None
+    selected_by_id: PositiveIdentifier
+    selected_at: AwareDatetime
+    report_revision_id: UUID
+    accepted_report_id: UUID | None
+    accepted_report_version: PositiveVersion | None
+    accepted_at: AwareDatetime | None
+    basis_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ContextualLocatorSchema(StrictTechnicalReportSchema):
@@ -429,7 +505,7 @@ class TechnicalReportProvenanceSchema(StrictTechnicalReportSchema):
     availability_status: TechnicalReportAvailabilityStatus
     origin_attribution: BoundedText
     limitations: list[BoundedText] = Field(default_factory=list)
-    locator: HistoricalBasisSchema | ExternalHumanLocatorSchema | StandardLocatorSchema | ContextualLocatorSchema
+    locator: HistoricalBasisSchema | ExternalHumanLocatorSchema | StandardLocatorSchema | StandardHistoricalBasisSchema | ContextualLocatorSchema
     integrity_algorithm: TechnicalReportIntegrityAlgorithm | None
     integrity_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
@@ -452,7 +528,13 @@ class TechnicalReportProvenanceSchema(StrictTechnicalReportSchema):
             if self.owning_capability is not None or not self.is_material or self.source_type is not TechnicalReportSourceType.EXTERNAL_OR_HUMAN or not isinstance(self.locator, ExternalHumanLocatorSchema):
                 raise ValueError("external/Human provenance is incoherent")
         elif self.source_class is TechnicalReportSourceClass.STANDARDS_MATERIAL:
-            if self.owning_capability is not None or not self.is_material or self.source_type is not TechnicalReportSourceType.STANDARD or not isinstance(self.locator, StandardLocatorSchema):
+            legacy = isinstance(self.locator, StandardLocatorSchema)
+            canonical = isinstance(self.locator, StandardHistoricalBasisSchema)
+            if (self.owning_capability is not None
+                    or self.source_type is not TechnicalReportSourceType.STANDARD
+                    or not (legacy or canonical)
+                    or (legacy and not self.is_material)
+                    or (canonical and self.is_material != (self.locator.materiality == "material_support"))):
                 raise ValueError("standards provenance is incoherent")
         elif self.source_class is TechnicalReportSourceClass.CONTEXTUAL_NON_MATERIAL:
             if self.owning_capability is not None or self.is_material or self.source_type is not TechnicalReportSourceType.CONTEXTUAL or not isinstance(self.locator, ContextualLocatorSchema) or self.integrity_algorithm is not None or self.integrity_digest is not None:
@@ -460,6 +542,9 @@ class TechnicalReportProvenanceSchema(StrictTechnicalReportSchema):
         return self
 
     def to_domain(self) -> TechnicalReportProvenanceEntry:
+        if isinstance(self.locator, StandardHistoricalBasisSchema):
+            from app.exceptions.technical_report import TechnicalReportValidationError
+            raise TechnicalReportValidationError("canonical standards provenance is server-composed")
         return TechnicalReportProvenanceEntry(
             self.entry_id, self.ordinal, self.source_class, self.source_type,
             self.is_material, self.owning_capability, self.reliance_role,
@@ -493,6 +578,51 @@ class TechnicalReportAcceptRequest(StrictTechnicalReportSchema):
     exact_draft_revision_id: UUID
     confirmed: Literal[True]
     rationale: Rationale
+
+
+class TechnicalReportStandardCandidate(StrictTechnicalReportSchema):
+    authorized_handle: Annotated[str, Field(min_length=1, max_length=2048)]
+    standard_identity_id: UUID
+    edition_id: UUID
+    issuer: Annotated[str, Field(max_length=240)]
+    designation: Annotated[str, Field(max_length=240)]
+    edition_designation: Annotated[str, Field(max_length=240)]
+    standing: Literal["current", "superseded", "withdrawn", "unknown"]
+    materiality: Literal["material_support", "reference_only"]
+    eligibility: Literal["eligible", "standing_acknowledgement_required", "rights_restricted"]
+    warnings: list[str] = Field(default_factory=list, max_length=8)
+
+
+class TechnicalReportStandardCandidateList(StrictTechnicalReportSchema):
+    items: list[TechnicalReportStandardCandidate] = Field(max_length=12)
+
+
+class TechnicalReportStandardBasisSelection(StrictTechnicalReportSchema):
+    authorized_handle: Annotated[str, Field(min_length=1, max_length=2048)]
+    materiality: Literal["material_support", "reference_only"]
+    selection_rationale: Annotated[str, Field(min_length=1, max_length=2000)]
+    standing_acknowledgement: Annotated[str | None, Field(max_length=2000)] = None
+    assertion_id: UUID | None = None
+
+
+class TechnicalReportStandardsBasisRevisionRequest(StrictTechnicalReportSchema):
+    expected_version: PositiveVersion
+    expected_draft_revision_id: UUID
+    selections: list[TechnicalReportStandardBasisSelection] = Field(min_length=1, max_length=16)
+    rationale: Rationale
+
+    @model_validator(mode="after")
+    def distinct_handles(self):
+        if len({item.authorized_handle for item in self.selections}) != len(self.selections):
+            raise ValueError("standard handles must be unique")
+        return self
+
+
+class TechnicalReportStandardsBasisRevisionResponse(StrictTechnicalReportSchema):
+    report_id: UUID
+    version: PositiveVersion
+    draft_revision_id: UUID
+    basis_ids: list[UUID] = Field(max_length=16)
 
 
 class TechnicalReportCreateSuccessorRequest(StrictTechnicalReportSchema):
