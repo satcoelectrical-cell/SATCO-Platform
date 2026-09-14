@@ -4,7 +4,7 @@ from alembic import command
 from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 
-from conftest import alembic_config, owner_engine
+from conftest import TEST_DATABASE_REVISION, alembic_config, owner_engine
 
 
 REVISION = "e05300000002"
@@ -30,7 +30,7 @@ TABLES = {
 
 def test_revision_is_sole_head_with_exact_parent():
     script = ScriptDirectory.from_config(alembic_config)
-    assert script.get_heads() == [REVISION]
+    assert script.get_heads() == [TEST_DATABASE_REVISION]
     item = script.get_revision(REVISION)
     assert item.down_revision == PARENT
 
@@ -38,7 +38,7 @@ def test_revision_is_sole_head_with_exact_parent():
 def test_upgrade_is_additive_and_fabricates_no_assessment():
     assert TABLES <= set(inspect(owner_engine).get_table_names())
     with owner_engine.connect() as connection:
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == REVISION
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == TEST_DATABASE_REVISION
         assert connection.execute(text("SELECT count(*) FROM cross_discipline_assessments")).scalar_one() == 0
 
 
@@ -49,7 +49,7 @@ def test_empty_downgrade_and_reupgrade_restore_linear_head():
         with owner_engine.connect() as connection:
             assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == PARENT
     finally:
-        command.upgrade(alembic_config, REVISION)
+        command.upgrade(alembic_config, TEST_DATABASE_REVISION)
     assert TABLES <= set(inspect(owner_engine).get_table_names())
 
 
@@ -63,4 +63,4 @@ def test_failed_ddl_transaction_rolls_back_without_advancing_head():
             transaction.rollback()
     assert "xdi_injected_failure_probe" not in set(inspect(owner_engine).get_table_names())
     with owner_engine.connect() as connection:
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == REVISION
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == TEST_DATABASE_REVISION

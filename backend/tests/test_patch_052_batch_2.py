@@ -203,7 +203,7 @@ def test_electrical_catalogs_and_rules_are_exact_and_fail_closed():
 
 def test_shared_schema_has_one_head_and_required_guards(db_session):
     observed_revision = db_session.execute(text("select version_num from alembic_version")).scalar_one()
-    assert observed_revision == "e05300000002"
+    assert observed_revision == "e05400000006"
     schema = inspect(db_session.connection())
     assert {
         "engineering_identifiers", "engineering_identifier_idempotency",
@@ -243,6 +243,7 @@ def test_shared_schema_has_one_head_and_required_guards(db_session):
         ("e05200000002", True),
         ("e05300000001", True),
         ("e05300000002", True),
+        ("e05400000006", True),
         ("e05200000001", False),
         ("unknown-revision", False),
     ),

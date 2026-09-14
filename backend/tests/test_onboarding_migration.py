@@ -8,9 +8,9 @@ from conftest import TEST_DATABASE_REVISION, alembic_config, engine
 
 def test_patch_041_history_is_preserved_and_current_chain_reaches_patch_051_head():
     script = ScriptDirectory.from_config(alembic_config)
-    assert script.get_heads() == ["e05300000002"]
+    assert script.get_heads() == ["e05400000006"]
     assert script.get_revision("e04100000001").down_revision == "e03800000001"
-    assert TEST_DATABASE_REVISION == "e05300000002"
+    assert TEST_DATABASE_REVISION == "e05400000006"
 
 
 def test_patch_041_schema_and_legacy_backfill_are_present():

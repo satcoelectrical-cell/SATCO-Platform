@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -37,7 +38,7 @@ def _active_validation_database_name() -> str:
 
 def _repository_head() -> str:
     result = subprocess.run(
-        ["alembic", "heads"],
+        [sys.executable, "-m", "alembic", "heads"],
         cwd=Path(__file__).resolve().parents[1],
         env=os.environ,
         check=True,
@@ -362,8 +363,8 @@ def test_migration_fresh_chain_rollback_and_reapplication():
     }
     try:
         subprocess.run(
-            ["alembic", "upgrade", "head"],
-            cwd="/app",
+            [sys.executable, "-m", "alembic", "upgrade", "c2021f0c0a01"],
+            cwd=Path(__file__).resolve().parents[1],
             env=environment,
             check=True,
         )
@@ -376,8 +377,8 @@ def test_migration_fresh_chain_rollback_and_reapplication():
         assert CONTEXT_TABLES <= tables
 
         subprocess.run(
-            ["alembic", "downgrade", "a20c1e0201f0"],
-            cwd="/app",
+            [sys.executable, "-m", "alembic", "downgrade", "a20c1e0201f0"],
+            cwd=Path(__file__).resolve().parents[1],
             env=environment,
             check=True,
         )
@@ -389,8 +390,8 @@ def test_migration_fresh_chain_rollback_and_reapplication():
         assert "engineering_workspaces" in tables
 
         subprocess.run(
-            ["alembic", "upgrade", "head"],
-            cwd="/app",
+            [sys.executable, "-m", "alembic", "upgrade", "c2021f0c0a01"],
+            cwd=Path(__file__).resolve().parents[1],
             env=environment,
             check=True,
         )

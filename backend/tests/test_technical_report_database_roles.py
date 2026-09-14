@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -376,7 +377,7 @@ def test_alembic_rejects_runtime_identity_unconditionally(flag: str | None) -> N
     else:
         environment["TECHNICAL_REPORT_PERSISTENCE_ENABLED"] = flag
     result = subprocess.run(
-        ["alembic", "current"], cwd=Path(__file__).resolve().parents[1],
+        [sys.executable, "-m", "alembic", "current"], cwd=Path(__file__).resolve().parents[1],
         env=environment, capture_output=True, text=True, check=False,
     )
     assert result.returncode != 0

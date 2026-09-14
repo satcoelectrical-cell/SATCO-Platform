@@ -45,6 +45,8 @@ from app.discipline_packages.cross_discipline.graph import (
 )
 from app.ports.cross_discipline_intelligence import ProtectedResourceError
 from app.schemas.cross_discipline_intelligence import EligibilityQuery
+from conftest import TEST_DATABASE_REVISION
+
 from app.services.cross_discipline_service import (
     IdempotencyConflict, InvalidDisposition, RetryExhausted, VersionConflict,
     disposition_transition, lineage_would_cycle, run_with_fresh_retries,
@@ -410,7 +412,7 @@ def _execute(vector_id, fixture, db_session):
         triggers = set(db_session.execute(text("SELECT tgname FROM pg_trigger WHERE tgrelid='cross_discipline_findings'::regclass AND NOT tgisinternal")).scalars())
         assert "trg_cross_discipline_findings_immutable" in triggers
     elif action == "migration_upgrade":
-        assert db_session.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "e05300000002"
+        assert db_session.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == TEST_DATABASE_REVISION
         assert db_session.execute(text("SELECT count(*) FROM cross_discipline_assessments")).scalar_one() >= 0
     elif action == "migration_downgrade":
         assert db_session.execute(text("SELECT to_regprocedure('satco_cross_discipline_immutable()') IS NOT NULL")).scalar_one()
