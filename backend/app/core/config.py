@@ -42,6 +42,15 @@ class Settings(BaseSettings):
     # server-side static allowlist; production source storage reuses the
     # existing supporting-file private object-store principal.
     STANDARDS_STATIC_SOURCE_PROVIDER_ENABLED: bool = False
+    # Batch-5 AI remains disabled unless a bounded, server-owned provider is
+    # explicitly wired. Client requests never select an endpoint or provider.
+    STANDARDS_INTELLIGENCE_ENABLED: bool = False
+    STANDARDS_INTELLIGENCE_PROVIDER_ENDPOINT: str = ""
+    STANDARDS_INTELLIGENCE_PROVIDER_API_KEY: str = ""
+    STANDARDS_INTELLIGENCE_TIMEOUT_SECONDS: float = 30.0
+    STANDARDS_INTELLIGENCE_PROVIDER_ID: str = "local"
+    STANDARDS_INTELLIGENCE_PROVIDER_MODEL: str = "local-safe-v1"
+    STANDARDS_INTELLIGENCE_PROCESSOR_POLICY_ID: str = "local"
 
     @field_validator("STANDARDS_PLATFORM_CATALOG_ADMIN_USER_IDS")
     @classmethod
@@ -193,6 +202,13 @@ class Settings(BaseSettings):
             or not self.COPILOT_PROVIDER_API_KEY
         ):
             errors.append("copilot")
+        if self.STANDARDS_INTELLIGENCE_ENABLED and (
+            not self.STANDARDS_INTELLIGENCE_PROVIDER_ENDPOINT.startswith("https://")
+            or not self.STANDARDS_INTELLIGENCE_PROVIDER_API_KEY
+            or not 0 < self.STANDARDS_INTELLIGENCE_TIMEOUT_SECONDS <= 30
+            or self.STANDARDS_INTELLIGENCE_PROVIDER_ID == "local"
+        ):
+            errors.append("standards_intelligence")
         return errors
 
     model_config = SettingsConfigDict(

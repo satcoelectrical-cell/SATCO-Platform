@@ -216,6 +216,22 @@ class StandardAssertionVerificationEvent(Base):
     verified_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class StandardIntelligenceRun(Base):
+    """Safe, bounded Batch-5 advisory interaction provenance."""
+    __tablename__ = "standard_intelligence_runs"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id = Column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False)
+    report_id = Column(PGUUID(as_uuid=True)); request_kind = Column(String(40), nullable=False); purpose = Column(String(500), nullable=False); correlation_id = Column(PGUUID(as_uuid=True), nullable=False); request_digest = Column(String(64), nullable=False)
+    deterministic_result = Column(JSONB, nullable=False); deterministic_result_digest = Column(String(64), nullable=False)
+    template_id = Column(String(80), nullable=False); template_version = Column(String(40), nullable=False); template_digest = Column(String(64), nullable=False)
+    processor_policy_id = Column(String(80), nullable=False); provider_id = Column(String(80), nullable=False); provider_model = Column(String(120), nullable=False); provider_version = Column(String(80))
+    result_status = Column(String(40)); phase_status = Column(String(24), nullable=False, server_default="requested"); call_count = Column(Integer, nullable=False, server_default="0")
+    rights_manifest = Column(JSONB, nullable=False); authorized_handle_digest = Column(String(64), nullable=False); input_digest = Column(String(64), nullable=False); input_byte_count = Column(Integer, nullable=False)
+    advisory_output = Column(JSONB); output_digest = Column(String(64)); suggestion_handle_digest = Column(String(64)); failure_code = Column(String(64)); created_by = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now()); dispatched_at = Column(DateTime(timezone=True)); completed_at = Column(DateTime(timezone=True)); deadline_at = Column(DateTime(timezone=True), nullable=False); version = Column(BigInteger, nullable=False, server_default="1")
+
+
 class StandardsIdempotency(Base):
     __tablename__ = "standards_idempotency"
     __table_args__ = (UniqueConstraint("organization_id", "actor_id", "operation", "idempotency_key", name="uq_standards_idempotency_key"),)

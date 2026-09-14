@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.models.standards import OrganizationRightsBinding, ProjectStandardApplicability, StandardEdition, StandardEditionStandingObservation, StandardIdentity, StandardsIdempotency, StandardSourceSnapshot, StandardKnowledgeAssertion
+from app.models.standards import OrganizationRightsBinding, ProjectStandardApplicability, StandardEdition, StandardEditionStandingObservation, StandardIdentity, StandardIntelligenceRun, StandardsIdempotency, StandardSourceSnapshot, StandardKnowledgeAssertion
 from app.models.project import Project
 
 
@@ -149,3 +149,8 @@ class StandardsRepository:
         if before:
             statement = statement.where(ProjectStandardApplicability.id < before)
         return list(self.session.scalars(statement.order_by(ProjectStandardApplicability.id).limit(limit + 1)))
+
+    def intelligence_run(self, run_id: UUID, organization_id: UUID, project_id: int, *, lock: bool = False):
+        statement = select(StandardIntelligenceRun).where(StandardIntelligenceRun.id == run_id, StandardIntelligenceRun.organization_id == organization_id, StandardIntelligenceRun.project_id == project_id)
+        if lock: statement = statement.with_for_update()
+        return self.session.scalar(statement)

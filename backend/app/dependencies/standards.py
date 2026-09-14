@@ -20,6 +20,7 @@ from app.core.database import get_db
 from app.dependencies.auth import AuthenticatedOrganizationContext, get_current_user_organization_context
 from app.repositories.standards_repository import StandardsRepository
 from app.services.standards_service import StandardsService
+from app.ai.standards_intelligence import ProviderNeutralStandardsIntelligence
 from app.standards.providers import platform_catalog_admin_ids, provider_registry
 
 _dev_standard_objects = StandardSourceObjectStore(InMemoryPrivateSupportingFileObjectStore())
@@ -49,11 +50,23 @@ def _source_objects() -> StandardSourceObjectStore:
     return StandardSourceObjectStore(store)
 
 
+def _intelligence_provider():
+    if not settings.STANDARDS_INTELLIGENCE_ENABLED:
+        return None
+    try:
+        return ProviderNeutralStandardsIntelligence(endpoint=settings.STANDARDS_INTELLIGENCE_PROVIDER_ENDPOINT, api_key=settings.STANDARDS_INTELLIGENCE_PROVIDER_API_KEY)
+    except ValueError:
+        return None
+
+
 def get_standards_application(context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context), db: Session = Depends(get_db)) -> StandardsApplication:
     repository = StandardsRepository(db)
     return StandardsApplication(context=context, db=db, repository=repository,
         service=StandardsService(db, repository, providers=provider_registry(), objects=_source_objects(),
-            candidates=StandardsPackageCandidateAdapter(db)))
+            candidates=StandardsPackageCandidateAdapter(db),
+            intelligence_provider=_intelligence_provider(), intelligence_provider_id=settings.STANDARDS_INTELLIGENCE_PROVIDER_ID,
+            intelligence_provider_model=settings.STANDARDS_INTELLIGENCE_PROVIDER_MODEL,
+            intelligence_processor_policy_id=settings.STANDARDS_INTELLIGENCE_PROCESSOR_POLICY_ID))
 
 
 def is_organization_standards_admin(application: StandardsApplication) -> bool:

@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import JSONResponse
 
 from app.dependencies.standards import StandardsApplication, decode_standards_cursor, encode_standards_cursor, get_standards_application, is_organization_standards_admin, is_platform_catalog_admin
-from app.models.standards import StandardEdition
-from app.schemas.standards import ApplicabilityDeclaration, ApplicabilityRetirement, AssertionCreate, AssertionRejection, AssertionVerification, RightsBindingReplace, RightsRevocation, SourceSnapshotCreate, StandardEditionCreate, StandardIdentityCreate, StandingObservationCreate
-from app.services.standards_service import StandardsError
+from app.models.standards import StandardEdition, StandardEditionStandingObservation
+from app.schemas.standards import ApplicabilityDeclaration, ApplicabilityRetirement, AssertionCreate, AssertionRejection, AssertionVerification, RightsBindingReplace, RightsRevocation, SourceSnapshotCreate, StandardEditionCreate, StandardIdentityCreate, StandingObservationCreate, StandardsIntelligenceRunCreate
+from app.services.standards_service import StandardsError, run_bounded_database_attempts
 
 router = APIRouter(tags=["Standards"])
 
@@ -53,7 +53,17 @@ def list_standards(q: str | None = Query(None, max_length=120), scope: str | Non
 def get_standard(standard_id: UUID, application: StandardsApplication = Depends(get_standards_application)):
     row = application.repository.get_identity(standard_id, application.context.organization_id)
     if row is None: return _protected()
-    editions = [application.service._edition_payload(item) for item in application.db.query(StandardEdition).filter_by(standard_identity_id=row.id).order_by(StandardEdition.created_at).all()]
+    editions = []
+    for item in application.db.query(StandardEdition).filter_by(standard_identity_id=row.id).order_by(StandardEdition.created_at).all():
+        history = application.db.query(StandardEditionStandingObservation).filter_by(standard_edition_id=item.id).order_by(StandardEditionStandingObservation.version).all()
+        editions.append({
+            **application.service._edition_payload(item),
+            "standing_history": [{
+                "standing": observation.standing,
+                "observed_effective_at": observation.observed_effective_at.isoformat(),
+                "version": observation.version,
+            } for observation in history],
+        })
     return {**application.service._identity_payload(row), "editions": editions}
 
 
@@ -187,4 +197,21 @@ def reject_assertion(project_id: int, assertion_id: UUID, data: AssertionRejecti
     try:
         status, body = application.service.decide_assertion(actor_id=application.context.user.id, organization_id=application.context.organization_id, project_id=project_id, assertion_id=assertion_id, data=data, approved=False, authorized_handle=_authorized_handle(authorized_handle), idempotency_key=_idempotency(idempotency_key))
         return JSONResponse(status_code=status, content=body)
+    except StandardsError as error: application.db.rollback(); return _error(error)
+
+
+@router.post("/projects/{project_id}/standards/intelligence-runs", operation_id="create_standards_intelligence_run", status_code=201)
+def create_intelligence_run(project_id: int, data: StandardsIntelligenceRunCreate, idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=160), correlation_id: UUID | None = Header(None, alias="X-Correlation-ID"), application: StandardsApplication = Depends(get_standards_application)):
+    # Authorization precedes every context, idempotency, or run lookup.
+    if not _project_authorized(application, project_id): return _protected()
+    try:
+        status, body = run_bounded_database_attempts(application.db, lambda: application.service.run_intelligence(actor_id=application.context.user.id, organization_id=application.context.organization_id, auth_version=application.context.user.auth_version, project_id=project_id, data=data, idempotency_key=_idempotency(idempotency_key), correlation_id=correlation_id))
+        return JSONResponse(status_code=status, content=body)
+    except StandardsError as error: application.db.rollback(); return _error(error)
+
+
+@router.get("/projects/{project_id}/standards/intelligence-runs/{run_id}", operation_id="get_standards_intelligence_run")
+def get_intelligence_run(project_id: int, run_id: UUID, application: StandardsApplication = Depends(get_standards_application)):
+    if not _project_authorized(application, project_id): return _protected()
+    try: return application.service.get_intelligence_run(actor_id=application.context.user.id, organization_id=application.context.organization_id, auth_version=application.context.user.auth_version, project_id=project_id, run_id=run_id)
     except StandardsError as error: application.db.rollback(); return _error(error)

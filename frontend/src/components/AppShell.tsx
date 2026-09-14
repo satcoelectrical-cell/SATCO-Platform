@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthProvider";
 
 const navigation = [
   ["/", "Dashboard", LayoutDashboard], ["/projects", "Projects", FolderKanban],
+  ["/standards", "Standards", BookOpenText],
   ["/journal", "Engineering Workspace", BriefcaseBusiness], ["/reports", "Technical Reports", BookOpenText],
   ["/memory", "Organizational Memory", PanelLeftClose], ["/assistant", "AI Capture Assistant", Bot],
 ] as const;

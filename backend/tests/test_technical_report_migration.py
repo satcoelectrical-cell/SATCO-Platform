@@ -33,8 +33,9 @@ EXPECTED_STANDARD_BASIS_COLUMNS = {
 
 def test_repository_head_preserves_patch_032_in_current_chain() -> None:
     script = ScriptDirectory.from_config(alembic_config)
-    assert TEST_DATABASE_REVISION == "e05400000005"
-    assert script.get_heads() == ["e05400000005"]
+    assert TEST_DATABASE_REVISION == "e05400000006"
+    assert script.get_heads() == ["e05400000006"]
+    assert script.get_revision("e05400000006").down_revision == "e05400000005"
     assert script.get_revision("e05400000005").down_revision == "e05400000004"
     assert script.get_revision("e03400000001").down_revision == "e03200000001"
 

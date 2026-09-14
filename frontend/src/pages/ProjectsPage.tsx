@@ -16,6 +16,8 @@ import { EngineeringGuidancePanel } from "../components/EngineeringGuidancePanel
 import { CrossDisciplineIntelligencePanel } from "../components/CrossDisciplineIntelligencePanel";
 import { EffectiveDisciplinePackagesPanel } from "../components/EffectiveDisciplinePackagesPanel";
 import { ProjectPackageConfigurationPanel } from "../components/ProjectPackageConfigurationPanel";
+import { ProjectStandardsPanel } from "../components/ProjectStandardsPanel";
+import { StandardsIntelligencePanel } from "../components/StandardsIntelligencePanel";
 import { trustedDisciplinePackageComponent } from "../disciplinePackages/components";
 
 function ResultBoundary<T>({ result, children, empty }: { result: ApiResult<T> | null; children: (data: T) => React.ReactNode; empty?: (data: T) => boolean }) {
@@ -110,6 +112,8 @@ export function ProjectWorkspacePage() {
     <EngineeringExecutionPlanPanel projectId={id} project={currentProject} workspaces={workspaceItems} />
     <EngineeringDeliverableRegisterPanel projectId={id} />
     <ProjectControlsPanel projectId={id} workspaces={workspaceItems} />
+    <ProjectStandardsPanel projectId={id} />
+    <StandardsIntelligencePanel projectId={id} />
     <ProjectCompletenessPanel projectId={id} workspaceId={workspaceId ? Number(workspaceId) : null} />
     <EngineeringGuidancePanel projectId={id} workspaceId={workspaceId ? Number(workspaceId) : null} />
     <CrossDisciplineIntelligencePanel projectId={id} workspaceIds={workspaceItems.map((item) => item.id).sort((a,b) => a-b)} />

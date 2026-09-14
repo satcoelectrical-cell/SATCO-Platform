@@ -3,17 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import hashlib
 from uuid import UUID, uuid4
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditLog
-from app.models.standards import OrganizationRightsBinding, ProjectStandardApplicability, StandardAssertionVerificationEvent, StandardEdition, StandardEditionStandingObservation, StandardIdentity, StandardKnowledgeAssertion, StandardSourceSnapshot, StandardsIdempotency, StandardsOutbox
+from app.models.organization import Organization, UserOrganizationMembership
+from app.models.project import Project
+from app.models.standards import OrganizationRightsBinding, ProjectStandardApplicability, StandardAssertionVerificationEvent, StandardEdition, StandardEditionStandingObservation, StandardIdentity, StandardIntelligenceRun, StandardKnowledgeAssertion, StandardSourceSnapshot, StandardsIdempotency, StandardsOutbox
+from app.models.user import User
 from app.repositories.standards_repository import StandardsRepository
-from app.schemas.standards import ApplicabilityDeclaration, ApplicabilityRetirement, AssertionCreate, AssertionRejection, AssertionVerification, RightsBindingReplace, RightsRevocation, SourceSnapshotCreate, StandardEditionCreate, StandardIdentityCreate, StandingObservationCreate
+from app.schemas.standards import ApplicabilityDeclaration, ApplicabilityRetirement, AssertionCreate, AssertionRejection, AssertionVerification, RightsBindingReplace, RightsRevocation, SourceSnapshotCreate, StandardEditionCreate, StandardIdentityCreate, StandingObservationCreate, StandardsIntelligenceRunCreate
 from app.standards.canonical import NORMALIZATION_VERSION, canonical_digest, normalize_standard_key
 from app.standards.handles import OpaqueAuthorizedHandleInvalid, issue_handle, open_provider_token, seal_provider_token, verify_handle
+from app.ai.standards_intelligence import TEMPLATE_DIGEST, TEMPLATE_ID, TEMPLATE_VERSION, canonical_bytes, compose_envelope, validate_output
 
 
 class StandardsError(RuntimeError):
@@ -22,9 +28,30 @@ class StandardsError(RuntimeError):
         super().__init__(code)
 
 
+_RETRYABLE_DATABASE_STATES = frozenset({"40001", "40P01", "55P03"})
+
+
+def run_bounded_database_attempts(session: Session, operation):
+    """Run at most three fresh DB attempts; provider failures are never retried."""
+    for attempt in range(3):
+        try:
+            return operation()
+        except DBAPIError as error:
+            sqlstate = getattr(error.orig, "sqlstate", None) or getattr(error.orig, "pgcode", None)
+            session.rollback()
+            session.expire_all()
+            if sqlstate not in _RETRYABLE_DATABASE_STATES:
+                raise
+            if attempt == 2:
+                raise StandardsError("VERSION_CONFLICT", 409) from error
+    raise AssertionError("bounded database attempts exhausted")
+
+
 class StandardsService:
-    def __init__(self, session: Session, repository: StandardsRepository, *, providers=None, objects=None, candidates=None) -> None:
+    def __init__(self, session: Session, repository: StandardsRepository, *, providers=None, objects=None, candidates=None, intelligence_provider=None, intelligence_provider_id: str = "local", intelligence_provider_model: str = "local-safe-v1", intelligence_processor_policy_id: str = "local", before_intelligence_dispatch=None) -> None:
         self.session, self.repository, self.providers, self.objects, self.candidates = session, repository, providers or {}, objects, candidates
+        self.intelligence_provider, self.intelligence_provider_id, self.intelligence_provider_model, self.intelligence_processor_policy_id = intelligence_provider, intelligence_provider_id, intelligence_provider_model, intelligence_processor_policy_id
+        self.before_intelligence_dispatch = before_intelligence_dispatch
 
     @staticmethod
     def _identity_payload(row: StandardIdentity) -> dict:
@@ -469,8 +496,10 @@ class StandardsService:
         try:
             for requested in data.fragments:
                 fragment = provider.retrieve(location=requested.location, purpose=data.purpose, provider_token=None)
-                if fragment.location != requested.location or fragment.content is None or not 1 <= len(fragment.content) <= 8192:
+                if fragment.location != requested.location or fragment.content is None or len(fragment.content) < 1:
                     raise ValueError("SOURCE_INCOMPLETE")
+                if len(fragment.content) > 8192:
+                    raise StandardsError("RESOURCE_LIMIT_EXCEEDED", 422)
                 fragments.append(fragment)
         except LookupError as error:
             raise StandardsError("CONTENT_UNAVAILABLE", 503) from error
@@ -633,6 +662,284 @@ class StandardsService:
         self._stage_event(actor_id=actor_id, organization_id=organization_id, aggregate_type="standard_knowledge_assertion", aggregate_id=row.id, event_id=event_id, details={"digest": row.assertion_digest, "version": row.version})
         body = self._assertion_payload(row, actor_id=actor_id, provider_id=snapshot.source_provider_id)
         self._complete(record, resource_type="standard_knowledge_assertion", resource_id=row.id, status=201, body=body); self.session.commit(); return 201, body
+
+    @staticmethod
+    def _intelligence_payload(row: StandardIntelligenceRun) -> dict:
+        """Public result is deliberately digest/status based, never source text."""
+        return {
+            "run_id": str(row.id), "project_id": row.project_id, "request_kind": row.request_kind,
+            "deterministic": row.deterministic_result, "deterministic_result_digest": row.deterministic_result_digest,
+            "result_status": row.result_status, "phase_status": row.phase_status,
+            "advisory": row.advisory_output, "failure_code": row.failure_code,
+            "advisory_only": True, "human_authority_required": True,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+        }
+
+    def _intelligence_context(self, *, organization_id: UUID, project_id: int, data: StandardsIntelligenceRunCreate, lock: bool = False):
+        """Resolve only tenant-scoped canonical records into non-content context."""
+        snapshots = []
+        for snapshot_id in sorted(data.snapshot_ids, key=str):
+            row = self.repository.snapshot(snapshot_id, organization_id, project_id, lock=lock)
+            if row is None:
+                raise StandardsError("PROTECTED_NOT_FOUND", 404)
+            standing = self.repository.current_standing(row.standard_edition_id, lock=lock)
+            rights = self.repository.get_current_rights(organization_id, row.standard_edition_id, row.source_provider_id, lock=lock)
+            applicability = self.repository.current_applicability(organization_id, project_id, row.standard_edition_id, lock=lock)
+            eligible = bool(
+                row.availability_status == "available" and row.integrity_verified and standing is not None
+                and standing.standing == "current" and applicability is not None
+                and applicability.status == "declared_applicable"
+                and self.evaluate_capability(rights, "derived_current_use")
+            )
+            handle = "stdh_" + canonical_digest({"snapshot": str(row.id), "digest": row.snapshot_digest, "rights": row.rights_digest})
+            snapshots.append({"snapshot": row, "rights": rights, "eligible": eligible, "handle": handle,
+                              "code": "eligible" if eligible else "deterministic_unavailable"})
+        assertions = []
+        for assertion_id in sorted(data.assertion_ids, key=str):
+            assertion = self.repository.assertion(assertion_id, organization_id, project_id, lock=lock)
+            if assertion is None or assertion.source_snapshot_id not in {item["snapshot"].id for item in snapshots}:
+                raise StandardsError("PROTECTED_NOT_FOUND", 404)
+            allowed = assertion.verification_status == "human_verified" and assertion.retained_derived_use_eligible
+            assertions.append({"assertion": assertion, "eligible": allowed,
+                               "handle": "asrh_" + canonical_digest({"assertion": str(assertion.id), "digest": assertion.assertion_digest}),
+                               "code": "human_verified" if allowed else "assertion_ineligible"})
+        deterministic = {
+            "schema_version": 1,
+            "edition_resolution": "pass" if all(item["eligible"] for item in snapshots) else "indeterminate",
+            "standing": "pass" if all(item["eligible"] for item in snapshots) else "indeterminate",
+            "rights_eligibility": "pass" if all(item["eligible"] for item in snapshots) else "denied",
+            "authorization": "pass", "project_applicability": "pass" if all(item["eligible"] for item in snapshots) else "indeterminate",
+            "source_availability": "pass" if all(item["eligible"] for item in snapshots) else "unavailable",
+            "materiality": "advisory_only", "assertion_eligibility": "pass" if all(item["eligible"] for item in assertions) else "indeterminate",
+            "integrity": "pass" if all(item["snapshot"].integrity_verified for item in snapshots) else "failed",
+            "conflicts": "none_detected", "bounds": "pass",
+        }
+        return snapshots, assertions, deterministic
+
+    @staticmethod
+    def _rights_manifest(snapshots: list[dict]) -> list[dict]:
+        return [{"binding_id": str(item["rights"].id) if item["rights"] else None,
+                 "version": item["rights"].version if item["rights"] else None,
+                 "digest": item["rights"].rights_digest if item["rights"] else None,
+                 "permission": item["rights"].ai_processing_permission if item["rights"] else "prohibited"}
+                for item in snapshots]
+
+    def _ai_authorization(self, snapshots: list[dict], assertions: list[dict]) -> tuple[str | None, str | None]:
+        if not all(item["eligible"] for item in snapshots + assertions):
+            return "unavailable", "INDETERMINATE"
+        if self.intelligence_provider is None:
+            return "unavailable", "AI_UNAVAILABLE"
+        for item in snapshots:
+            rights = item["rights"]
+            if rights is None or rights.ai_processing_permission == "prohibited":
+                return "not_permitted", "AI_USE_NOT_PERMITTED"
+            if rights.ai_processing_permission == "local_only":
+                if self.intelligence_provider_id != "local":
+                    return "not_permitted", "AI_USE_NOT_PERMITTED"
+            elif rights.ai_processing_permission == "approved_processor":
+                if self.intelligence_processor_policy_id not in (rights.approved_processor_policy_ids or []):
+                    return "not_permitted", "AI_USE_NOT_PERMITTED"
+            else:
+                return "not_permitted", "AI_USE_NOT_PERMITTED"
+        return None, None
+
+    def _intelligence_actor_authorized(
+        self,
+        *,
+        actor_id: int,
+        organization_id: UUID,
+        auth_version: int,
+        project_id: int,
+        lock: bool,
+    ) -> bool:
+        """Reload the mutable request authority in the accepted global order."""
+        user_query = select(User).where(User.id == actor_id)
+        organization_query = select(Organization).where(Organization.id == organization_id)
+        membership_query = select(UserOrganizationMembership).where(
+            UserOrganizationMembership.user_id == actor_id,
+            UserOrganizationMembership.organization_id == organization_id,
+        )
+        project_query = select(Project).where(
+            Project.id == project_id,
+            Project.organization_id == organization_id,
+        )
+        if lock:
+            user_query = user_query.with_for_update()
+            organization_query = organization_query.with_for_update()
+            membership_query = membership_query.with_for_update()
+            project_query = project_query.with_for_update()
+        user = self.session.scalar(user_query)
+        organization = self.session.scalar(organization_query)
+        membership = self.session.scalar(membership_query)
+        project = self.session.scalar(project_query)
+        return bool(
+            user is not None
+            and organization is not None
+            and membership is not None
+            and project is not None
+            and user.is_active
+            and not user.activation_pending
+            and user.auth_version == auth_version
+            and user.role in {"admin", "engineer"}
+            and organization.is_active
+            and membership.is_enabled
+            and membership.is_selected
+            and (
+                user.role == "admin"
+                or actor_id in {project.owner_id, project.primary_assignee_id}
+            )
+        )
+
+    def _intelligence_provider_decision_is_current(
+        self, run: StandardIntelligenceRun
+    ) -> bool:
+        """Bind egress to the exact enabled server-side processor decision."""
+        return bool(
+            self.intelligence_provider is not None
+            and run.processor_policy_id == self.intelligence_processor_policy_id
+            and run.provider_id == self.intelligence_provider_id
+            and run.provider_model == self.intelligence_provider_model
+        )
+
+    def run_intelligence(self, *, actor_id: int, organization_id: UUID, auth_version: int = 1, project_id: int, data: StandardsIntelligenceRunCreate, idempotency_key: str, correlation_id: UUID | None = None) -> tuple[int, dict]:
+        """INT-01: deterministic-first, three-phase, one-dispatch workflow."""
+        if not self._intelligence_actor_authorized(
+            actor_id=actor_id,
+            organization_id=organization_id,
+            auth_version=auth_version,
+            project_id=project_id,
+            lock=True,
+        ):
+            raise StandardsError("PROTECTED_NOT_FOUND", 404)
+        record, request_digest = self._reserve(organization_id=organization_id, actor_id=actor_id, operation="INT-01", key=idempotency_key, fingerprint={"project_id": project_id, **data.model_dump(mode="json")})
+        if record.state == "completed":
+            return record.response_status, record.response_body
+        snapshots, assertions, deterministic = self._intelligence_context(organization_id=organization_id, project_id=project_id, data=data)
+        handles = tuple(item["handle"] for item in snapshots + assertions)
+        codes = tuple(sorted({item["code"] for item in snapshots + assertions} | {"deterministic_unavailable", "human_verified"}))
+        try:
+            envelope = compose_envelope(handles=handles, rationale_codes=codes, purpose=data.purpose)
+        except ValueError as error:
+            raise StandardsError(str(error), 422) from error
+        now = datetime.now(timezone.utc)
+        run = StandardIntelligenceRun(
+            organization_id=organization_id, project_id=project_id, request_kind="human_requested_advisory", purpose=data.purpose,
+            correlation_id=correlation_id or uuid4(), request_digest=request_digest, deterministic_result=deterministic,
+            deterministic_result_digest=canonical_digest(deterministic), template_id=TEMPLATE_ID, template_version=TEMPLATE_VERSION,
+            template_digest=TEMPLATE_DIGEST, processor_policy_id=self.intelligence_processor_policy_id, provider_id=self.intelligence_provider_id,
+            provider_model=self.intelligence_provider_model,
+            rights_manifest=self._rights_manifest(snapshots),
+            authorized_handle_digest=canonical_digest(handles), input_digest=hashlib.sha256(envelope).hexdigest(), input_byte_count=len(envelope),
+            created_by=actor_id, deadline_at=now + timedelta(seconds=30),
+        )
+        self.session.add(run); self.session.flush()
+        self._stage_event(actor_id=actor_id, organization_id=organization_id, aggregate_type="standard_intelligence_run", aggregate_id=run.id, event_id="standards.intelligence.requested", details={"digest": run.deterministic_result_digest, "version": run.version})
+        # Intent and idempotency record are durable before any possible egress.
+        self.session.commit()
+        run_id = run.id
+        if self.before_intelligence_dispatch is not None:
+            self.before_intelligence_dispatch()
+
+        # Phase 2: a fresh transaction and locked canonical state immediately
+        # before CAS. No lock survives the commit preceding provider I/O.
+        self.session.expire_all()
+        authority_denied = not self._intelligence_actor_authorized(
+            actor_id=actor_id,
+            organization_id=organization_id,
+            auth_version=auth_version,
+            project_id=project_id,
+            lock=True,
+        )
+        fresh_snapshots, fresh_assertions, _ = self._intelligence_context(organization_id=organization_id, project_id=project_id, data=data, lock=True)
+        fresh_handles = tuple(item["handle"] for item in fresh_snapshots + fresh_assertions)
+        run = self.repository.intelligence_run(run_id, organization_id, project_id, lock=True)
+        if run is None or run.phase_status != "requested" or run.call_count != 0 or run.version != 1:
+            self.session.rollback(); raise StandardsError("VERSION_CONFLICT")
+        denial_status, failure = self._ai_authorization(fresh_snapshots, fresh_assertions)
+        if authority_denied or not self._intelligence_provider_decision_is_current(run):
+            denial_status, failure = "not_permitted", "AI_USE_NOT_PERMITTED"
+        if self._rights_manifest(fresh_snapshots) != run.rights_manifest or canonical_digest(fresh_handles) != run.authorized_handle_digest:
+            denial_status, failure = "not_permitted", "AI_USE_NOT_PERMITTED"
+        if run.deadline_at <= datetime.now(timezone.utc):
+            denial_status, failure = "unavailable", "AI_UNAVAILABLE"
+        if denial_status is not None:
+            run.phase_status, run.result_status, run.failure_code = "terminal", denial_status, failure
+            run.completed_at, run.version = datetime.now(timezone.utc), run.version + 1
+            self._stage_event(actor_id=actor_id, organization_id=organization_id, aggregate_type="standard_intelligence_run", aggregate_id=run.id, event_id="standards.intelligence.unavailable", details={"digest": run.deterministic_result_digest, "version": run.version})
+            body = self._intelligence_payload(run)
+            self._complete(record, resource_type="standard_intelligence_run", resource_id=run.id, status=200, body=body)
+            self.session.commit()
+            if authority_denied:
+                raise StandardsError("PROTECTED_NOT_FOUND", 404)
+            return 200, body
+        dispatched_at = datetime.now(timezone.utc)
+        run.phase_status, run.call_count, run.dispatched_at, run.version = "dispatched", 1, dispatched_at, run.version + 1
+        self.session.commit()
+
+        raw = None; failure = None
+        try:
+            raw = self.intelligence_provider.advise(envelope, timeout_seconds=30.0)
+            if not isinstance(raw, (bytes, bytearray)): failure = "AI_UNAVAILABLE"
+        except TimeoutError: failure = "AI_UNAVAILABLE"
+        except Exception: failure = "AI_UNAVAILABLE"
+
+        # Phase 3: fresh locked authorization. Any policy/context change causes
+        # provider output to be discarded and never disclosed.
+        self.session.expire_all()
+        authority_denied = not self._intelligence_actor_authorized(
+            actor_id=actor_id,
+            organization_id=organization_id,
+            auth_version=auth_version,
+            project_id=project_id,
+            lock=True,
+        )
+        final_snapshots, final_assertions, _ = self._intelligence_context(organization_id=organization_id, project_id=project_id, data=data, lock=True)
+        final_handles = tuple(item["handle"] for item in final_snapshots + final_assertions)
+        run = self.repository.intelligence_run(run_id, organization_id, project_id, lock=True)
+        if run is None or run.phase_status != "dispatched" or run.call_count != 1 or run.version != 2:
+            self.session.rollback(); raise StandardsError("VERSION_CONFLICT")
+        denial_status, denial_code = self._ai_authorization(final_snapshots, final_assertions)
+        if authority_denied or not self._intelligence_provider_decision_is_current(run):
+            denial_status, denial_code = "not_permitted", "AI_USE_NOT_PERMITTED"
+        if self._rights_manifest(final_snapshots) != run.rights_manifest or canonical_digest(final_handles) != run.authorized_handle_digest:
+            denial_status, denial_code = "not_permitted", "AI_USE_NOT_PERMITTED"
+        if denial_status is not None:
+            raw, failure = None, denial_code
+            run.result_status = denial_status
+        elif failure is not None:
+            run.result_status = "unavailable"
+        else:
+            try:
+                advisory = validate_output(bytes(raw), known_handles=set(handles), known_codes=set(codes))
+                suggestions = list(advisory.suggestions)
+                run.advisory_output = {"suggestions": suggestions, "advisory_only": True, "human_authority_required": True}
+                run.output_digest, run.suggestion_handle_digest = advisory.output_digest, canonical_digest(tuple(item["handle"] for item in suggestions))
+                run.result_status = "completed_with_suggestions" if suggestions else "completed_no_suggestions"
+            except ValueError:
+                failure, run.result_status = "INVALID_AI_OUTPUT", "invalid_output"
+        run.phase_status, run.failure_code, run.completed_at, run.version = "terminal", failure, datetime.now(timezone.utc), run.version + 1
+        event = "standards.intelligence.completed" if run.result_status.startswith("completed_") else "standards.intelligence.unavailable"
+        self._stage_event(actor_id=actor_id, organization_id=organization_id, aggregate_type="standard_intelligence_run", aggregate_id=run.id, event_id=event, details={"digest": run.output_digest or run.deterministic_result_digest, "version": run.version})
+        body = self._intelligence_payload(run)
+        self._complete(record, resource_type="standard_intelligence_run", resource_id=run.id, status=200, body=body)
+        self.session.commit()
+        if authority_denied:
+            raise StandardsError("PROTECTED_NOT_FOUND", 404)
+        return 200, body
+
+    def get_intelligence_run(self, *, actor_id: int, organization_id: UUID, auth_version: int = 1, project_id: int, run_id: UUID) -> dict:
+        if not self._intelligence_actor_authorized(
+            actor_id=actor_id,
+            organization_id=organization_id,
+            auth_version=auth_version,
+            project_id=project_id,
+            lock=False,
+        ):
+            raise StandardsError("PROTECTED_NOT_FOUND", 404)
+        row = self.repository.intelligence_run(run_id, organization_id, project_id)
+        if row is None: raise StandardsError("PROTECTED_NOT_FOUND", 404)
+        return self._intelligence_payload(row)
 
     @staticmethod
     def evaluate_capability(row: OrganizationRightsBinding | None, capability: str, now: datetime | None = None) -> bool:

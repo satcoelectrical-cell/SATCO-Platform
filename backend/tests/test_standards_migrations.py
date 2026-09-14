@@ -23,6 +23,7 @@ def _foundation_fixture(
     effective_until=None,
     allow_excerpt_display=True,
     allow_source_retrieval=True,
+    source_location="clause 1",
 ):
     organization_id = UUID("02810000-0000-4000-8000-000000000001")
     customer = Customer(organization_id=organization_id, name=f"Customer {uuid4()}")
@@ -58,7 +59,7 @@ def _foundation_fixture(
         rights_binding_id,rights_binding_version,rights_digest,evaluated_capabilities,standing_observation_id,
         standing_observation_digest,source_metadata_digest,integrity_verified,integrity_verified_at,snapshot_digest,
         retrieved_at,retrieved_by)
-      VALUES (:snapshot,:organization,:project,:identity,:edition,'test_provider','test_policy','1','clause 1',
+      VALUES (:snapshot,:organization,:project,:identity,:edition,'test_provider','test_policy','1',:source_location,
         'available','verification',:correlation,'standards/test-object','v1',:digest,8,'text/plain',:rights,1,
         :digest,'{}',:standing,:digest,:digest,true,now(),:digest,now(),:actor)
     """), {
@@ -71,6 +72,7 @@ def _foundation_fixture(
         "digest": digest,
         "allow_excerpt_display": allow_excerpt_display,
         "allow_source_retrieval": allow_source_retrieval,
+        "source_location": source_location,
         "effective_from": effective_from,
         "effective_until": effective_until,
     })

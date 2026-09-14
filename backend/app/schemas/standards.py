@@ -220,6 +220,19 @@ class AssertionRejection(StandardsSchema):
     reason: Annotated[str, Field(min_length=1, max_length=1000)]
 
 
+class StandardsIntelligenceRunCreate(StandardsSchema):
+    """Human-requested advisory run; provider selection is server-owned."""
+    purpose: Annotated[str, Field(min_length=1, max_length=500)]
+    snapshot_ids: list[UUID] = Field(min_length=1, max_length=8)
+    assertion_ids: list[UUID] = Field(default_factory=list, max_length=32)
+
+    @model_validator(mode="after")
+    def bounded_unique_context(self):
+        if len(set(self.snapshot_ids)) != len(self.snapshot_ids) or len(set(self.assertion_ids)) != len(self.assertion_ids):
+            raise ValueError("context identifiers must be unique")
+        return self
+
+
 def require_utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() != timezone.utc.utcoffset(value):
         raise ValueError("timestamps must be UTC")

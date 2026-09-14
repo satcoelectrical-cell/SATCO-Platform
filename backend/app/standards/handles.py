@@ -60,6 +60,9 @@ def verify_handle(value: str, *, actor_id: int, organization_id: str, project_id
         if len(value) > 2048:
             raise ValueError
         raw = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+        canonical = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+        if not hmac.compare_digest(value, canonical):
+            raise ValueError
         body, supplied = raw[:-32], raw[-32:]
         expected = hmac.new(_key("opaque-handle:v1"), body, hashlib.sha256).digest()
         payload = json.loads(body)

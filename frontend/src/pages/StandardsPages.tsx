@@ -1,0 +1,2 @@
+import { StandardsRegistryPanel } from "../components/StandardsRegistryPanel";
+export function StandardsPage(){return <div className="page"><header className="page-header"><div><span className="eyebrow">Rights-aware reference catalog</span><h1>Standards</h1><p>Metadata is visible only when authorized. Standards do not independently create engineering authority.</p></div></header><StandardsRegistryPanel/></div>}

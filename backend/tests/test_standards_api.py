@@ -19,6 +19,13 @@ def test_catalog_edition_and_rights_commands_are_atomic(client, admin_headers, d
     response = client.post(f"/standards/{identity_id}/editions", headers={**admin_headers, "Idempotency-Key": "p054-edition"}, json={"edition_designation": "2015", "metadata_source_reference": "catalog-record", "initial_standing": "current", "observed_effective_at": now, "standing_source_reference": "catalog-record"})
     assert response.status_code == 201
     edition_id = response.json()["edition_id"]
+    detail = client.get(f"/standards/{identity_id}", headers=admin_headers)
+    assert detail.status_code == 200
+    assert detail.json()["editions"][0]["standing_history"] == [{
+        "standing": "current",
+        "observed_effective_at": now,
+        "version": 1,
+    }]
     response = client.put(f"/organizations/current/standard-rights/{edition_id}/registry_metadata", headers={**admin_headers, "Idempotency-Key": "p054-rights"}, json={"rights_basis": "metadata_only", "rights_status": "active", "allow_metadata_visibility": True, "effective_from": now, "rights_authority_reference": "rights-record", "rights_authority_digest": "a" * 64, "expected_version": 0})
     assert response.status_code == 200
     response = client.put(f"/organizations/current/standard-rights/{edition_id}/registry_metadata", headers={**admin_headers, "Idempotency-Key": "p054-rights-replacement"}, json={"rights_basis": "metadata_only", "rights_status": "active", "allow_metadata_visibility": True, "effective_from": now, "rights_authority_reference": "rights-record", "rights_authority_digest": "b" * 64, "expected_version": 1})
