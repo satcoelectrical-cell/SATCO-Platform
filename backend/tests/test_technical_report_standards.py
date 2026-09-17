@@ -1,3 +1,4 @@
+from conftest import TEST_DATABASE_REVISION
 """PATCH-054 Batch-4 exact 15-vector Technical Report standards evidence."""
 
 from dataclasses import fields, replace
@@ -421,7 +422,7 @@ def test_p054_db_02_migration_two_exact_columns_validators_and_cutover(db_sessio
         "trg_technical_report_patch054_provenance_guard", "trg_technical_report_patch054_root_guard",
         "trg_technical_report_patch054_final_guard",
     }
-    assert db_session.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "e05400000006"
+    assert db_session.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == TEST_DATABASE_REVISION
 
 
 def test_p054_db_03_final_guards_are_deferred_and_report_cas_is_single_winner(

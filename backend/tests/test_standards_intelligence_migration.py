@@ -44,8 +44,7 @@ VALUES (:id,:organization,:project,'human_requested_advisory','review',:correlat
 
 def test_intelligence_migration_is_sole_additive_successor():
     script = ScriptDirectory.from_config(alembic_config)
-    assert TEST_DATABASE_REVISION == "e05400000006"
-    assert script.get_heads() == ["e05400000006"]
+    assert script.get_heads() == [TEST_DATABASE_REVISION]
     assert script.get_revision("e05400000006").down_revision == "e05400000005"
 
 
@@ -145,6 +144,6 @@ def test_intelligence_migration_downgrade_reupgrade():
             assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "e05400000005"
             assert not connection.execute(text("SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='tr_standard_intelligence_lifecycle')")).scalar_one()
     finally:
-        command.upgrade(alembic_config, "e05400000006")
+        command.upgrade(alembic_config, TEST_DATABASE_REVISION)
     with owner_engine.connect() as connection:
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "e05400000006"
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == TEST_DATABASE_REVISION

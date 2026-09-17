@@ -59,6 +59,7 @@ class EvidenceResponse(BaseModel):
     source_standing: EvidenceSourceStanding
     effective_at: datetime | None
     supported_fact: str
+    replacement_evidence_id: UUID | None = None
     creator_id: int
     version: int
     created_at: datetime

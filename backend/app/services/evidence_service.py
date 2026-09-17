@@ -31,6 +31,10 @@ class EvidenceService:
             aggregate=uow.evidence.get_scoped(evidence_id,actor.organization_id)
             if aggregate is None or not self.authorization.authorize(actor=actor,operation="TransitionEvidenceLifecycle",evidence=aggregate,project_id=aggregate.project_id,workspace_id=aggregate.workspace_id): raise EvidenceProtectedNotFound(evidence_id)
             if prior: return EvidenceResponse.model_validate(prior.authorized_state)
+            if data.lifecycle.value == "superseded":
+                replacement = None if data.replacement_evidence_id is None else uow.evidence.get_scoped(data.replacement_evidence_id, actor.organization_id)
+                if replacement is None or replacement.id == aggregate.id or replacement.project_id != aggregate.project_id or replacement.workspace_id != aggregate.workspace_id or replacement.lifecycle != "current" or replacement.source_standing != "current" or not self.authorization.authorize(actor=actor,operation="ReadEvidence",evidence=replacement,project_id=replacement.project_id,workspace_id=replacement.workspace_id):
+                    raise EvidenceInvalidTransition("Authorized current replacement Evidence is required")
             uow.idempotency.reserve(actor_id=actor.actor_id,command_type="TransitionEvidenceLifecycle",idempotency_id=idempotency_id,request_fingerprint=fp)
             try: result=aggregate.transition_lifecycle(TransitionEvidenceLifecycle(metadata,evidence_id,data.expected_version,data.lifecycle,data.replacement_evidence_id),self.clock.now())
             except EvidenceVersionMismatch as exc: raise EvidenceVersionConflict() from exc

@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { ApiResult, EvidenceRecord, SupportingFilePage } from "../api/types";
 import { EmptyState, ErrorState, LoadingState, ProtectedState, StatusBadge } from "./States";
 import { Surface } from "./Page";
+import { EvidenceWorkbench } from "./EvidenceWorkbench";
 
 const MAX_BYTES = 26_214_400;
 const ACCEPTED = ".pdf,.txt,.csv,.png,.jpg,.jpeg,.docx,.xlsx";
@@ -79,5 +80,6 @@ export function SupportingEvidencePanel({ projectId, workspaceId }: { projectId:
       <Surface title="Authorized Supporting Files" subtitle="Current Project / Workspace only">{!files ? <LoadingState label="Loading authorized Supporting Files…" /> : files.state === "protected" ? <ProtectedState /> : files.state !== "success" ? <ErrorState unavailable={files.state === "unavailable"} /> : !visible.length ? <EmptyState title="No Supporting Files yet" detail="Upload a real engineering source to begin the governed intake flow." /> : <div className="supporting-file-list">{visible.map((item) => <article key={item.id}><label><input type="checkbox" disabled={item.lifecycle !== "available"} checked={selectedAssets.includes(item.id)} onChange={() => toggle(item.id)} aria-label={`Select ${item.safe_filename} for Evidence`} /><span><strong>{item.safe_filename}</strong><small>{item.media_type} · {(item.byte_size / 1024).toFixed(1)} KiB · Version {item.version}</small></span></label><StatusBadge value={item.lifecycle} />{item.lifecycle === "available" ? <button type="button" className="button secondary compact" onClick={() => void download(item.id, item.safe_filename)}><Download size={15} />Download</button> : null}</article>)}</div>}</Surface>
       <Surface title="Link to proposed Evidence" subtitle="Exact current set; linkage is not acceptance"><form className="supporting-form" onSubmit={link}><label>Proposed Evidence<select value={evidenceId} onChange={(event) => setEvidenceId(event.target.value)} required><option value="">Select proposed Evidence</option>{proposed.map((item) => <option key={item.id} value={item.id}>{item.supported_fact}</option>)}</select></label>{evidence?.state === "success" && !proposed.length ? <p className="form-hint">Create proposed Evidence in this Workspace before linking Supporting Files.</p> : null}<p className="form-hint">{selectedAssets.length} of {available.length} available file(s) selected.</p><label>Link rationale<textarea required minLength={1} maxLength={2000} rows={3} value={linkRationale} onChange={(event) => setLinkRationale(event.target.value)} /></label><button className="button secondary" disabled={busy || !evidenceId || !selectedAssets.length || !linkRationale.trim()}><Link2 size={16} />Link exact set</button></form></Surface>
     </div><p className="supporting-live" aria-live="polite" role="status">{message}</p>
+    <EvidenceWorkbench projectId={projectId} workspaceId={workspaceId} />
   </section>;
 }

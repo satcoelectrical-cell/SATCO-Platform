@@ -25,7 +25,7 @@ class SqlAlchemyEvidenceRepository:
     def add(self, evidence: Evidence): self.session.add(evidence); self.session.flush()
     def persist_expected_version(self, evidence: Evidence, expected_version: int):
         with self.session.no_autoflush:
-            result=self.session.execute(update(Evidence).where(Evidence.id==evidence.id,Evidence.organization_id==evidence.organization_id,Evidence.version==expected_version).values(lifecycle=evidence.lifecycle,version=evidence.version,updated_at=evidence.updated_at).execution_options(synchronize_session=False))
+            result=self.session.execute(update(Evidence).where(Evidence.id==evidence.id,Evidence.organization_id==evidence.organization_id,Evidence.version==expected_version).values(lifecycle=evidence.lifecycle,replacement_evidence_id=evidence.replacement_evidence_id,version=evidence.version,updated_at=evidence.updated_at).execution_options(synchronize_session=False))
         if result.rowcount == 1 and evidence in self.session:
             self.session.expire(evidence)
         self.session.flush(); return result.rowcount==1
@@ -45,3 +45,10 @@ class SqlAlchemyEvidenceRepository:
         query=self.session.query(EvidenceSupportingFileLink).filter_by(asset_id=asset_id,organization_id=organization_id,project_id=project_id)
         if workspace_id is not None: query=query.filter(EvidenceSupportingFileLink.workspace_id==workspace_id)
         return query.order_by(EvidenceSupportingFileLink.evidence_id,EvidenceSupportingFileLink.ordinal).limit(limit).all()
+
+    def list_lineage_for_evidence(self, *, evidence_id: UUID, organization_id: UUID, project_id: int, workspace_id: int | None, limit: int = 32):
+        current = self.session.query(Evidence).filter_by(id=evidence_id, organization_id=organization_id, project_id=project_id).first()
+        if current is None or (workspace_id is not None and current.workspace_id != workspace_id): return None, [], []
+        successors = self.session.query(Evidence).filter_by(organization_id=organization_id, project_id=project_id, replacement_evidence_id=evidence_id).order_by(Evidence.updated_at, Evidence.id).limit(limit).all()
+        replacement = None if current.replacement_evidence_id is None else self.session.query(Evidence).filter_by(id=current.replacement_evidence_id, organization_id=organization_id, project_id=project_id).first()
+        return current, ([replacement] if replacement is not None else []), successors
