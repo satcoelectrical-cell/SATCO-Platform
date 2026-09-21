@@ -821,3 +821,46 @@ pre-implementation snapshots for current state without rewriting them:
 `PATCH-056: DONE / CLOSED`
 
 `PATCH-057+: NOT STARTED / NOT AUTHORIZED`
+
+### Controlling PATCH-057 Discovery Acceptance and Registration — 2026-09-22
+
+The Human Authority accepts the remediated Capability Discovery for
+**PATCH-057 — Commercial Product Experience & Engineering Command Center
+Completion**. Its focused independent re-review passed with
+Critical/Major/Minor findings `0/0/0` and no Observation requiring disposition.
+
+Under explicit Human registration authority, PATCH-057 is now **REGISTERED /
+OPEN — DISCOVERY ACCEPTED**. The accepted Discovery preserves the Human-frozen
+Commercial V1 scope, the explicit mandatory PATCH-055 dependency, canonical
+source-owner boundaries, Organization isolation, Human engineering authority
+and AI non-authority.
+
+Registration authorizes subsequent Architecture/ADR work as the next
+separately reviewed governance stage only. It creates or accepts no
+Architecture, ADR, EDS, IDS or Implementation Plan and grants no implementation,
+migration, schema, API, frontend, canonical-semantic, deployment, release or
+PATCH-058 authority.
+
+The three exact restored Post-PATCH-050 Discovery/freeze records are committed
+with this bounded registration so the previously preserved Human-frozen roadmap
+evidence becomes part of the repository source of truth without changing its
+historical bytes or semantics.
+
+This append-only registration supersedes the preceding PATCH-057-not-started
+snapshot for current state without rewriting it:
+
+`PATCH-053: DONE / CLOSED — HISTORICAL RECONCILIATION COMPLETE`
+
+`PATCH-054: DONE / CLOSED`
+
+`PATCH-055: DONE / CLOSED`
+
+`PATCH-056: DONE / CLOSED`
+
+`PATCH-057: REGISTERED / OPEN — DISCOVERY ACCEPTED`
+
+`PATCH-057 ARCHITECTURE / ADR: NEXT AUTHORIZED GOVERNANCE STAGE / NOT STARTED`
+
+`PATCH-057 IMPLEMENTATION: NOT STARTED / NOT AUTHORIZED`
+
+`PATCH-058+: NOT STARTED / NOT AUTHORIZED`
