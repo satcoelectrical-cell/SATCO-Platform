@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.enums.engineering_deliverable import DeliverableRevisionStanding, DeliverableStanding, ExternalAuthoringAuthority
+from app.enums.engineering_deliverable import DeliverableRevisionReason, DeliverableRevisionStanding, DeliverableStanding, ExternalAuthoringAuthority
 
 
 class DeliverableSchema(BaseModel):
@@ -49,6 +49,7 @@ class CreateDeliverableRequest(DeliverableFields):
     initial_external_label: str = Field(min_length=1, max_length=80)
     source_reference: str | None = Field(None, max_length=512)
     supporting_file_id: UUID | None = None
+    initial_revision_reason: DeliverableRevisionReason | None = None
     @field_validator("rationale", "initial_external_label")
     @classmethod
     def rationale_text(cls, value): return _text(value)
@@ -71,6 +72,7 @@ class CreateRevisionRequest(DeliverableSchema):
     external_label: str = Field(min_length=1, max_length=80)
     source_reference: str | None = Field(None, max_length=512)
     supporting_file_id: UUID | None = None
+    revision_reason: DeliverableRevisionReason
     rationale: str = Field(min_length=1, max_length=2000)
     @field_validator("external_label", "rationale")
     @classmethod
@@ -85,6 +87,15 @@ class TransitionRevisionRequest(DeliverableSchema):
     expected_revision_version: int = Field(ge=1)
     target_standing: DeliverableRevisionStanding
     rationale: str = Field(min_length=1, max_length=2000)
+    @field_validator("rationale")
+    @classmethod
+    def required(cls, value): return _text(value)
+
+
+class ResolveReworkRequest(DeliverableSchema):
+    expected_deliverable_version: int = Field(ge=1)
+    rationale: str = Field(min_length=1, max_length=2000)
+
     @field_validator("rationale")
     @classmethod
     def required(cls, value): return _text(value)
@@ -112,6 +123,51 @@ class DeliverableRevisionGraphSummary(DeliverableSchema):
     external_authority: ExternalAuthoringAuthority
     created_at: datetime
     transitioned_at: datetime
+
+
+class DeliverableTransitionEvidence(DeliverableSchema):
+    """Actor-authorized canonical event evidence, including explicit historical unknowns."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    source_event_id: UUID
+    source_event_type: str
+    deliverable_id: UUID
+    revision_id: UUID
+    organization_id: UUID
+    project_id: int = Field(gt=0)
+    workspace_id_at_event: int | None = None
+    workspace_scope_recorded: bool
+    aggregate_version: int = Field(ge=1)
+    target_standing: DeliverableRevisionStanding | None = None
+    occurred_at: datetime
+
+
+class DeliverableTransitionEvidencePage(DeliverableSchema):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    outcome: Literal["success"] = "success"
+    items: tuple[DeliverableTransitionEvidence, ...]
+
+
+class DeliverableReworkEvidence(DeliverableSchema):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    revision_id: UUID
+    deliverable_id: UUID
+    organization_id: UUID
+    project_id: int = Field(gt=0)
+    workspace_id_at_creation: int | None
+    revision_reason: DeliverableRevisionReason | None
+    created_at: datetime
+    creation_event_id: UUID
+    resolution_state: Literal["unresolved", "resolved", "not_applicable", "unknown"]
+    resolved_at: datetime | None = None
+    resolution_event_id: UUID | None = None
+    blocking_event_id: UUID | None = None
+
+
+class DeliverableReworkEvidencePage(DeliverableSchema):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    outcome: Literal["success"] = "success"
+    items: tuple[DeliverableReworkEvidence, ...]
+    source_cutoff: datetime
 
 class DeliverableRepresentationGraphLink(DeliverableSchema):
     model_config=ConfigDict(extra="forbid", frozen=True)

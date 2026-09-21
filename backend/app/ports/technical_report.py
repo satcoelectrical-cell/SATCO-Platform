@@ -24,7 +24,7 @@ from app.enums.technical_report import TechnicalReportLifecycle, TechnicalReport
 @dataclass(frozen=True, slots=True)
 class TechnicalReportScope:
     organization_id: UUID
-    workspace_id: int
+    workspace_id: int | None
     project_id: int | None
 
 
@@ -134,6 +134,28 @@ class AcceptedTechnicalReportSummaryPage:
     page: int
     size: int
     has_more: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TechnicalReportLifecycleEvidence:
+    report_id: UUID
+    organization_id: UUID
+    project_id: int
+    workspace_id: int
+    version: int
+    lifecycle: TechnicalReportLifecycle
+    created_at: datetime | None
+    accepted_at: datetime | None
+    accepted_snapshot_digest: str | None
+    accepted_aggregate_version: int | None
+    predecessor_report_id: UUID | None
+
+
+@dataclass(frozen=True, slots=True)
+class TechnicalReportLifecycleEvidencePage:
+    items: tuple[TechnicalReportLifecycleEvidence, ...]
+    source_cutoff: datetime
+    complete: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -289,6 +311,7 @@ class TechnicalReportRepository(Protocol):
     def persist_draft_expected_version(self, report: TechnicalReport, expected_version: int) -> bool: ...
     def persist_acceptance_expected_version(self, report: TechnicalReport, expected_version: int) -> bool: ...
     def list_scoped(self, criteria: TechnicalReportReadCriteria) -> TechnicalReportReadPage: ...
+    def list_lifecycle_roots(self, *, scope: TechnicalReportScope, limit: int) -> tuple[object, ...]: ...
     def list_successors_scoped(self, predecessor_id: UUID, criteria: TechnicalReportReadCriteria) -> TechnicalReportReadPage: ...
     def provenance_for_report(self, report_id: UUID) -> tuple[TechnicalReportProvenanceEntry, ...]: ...
     def list_graph_provenance_links(self, *, scope: TechnicalReportScope, source_kind: str, source_id: UUID, limit: int) -> tuple["TechnicalReportGraphProvenanceLink", ...]: ...

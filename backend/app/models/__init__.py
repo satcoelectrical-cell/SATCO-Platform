@@ -35,7 +35,7 @@ from .technical_report import TechnicalReportProvenanceRecord
 from .technical_report import TechnicalReportRecord
 from .technical_report_command import TechnicalReportIdempotencyRecord
 from .technical_report_command import TechnicalReportOutboxRecord
-from .supporting_file import EvidenceSupportingFileLink, SupportingFileAsset, SupportingFileUploadReservation
+from .supporting_file import EvidenceAvailabilitySnapshotItem, EvidenceSupportingFileLink, SupportingFileAsset, SupportingFileUploadReservation, SupportingFileAvailabilityObservation, SupportingFileAvailabilitySnapshot
 from .project_foundation import (
     ProjectCompletionCriterion,
     ProjectFoundation,
@@ -73,3 +73,6 @@ from .retention import (
     RetentionRecord,
     RetentionRecovery,
 )
+
+from .engineering_performance import EngineeringNextActionProjection, EngineeringPerformanceSnapshot
+from .project_completeness_observation import ProjectCompletenessObservation

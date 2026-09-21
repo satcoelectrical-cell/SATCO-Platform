@@ -135,6 +135,74 @@ class SupportingFileScanAttempt(Base):
     )
 
 
+class SupportingFileAvailabilityObservation(Base):
+    """Prospective exact-object presence check, not a lifecycle transition."""
+    __tablename__ = "supporting_file_availability_observations"
+    __table_args__ = (
+        CheckConstraint("state IN ('available','unavailable')", name="ck_supporting_file_availability_state"),
+        UniqueConstraint("source_event_id", name="uq_supporting_file_availability_source_event"),
+        UniqueConstraint("asset_id", "observed_at", name="uq_supporting_file_availability_instant"),
+        UniqueConstraint("snapshot_id", "asset_id", name="uq_supporting_file_availability_snapshot_asset"),
+        Index("ix_supporting_file_availability_history", "organization_id", "asset_id", "observed_at", "id"),
+    )
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    asset_id = Column(PGUUID(as_uuid=True), ForeignKey("supporting_file_assets.id", ondelete="RESTRICT"), nullable=False)
+    organization_id = Column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False)
+    workspace_id = Column(Integer, ForeignKey("engineering_workspaces.id", ondelete="RESTRICT"))
+    object_version = Column(String(160), nullable=False)
+    content_digest = Column(String(64), nullable=False)
+    state = Column(String(16), nullable=False)
+    observed_by_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    observed_at = Column(DateTime(timezone=True), nullable=False)
+    source_event_id = Column(PGUUID(as_uuid=True), nullable=False)
+    source_kind = Column(String(32), nullable=False)
+    snapshot_id = Column(PGUUID(as_uuid=True), ForeignKey("supporting_file_availability_snapshots.id", ondelete="RESTRICT"))
+    checked_at = Column(DateTime(timezone=True))
+
+
+class SupportingFileAvailabilitySnapshot(Base):
+    """Actor-scoped, prospective Evidence population observation."""
+    __tablename__ = "supporting_file_availability_snapshots"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id = Column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False)
+    workspace_id = Column(Integer, ForeignKey("engineering_workspaces.id", ondelete="RESTRICT"))
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    source_cutoff = Column(DateTime(timezone=True), nullable=False)
+    status = Column(String(16), nullable=False, server_default="incomplete")
+    method_version = Column(String(32), nullable=False, server_default="evidence-availability.v1")
+    limitation_codes = Column(JSON, nullable=False, default=list)
+    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    __table_args__ = (
+        CheckConstraint("status IN ('incomplete','complete')", name="ck_supporting_file_availability_snapshot_status"),
+        CheckConstraint("(status='complete' AND completed_at IS NOT NULL) OR status='incomplete'", name="ck_supporting_file_availability_snapshot_completion"),
+        Index("ix_supporting_file_availability_snapshot_scope", "organization_id", "project_id", "workspace_id", "actor_id", "source_cutoff", "id"),
+    )
+
+
+class EvidenceAvailabilitySnapshotItem(Base):
+    """Only Evidence already visible to the snapshot actor is retained."""
+    __tablename__ = "evidence_availability_snapshot_items"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    snapshot_id = Column(PGUUID(as_uuid=True), ForeignKey("supporting_file_availability_snapshots.id", ondelete="RESTRICT"), nullable=False)
+    evidence_id = Column(PGUUID(as_uuid=True), ForeignKey("evidence.id", ondelete="RESTRICT"), nullable=False)
+    evidence_version = Column(Integer, nullable=False)
+    project_id = Column(Integer)
+    workspace_id = Column(Integer)
+    state = Column(String(16), nullable=False)
+    artifact_versions = Column(JSON, nullable=False, default=list)
+    source_event_ids = Column(JSON, nullable=False, default=list)
+    limitation_codes = Column(JSON, nullable=False, default=list)
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", "evidence_id", name="uq_evidence_availability_snapshot_item"),
+        CheckConstraint("evidence_version >= 1", name="ck_evidence_availability_snapshot_item_version"),
+        CheckConstraint("state IN ('available','unavailable','indeterminate')", name="ck_evidence_availability_snapshot_item_state"),
+        Index("ix_evidence_availability_snapshot_items", "snapshot_id", "evidence_id"),
+    )
+
+
 class SupportingFileOutboxRecord(Base):
     __tablename__ = "supporting_file_outbox"
     id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

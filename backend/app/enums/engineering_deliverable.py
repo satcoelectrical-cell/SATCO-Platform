@@ -20,6 +20,13 @@ class DeliverableRevisionStanding(str, Enum):
     WITHDRAWN = "withdrawn"
 
 
+class DeliverableRevisionReason(str, Enum):
+    NORMAL_REVISION = "normal_revision"
+    CORRECTIVE_REWORK = "corrective_rework"
+    REVIEW_RETURN_REWORK = "review_return_rework"
+    CHANGE_DRIVEN_REVISION = "change_driven_revision"
+
+
 class ExternalAuthoringAuthority(str, Enum):
     CAD = "cad"
     EPLAN = "eplan"

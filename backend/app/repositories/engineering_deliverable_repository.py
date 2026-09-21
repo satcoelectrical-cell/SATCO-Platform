@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.models.engineering_deliverable import EngineeringDeliverable, EngineeringDeliverableRevision, EngineeringDeliverableIdempotency
+from app.models.engineering_deliverable import EngineeringDeliverable, EngineeringDeliverableRevision, EngineeringDeliverableHistory, EngineeringDeliverableIdempotency
 
 
 class EngineeringDeliverableRepository:
@@ -61,6 +61,61 @@ class EngineeringDeliverableRepository:
         return tuple(ordered[:limit]), len(ordered)>limit
     def revisions(self, *, deliverable_id):
         return self.session.query(EngineeringDeliverableRevision).filter_by(deliverable_id=deliverable_id).order_by(EngineeringDeliverableRevision.sequence).all()
+    def revision_creation_history(self, *, revision_id, organization_id):
+        return self.session.query(EngineeringDeliverableHistory).filter(
+            EngineeringDeliverableHistory.revision_id == revision_id,
+            EngineeringDeliverableHistory.organization_id == organization_id,
+            EngineeringDeliverableHistory.event_type.in_(("deliverable_created", "revision_created")),
+        ).order_by(EngineeringDeliverableHistory.occurred_at).all()
+    def rework_resolution_history(self, *, revision_id, organization_id):
+        return self.session.query(EngineeringDeliverableHistory).filter_by(
+            revision_id=revision_id, organization_id=organization_id,
+            event_type="rework_resolved",
+        ).all()
+    def list_rework_history(self, *, organization_id, project_id, source_cutoff, limit=1001):
+        return (self.session.query(EngineeringDeliverableHistory, EngineeringDeliverable, EngineeringDeliverableRevision)
+                .join(EngineeringDeliverable, EngineeringDeliverable.id == EngineeringDeliverableHistory.deliverable_id)
+                .join(EngineeringDeliverableRevision, EngineeringDeliverableRevision.id == EngineeringDeliverableHistory.revision_id)
+                .filter(EngineeringDeliverableHistory.organization_id == organization_id,
+                        EngineeringDeliverable.organization_id == organization_id,
+                        EngineeringDeliverable.project_id == project_id,
+                        EngineeringDeliverableRevision.organization_id == organization_id,
+                        EngineeringDeliverableRevision.project_id == project_id,
+                        EngineeringDeliverableHistory.occurred_at <= source_cutoff,
+                        EngineeringDeliverableHistory.event_type.in_((
+                            "deliverable_created", "revision_created", "rework_resolved",
+                        )))
+                .order_by(EngineeringDeliverableHistory.occurred_at,
+                          EngineeringDeliverableHistory.deliverable_id,
+                          EngineeringDeliverableHistory.aggregate_version)
+                .limit(limit).all())
+    def count_project_revisions_at(self, *, organization_id, project_id, source_cutoff):
+        return (self.session.query(EngineeringDeliverableRevision)
+                .join(EngineeringDeliverable,
+                      EngineeringDeliverable.id == EngineeringDeliverableRevision.deliverable_id)
+                .filter(EngineeringDeliverableRevision.organization_id == organization_id,
+                        EngineeringDeliverableRevision.project_id == project_id,
+                        EngineeringDeliverable.organization_id == organization_id,
+                        EngineeringDeliverable.project_id == project_id,
+                        EngineeringDeliverableRevision.created_at <= source_cutoff)
+                .count())
+    def list_transition_history(self, *, organization_id, project_id, limit=1001):
+        """Canonical history only; caller must authorize before this selection."""
+        return (self.session.query(EngineeringDeliverableHistory, EngineeringDeliverable, EngineeringDeliverableRevision)
+                .join(EngineeringDeliverable, EngineeringDeliverable.id == EngineeringDeliverableHistory.deliverable_id)
+                .join(EngineeringDeliverableRevision, EngineeringDeliverableRevision.id == EngineeringDeliverableHistory.revision_id)
+                .filter(EngineeringDeliverableHistory.organization_id == organization_id,
+                        EngineeringDeliverable.organization_id == organization_id,
+                        EngineeringDeliverable.project_id == project_id,
+                        EngineeringDeliverableRevision.organization_id == organization_id,
+                        EngineeringDeliverableHistory.event_type.in_((
+                            "deliverable_created", "revision_created", "revision_transitioned",
+                            "package_revision_transitioned",
+                        )))
+                .order_by(EngineeringDeliverableHistory.occurred_at,
+                          EngineeringDeliverableHistory.deliverable_id,
+                          EngineeringDeliverableHistory.aggregate_version)
+                .limit(limit).all())
     def get_idempotency(self, *, organization_id, actor_id, operation, idempotency_key, lock=True):
         query = self.session.query(EngineeringDeliverableIdempotency).filter_by(organization_id=organization_id, actor_id=actor_id, operation=operation, idempotency_key=idempotency_key)
         return (query.with_for_update() if lock else query).first()

@@ -4,6 +4,7 @@ from io import BytesIO
 from uuid import uuid4
 
 from app.models.supporting_file_command import MAX_FILE_BYTES, bounded_stream_identity, opaque_storage_key
+from app.exceptions.supporting_file import SupportingFileIntegrityError
 from app.ports.supporting_file import SupportingFileObjectReceipt, SupportingFileObjectStore
 
 
@@ -55,7 +56,9 @@ class S3PrivateSupportingFileObjectStore(SupportingFileObjectStore):
         except self.client.exceptions.NoSuchKey:
             return None
         digest = result.get("Metadata", {}).get("sha256")
-        if not digest: return None
+        if not digest:
+            # Missing integrity metadata is not proof the exact object is absent.
+            raise SupportingFileIntegrityError("exact-object integrity metadata is unavailable")
         return SupportingFileObjectReceipt(key, version, int(result["ContentLength"]), digest)
 
     def open_exact(self, key: str, version: str):

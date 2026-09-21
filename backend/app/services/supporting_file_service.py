@@ -14,16 +14,248 @@ from app.adapters.supporting_file_object_store import new_opaque_object_key
 from app.adapters.supporting_file_scanner import SCANNER_PRINCIPAL_ID
 from app.enums.supporting_file import SupportingFileMediaType, SupportingFileScanDisposition
 from app.exceptions.supporting_file import SupportingFileIntegrityError, SupportingFileProtectedNotFound, SupportingFileScannerUnavailable, SupportingFileValidationError
-from app.models.supporting_file import EvidenceSupportingFileLink, SupportingFileAsset, SupportingFileUploadReservation, SupportingFileIdempotencyRecord, SupportingFileOutboxRecord, SupportingFileScanAttempt
+from app.models.supporting_file import EvidenceAvailabilitySnapshotItem, EvidenceSupportingFileLink, SupportingFileAsset, SupportingFileUploadReservation, SupportingFileIdempotencyRecord, SupportingFileOutboxRecord, SupportingFileScanAttempt, SupportingFileAvailabilityObservation, SupportingFileAvailabilitySnapshot
 from app.models.supporting_file_command import MAX_FILE_BYTES, SupportingFileActor, SupportingFileMetadata, SupportingFileScope, bounded_stream_identity, content_digest, safe_filename, verified_media_type, verified_stream_media_type
 from app.models.supporting_file_command import SupportingFileHistoricalBasisV1
 from app.core.config import settings
-from app.ports.supporting_file import RecordSupportingFileScan, SupportingFileAuthorization, SupportingFileObjectStore, SupportingFileScanner, SupportingFileScannerPrincipal, SupportingFileUnitOfWork
+from app.ports.supporting_file import RecordSupportingFileScan, SupportingFileAuthorization, SupportingFileObjectStore, SupportingFileScanner, SupportingFileScannerPrincipal, SupportingFileUnitOfWork, SupportingFileAvailabilityFact
 
 
 class SupportingFileService:
     def __init__(self, *, uow: SupportingFileUnitOfWork, objects: SupportingFileObjectStore, scanner: SupportingFileScanner, authorization: SupportingFileAuthorization):
         self.uow, self.objects, self.scanner, self.authorization = uow, objects, scanner, authorization
+
+    def _availability_asset(self, *, actor_id: int, scope: SupportingFileScope, asset_id: UUID) -> SupportingFileAsset:
+        self.authorization.require_read(actor_id=actor_id, organization_id=scope.organization_id,
+                                        project_id=scope.project_id, workspace_id=scope.workspace_id)
+        asset = self.uow.repository.get_scoped(asset_id, scope.organization_id)
+        if (asset is None or asset.project_id != scope.project_id
+                or asset.workspace_id not in {None, scope.workspace_id}):
+            raise SupportingFileProtectedNotFound()
+        return asset
+
+    def _exact_head_state(self, asset: SupportingFileAsset) -> str:
+        receipt = self.objects.head_exact(asset.storage_key, asset.object_version)
+        if receipt is None:
+            return "unavailable"
+        if (receipt.key, receipt.version, receipt.byte_size, receipt.sha256) != (
+            asset.storage_key, asset.object_version, asset.byte_size, asset.content_digest
+        ):
+            return "unavailable"
+        return "available"
+
+    def read_exact_availability(self, *, actor_id: int, scope: SupportingFileScope,
+                                asset_id: UUID, source_cutoff: datetime | None = None) -> SupportingFileAvailabilityFact:
+        """Current exact HEAD or a prospective observation at precisely the requested cutoff.
+
+        An old HEAD or lifecycle event does not establish an interval of presence.
+        """
+        asset = self._availability_asset(actor_id=actor_id, scope=scope, asset_id=asset_id)
+        if source_cutoff is not None:
+            if source_cutoff.tzinfo is None or source_cutoff.utcoffset() is None:
+                raise SupportingFileValidationError("source cutoff must be timezone aware")
+            row = self.uow.repository.availability_at_exact_cutoff(
+                asset_id=asset.id, organization_id=scope.organization_id, cutoff=source_cutoff,
+            )
+            if (row is None or row.object_version != asset.object_version
+                    or row.content_digest != asset.content_digest):
+                return SupportingFileAvailabilityFact(asset.id, asset.object_version, "indeterminate", None,
+                                                      None, "historical_availability_unproven")
+            return SupportingFileAvailabilityFact(asset.id, asset.object_version, row.state,
+                                                  row.observed_at, row.source_event_id)
+        try:
+            state = self._exact_head_state(asset)
+        except Exception:
+            return SupportingFileAvailabilityFact(asset.id, asset.object_version, "indeterminate", None,
+                                                  None, "current_exact_probe_unavailable")
+        return SupportingFileAvailabilityFact(asset.id, asset.object_version, state,
+                                              datetime.now(timezone.utc), None)
+
+    def observe_exact_availability(self, *, actor_id: int, scope: SupportingFileScope,
+                                   asset_id: UUID) -> SupportingFileAvailabilityFact:
+        """Explicit Supporting File owner command; PATCH-056 reads never invoke it."""
+        return self.observe_exact_availability_batch(actor_id=actor_id, scope=scope,
+                                                     asset_ids=(asset_id,))[0]
+
+    def observe_exact_availability_batch(self, *, actor_id: int, scope: SupportingFileScope,
+                                         asset_ids: tuple[UUID, ...], snapshot_id: UUID | None = None,
+                                         source_cutoff: datetime | None = None) -> tuple[SupportingFileAvailabilityFact, ...]:
+        """Bounded owner observation with one cutoff for an exact artifact set."""
+        if not 1 <= len(asset_ids) <= 10 or len(set(asset_ids)) != len(asset_ids):
+            raise SupportingFileValidationError("exact artifact set is invalid")
+        self.authorization.require_mutation(actor_id=actor_id, organization_id=scope.organization_id,
+                                            project_id=scope.project_id, workspace_id=scope.workspace_id)
+        logical_cutoff = source_cutoff or datetime.now(timezone.utc)
+        if logical_cutoff.tzinfo is None or logical_cutoff.utcoffset() is None:
+            raise SupportingFileValidationError("snapshot cutoff must be timezone aware")
+        if snapshot_id is not None:
+            snapshot = self.uow.repository.get_availability_snapshot(
+                snapshot_id=snapshot_id, organization_id=scope.organization_id,
+            )
+            if (snapshot is None or snapshot.actor_id != actor_id
+                    or snapshot.project_id != scope.project_id
+                    or snapshot.source_cutoff != logical_cutoff
+                    or snapshot.status != "incomplete"):
+                raise SupportingFileValidationError("availability snapshot is invalid")
+        assets = tuple(self._availability_asset(actor_id=actor_id, scope=scope, asset_id=asset_id)
+                       for asset_id in asset_ids)
+        states = []
+        for asset in assets:
+            try:
+                states.append(self._exact_head_state(asset))
+            except Exception:
+                states.append("indeterminate")
+        result = []
+        try:
+            for asset, state in zip(assets, states):
+                existing = (self.uow.repository.availability_for_snapshot_asset(
+                    snapshot_id=snapshot_id, asset_id=asset.id,
+                ) if snapshot_id is not None else None)
+                if existing is not None:
+                    result.append(SupportingFileAvailabilityFact(
+                        asset.id, asset.object_version, existing.state,
+                        existing.observed_at, existing.source_event_id, None,
+                        existing.checked_at,
+                    ))
+                    continue
+                if state == "indeterminate":
+                    result.append(SupportingFileAvailabilityFact(asset.id, asset.object_version,
+                                                                  state, None, None,
+                                                                  "current_exact_probe_unavailable"))
+                    continue
+                checked_at = datetime.now(timezone.utc)
+                event_id = uuid4()
+                self.uow.repository.record_availability(SupportingFileAvailabilityObservation(
+                    id=uuid4(), asset_id=asset.id, organization_id=asset.organization_id,
+                    project_id=asset.project_id, workspace_id=asset.workspace_id,
+                    object_version=asset.object_version, content_digest=asset.content_digest,
+                    state=state, observed_by_id=actor_id,
+                    observed_at=logical_cutoff, checked_at=checked_at,
+                    snapshot_id=snapshot_id, source_event_id=event_id,
+                    source_kind="exact_object_head",
+                ))
+                self.uow.repository.stage_outbox(SupportingFileOutboxRecord(
+                    id=uuid4(), event_id=event_id, asset_id=asset.id,
+                    aggregate_version=asset.version,
+                    event_type="SupportingFileAvailabilityObserved",
+                    payload={"asset_id": str(asset.id), "object_version": asset.object_version,
+                             "state": state, "observed_by_id": actor_id},
+                    occurred_at=checked_at,
+                ))
+                self.uow.repository.stage_audit(
+                    actor_id=actor_id, asset_id=asset.id,
+                    action="AVAILABILITY_OBSERVED", occurred_at=checked_at,
+                    organization_id=asset.organization_id, version=asset.version,
+                    correlation_id=event_id,
+                )
+                result.append(SupportingFileAvailabilityFact(asset.id, asset.object_version,
+                                                              state, logical_cutoff, event_id,
+                                                              None, checked_at))
+            self.uow.commit()
+        except Exception:
+            self.uow.rollback()
+            raise
+        return tuple(result)
+
+    def begin_population_availability_snapshot(
+        self, *, actor_id: int, scope: SupportingFileScope, snapshot_id: UUID,
+        source_cutoff: datetime, visible_workspace_ids: tuple[int, ...],
+    ) -> SupportingFileAvailabilitySnapshot:
+        if (snapshot_id.int == 0 or source_cutoff.tzinfo is None
+                or source_cutoff.utcoffset() is None
+                or tuple(sorted(set(visible_workspace_ids))) != visible_workspace_ids):
+            raise SupportingFileValidationError("availability snapshot request is invalid")
+        if scope.workspace_id is not None:
+            self.authorization.require_read(
+                actor_id=actor_id, organization_id=scope.organization_id,
+                project_id=scope.project_id, workspace_id=scope.workspace_id,
+            )
+        elif visible_workspace_ids:
+            for workspace_id in visible_workspace_ids:
+                self.authorization.require_read(
+                    actor_id=actor_id, organization_id=scope.organization_id,
+                    project_id=scope.project_id, workspace_id=workspace_id,
+                )
+        else:
+            self.authorization.require_read(
+                actor_id=actor_id, organization_id=scope.organization_id,
+                project_id=scope.project_id, workspace_id=None,
+            )
+        snapshot = SupportingFileAvailabilitySnapshot(
+            id=snapshot_id, organization_id=scope.organization_id,
+            project_id=scope.project_id, workspace_id=scope.workspace_id,
+            actor_id=actor_id, source_cutoff=source_cutoff,
+            status="incomplete", method_version="evidence-availability.v1",
+            limitation_codes=[],
+        )
+        self.uow.repository.add_availability_snapshot(snapshot)
+        self.uow.commit()
+        return snapshot
+
+    def record_population_availability_item(
+        self, *, actor_id: int, scope: SupportingFileScope, snapshot_id: UUID,
+        evidence_id: UUID, evidence_version: int, evidence_project_id: int | None,
+        evidence_workspace_id: int | None, state: str,
+        artifact_versions: tuple[tuple[UUID, str], ...],
+        source_event_ids: tuple[UUID, ...], limitations: tuple[str, ...],
+    ) -> None:
+        snapshot = self.uow.repository.get_availability_snapshot(
+            snapshot_id=snapshot_id, organization_id=scope.organization_id,
+        )
+        if (snapshot is None or snapshot.actor_id != actor_id
+                or snapshot.project_id != scope.project_id
+                or snapshot.workspace_id != scope.workspace_id
+                or snapshot.status != "incomplete"
+                or state not in {"available", "unavailable", "indeterminate"}
+                or evidence_version < 1):
+            raise SupportingFileValidationError("availability snapshot item is invalid")
+        self.uow.repository.add_availability_snapshot_item(EvidenceAvailabilitySnapshotItem(
+            id=uuid4(), snapshot_id=snapshot_id, evidence_id=evidence_id,
+            evidence_version=evidence_version, project_id=evidence_project_id,
+            workspace_id=evidence_workspace_id, state=state,
+            artifact_versions=[[str(asset_id), version] for asset_id, version in artifact_versions],
+            source_event_ids=[str(event_id) for event_id in source_event_ids],
+            limitation_codes=list(limitations),
+        ))
+        self.uow.commit()
+
+    def finalize_population_availability_snapshot(
+        self, *, actor_id: int, scope: SupportingFileScope, snapshot_id: UUID,
+        complete: bool, limitations: tuple[str, ...], completed_at: datetime,
+    ) -> SupportingFileAvailabilitySnapshot:
+        snapshot = self.uow.repository.get_availability_snapshot(
+            snapshot_id=snapshot_id, organization_id=scope.organization_id,
+        )
+        if (snapshot is None or snapshot.actor_id != actor_id
+                or snapshot.project_id != scope.project_id
+                or snapshot.workspace_id != scope.workspace_id
+                or snapshot.status != "incomplete"
+                or completed_at.tzinfo is None):
+            raise SupportingFileValidationError("availability snapshot finalization is invalid")
+        snapshot.status = "complete" if complete else "incomplete"
+        snapshot.limitation_codes = list(sorted(set(limitations)))
+        snapshot.completed_at = completed_at if complete else None
+        self.uow.commit()
+        return snapshot
+
+    def read_population_availability_snapshot(
+        self, *, actor_id: int, scope: SupportingFileScope, snapshot_id: UUID,
+    ):
+        self.authorization.require_read(
+            actor_id=actor_id, organization_id=scope.organization_id,
+            project_id=scope.project_id, workspace_id=scope.workspace_id,
+        )
+        snapshot = self.uow.repository.get_availability_snapshot(
+            snapshot_id=snapshot_id, organization_id=scope.organization_id,
+        )
+        if (snapshot is None or snapshot.actor_id != actor_id
+                or snapshot.project_id != scope.project_id
+                or snapshot.workspace_id != scope.workspace_id):
+            raise SupportingFileProtectedNotFound()
+        items = self.uow.repository.list_availability_snapshot_items(snapshot_id=snapshot_id)
+        if len(items) > 5000:
+            raise SupportingFileIntegrityError("availability snapshot population is invalid")
+        return snapshot, tuple(items)
 
     def _stage_success(self, *, actor_id, operation, idempotency_id, fingerprint, asset, now, correlation_id):
         """Stage capability-owned success evidence in the same UoW, never after commit."""

@@ -4,11 +4,12 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 
+from conftest import TEST_DATABASE_REVISION
 def test_patch_045_parentage_is_preserved_under_the_current_patch_052_head():
     config = Config("alembic.ini")
     config.set_main_option("script_location", "migrations")
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["e05400000006"]
+    assert script.get_heads() == [TEST_DATABASE_REVISION]
     assert script.get_revision("e04500000001").down_revision == "e04400000001"
 
 

@@ -39,6 +39,17 @@ class SupportingFileObjectReceipt:
 
 
 @dataclass(frozen=True, slots=True)
+class SupportingFileAvailabilityFact:
+    asset_id: UUID
+    object_version: str
+    state: str
+    verified_at: datetime | None
+    source_event_id: UUID | None
+    limitation: str | None = None
+    checked_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SupportingFileScanResult:
     disposition: str
     scanned_at: datetime

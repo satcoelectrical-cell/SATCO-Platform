@@ -5,6 +5,7 @@ def test_only_approved_evidence_routes_exist():
         "/evidence",
         "/evidence/{evidence_id}",
         "/projects/{project_id}/evidence",
+        "/projects/{project_id}/evidence/availability",
         "/evidence/{evidence_id}/lifecycle-transitions",
         "/evidence/{evidence_id}/supporting-files",
     }

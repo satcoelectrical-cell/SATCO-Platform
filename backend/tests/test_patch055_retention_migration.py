@@ -17,6 +17,7 @@ from conftest import TEST_DATABASE_REVISION, alembic_config, owner_engine
 
 PATCH_054_HEAD = "e05400000006"
 PATCH_055_HEAD = "e05500000002"
+CURRENT_REPOSITORY_HEAD = "e05600000008"
 
 RETENTION_TABLES = {
     "retention_records",
@@ -57,7 +58,8 @@ def _truncate_patch055_rows() -> None:
 
 @pytest.fixture(scope="module", autouse=True)
 def _patch055_boundary():
-    command.upgrade(alembic_config, PATCH_055_HEAD)
+    # PATCH-055's closure head remains its historical boundary after e056.
+    command.downgrade(alembic_config, PATCH_055_HEAD)
     _truncate_patch055_rows()
     try:
         yield
@@ -67,8 +69,8 @@ def _patch055_boundary():
         command.upgrade(alembic_config, TEST_DATABASE_REVISION)
 
 
-def test_patch055_revision_is_repository_head() -> None:
-    assert TEST_DATABASE_REVISION == PATCH_055_HEAD
+def test_patch055_revision_is_historical_boundary_below_current_head() -> None:
+    assert TEST_DATABASE_REVISION == CURRENT_REPOSITORY_HEAD
     assert _revision() == PATCH_055_HEAD
 
 

@@ -150,6 +150,52 @@ class ExecutionMilestoneDTO(MilestoneFields):
     standing: ExecutionMilestoneStanding
 
 
+class ExecutionMilestoneEvidenceDTO(StrictExecutionSchema):
+    """Canonical owner evidence; null timing is never reconstructed from standing."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: UUID
+    organization_id: UUID
+    project_id: int = Field(gt=0)
+    plan_id: UUID
+    plan_version: int = Field(ge=1)
+    target_date: date | None
+    standing: ExecutionMilestoneStanding
+    activity_ids: tuple[UUID, ...]
+    workspace_ids: tuple[int, ...]
+    actual_completed_at: datetime | None
+    forecast_completion_at: datetime | None = None
+    completion_source_kind: str | None = None
+    completion_source_ref: str | None = None
+    source_event_at: datetime | None = None
+    limitations: tuple[str, ...] = ()
+
+
+class ExecutionMilestoneEvidencePage(StrictExecutionSchema):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    outcome: Literal["success"] = "success"
+    items: tuple[ExecutionMilestoneEvidenceDTO, ...] = Field(max_length=50)
+
+
+class ExecutionActivityEvidenceDTO(StrictExecutionSchema):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: UUID
+    organization_id: UUID
+    project_id: int = Field(gt=0)
+    workspace_id: int | None = Field(None, gt=0)
+    standing: ExecutionActivityStanding
+    version: int = Field(ge=1)
+    target_date: date | None
+    blocked_since: datetime | None
+    blocker_event_id: UUID | None
+    updated_at: datetime
+
+
+class ExecutionActivityEvidencePage(StrictExecutionSchema):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    outcome: Literal["success"] = "success"
+    items: tuple[ExecutionActivityEvidenceDTO, ...] = Field(max_length=200)
+
+
 class ExecutionActivityGraphSummary(StrictExecutionSchema):
     """The deliberately small owner-authorized Activity projection for EKG."""
     model_config = ConfigDict(extra="forbid", frozen=True)

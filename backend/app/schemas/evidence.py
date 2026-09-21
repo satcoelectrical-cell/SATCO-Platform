@@ -86,3 +86,24 @@ class EvidenceSupportingFileGraphLink(BaseModel):
 class EvidenceSupportingFileGraphPage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     items: tuple[EvidenceSupportingFileGraphLink, ...] = Field(max_length=91)
+
+
+class EvidenceAvailabilityItemResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    evidence_id: UUID
+    evidence_version: int = Field(gt=0)
+    project_id: int | None = Field(None, gt=0)
+    workspace_id: int | None = Field(None, gt=0)
+    state: str = Field(pattern=r"^(available|unavailable|indeterminate)$")
+    source_cutoff: datetime
+    artifact_versions: tuple[tuple[UUID, str], ...]
+    source_event_ids: tuple[UUID, ...]
+    limitations: tuple[str, ...] = ()
+
+
+class EvidenceAvailabilityPageResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    items: tuple[EvidenceAvailabilityItemResponse, ...] = Field(max_length=50)
+    next_cursor: str | None = None
+    source_cutoff: datetime
+    traversal_complete: bool

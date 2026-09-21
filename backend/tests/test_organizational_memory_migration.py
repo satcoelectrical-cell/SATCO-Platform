@@ -42,8 +42,7 @@ TRIGGERS = {
 
 def test_repository_head_preserves_patch_034_in_current_chain() -> None:
     script = ScriptDirectory.from_config(alembic_config)
-    assert TEST_DATABASE_REVISION == "e05400000006"
-    assert script.get_heads() == ["e05400000006"]
+    assert script.get_heads() == [TEST_DATABASE_REVISION]
     assert script.get_revision("e03800000001").down_revision == "e03400000001"
 
 

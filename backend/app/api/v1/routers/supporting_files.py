@@ -25,7 +25,7 @@ from app.exceptions.supporting_file import (
 from app.models.supporting_file_command import SupportingFileScope, bounded_stream_identity
 from app.ports.supporting_file import RecordSupportingFileScan
 from app.schemas.supporting_file import (
-    SupportingFileListResponse, SupportingFileResponse,
+    SupportingFileAvailabilityResponse, SupportingFileListResponse, SupportingFileResponse,
     SupportingFileScanResultRequest, SupportingFileWithdrawalRequest,
 )
 
@@ -182,6 +182,25 @@ def withdraw_supporting_file(
         idempotency_id=idempotency_id,
         request_fingerprint=fingerprint,
     ))
+
+
+@router.post("/supporting-files/{asset_id}/availability-observations",
+             response_model=SupportingFileAvailabilityResponse)
+def observe_supporting_file_availability(
+    asset_id: UUID, project_id: int = Query(..., gt=0),
+    workspace_id: int | None = Query(None, gt=0),
+    app: SupportingFileApplication = Depends(get_supporting_file_application),
+):
+    """Explicit authorized owner observation, never called by PATCH-056 reads."""
+    fact = app.service.observe_exact_availability(
+        actor_id=app.actor_id, scope=_scope(app, project_id, workspace_id),
+        asset_id=asset_id,
+    )
+    return SupportingFileAvailabilityResponse(
+        asset_id=fact.asset_id, object_version=fact.object_version,
+        state=fact.state, verified_at=fact.verified_at,
+        source_event_id=fact.source_event_id, limitation=fact.limitation,
+    )
 
 
 @router.post("/internal/supporting-files/scan-results", include_in_schema=False)

@@ -822,6 +822,9 @@ class PackageDeclarationBindingService:
                 id=uuid4(), deliverable_id=deliverable.id,
                 organization_id=organization_id, aggregate_version=deliverable.version,
                 event_type="package_revision_transitioned", revision_id=revision.id,
+                revision_target_standing=data.target_standing,
+                workspace_id_at_event=deliverable.workspace_id,
+                workspace_scope_recorded=True,
                 actor_id=actor_id, occurred_at=now,
             ))
             outbox = EngineeringDeliverableOutbox(

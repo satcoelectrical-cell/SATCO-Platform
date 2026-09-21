@@ -1,15 +1,11 @@
-"""Pure deterministic evaluator for PATCH-049 Batch 1.
-
-This module deliberately performs no I/O, authorization, transport, EKG,
-database, persistence or model/provider work. Batch 2 supplies fresh public
-Project Context data to ``evaluate_project_context``.
-"""
+"""Pure Project Completeness evaluator and governed owner observation service."""
 
 from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from enum import Enum
 from typing import Callable
 
 from app.ports.project_completeness import (
@@ -39,12 +35,27 @@ from app.schemas.project_completeness import (
     VisibleSectionStateReferenceV1,
 )
 from app.schemas.project_context import (
+    ActivityDependencyItem,
+    ChangeImpactItem,
+    ContextAssumptionPayload,
+    ContextEngineeringValuePayload,
+    ContextFactPayload,
+    ContextPayloadAbsent,
+    ContinuationMetadata,
     ContextObservationStatus,
     CANONICAL_SECTION_ORDER,
     DeliverableItem,
+    DeliverableRevisionItem,
     EngineeringContextProjection,
+    EngineeringObjectItem,
     EvidenceItem,
+    ExecutionActivityItem,
+    ExecutionMilestoneItem,
     ExecutionPlanItem,
+    ExecutionProgressItem,
+    FactProvenance,
+    OrganizationalMemoryItem,
+    ProjectControlItem,
     ProjectBasisItem,
     ProjectContextSection,
     ProjectContextSectionKind,
@@ -56,7 +67,14 @@ from app.schemas.project_context import (
     ProjectContextInvalidRequest,
     ProjectContextUnavailable,
     SectionAvailable,
+    SectionEmpty,
+    SectionNotDisclosed,
+    SectionNotEstablished,
+    SectionUnavailable,
     SourceAvailability,
+    SupportingFileItem,
+    TechnicalReportItem,
+    TruncationMetadata,
 )
 
 from app.schemas.project_completeness import (
@@ -79,6 +97,38 @@ MAX_EVIDENCE_TOTAL = 56
 MAX_EKG_CALLS = 0
 MAX_VISIBLE_INPUTS = 1_000
 MAX_RESPONSE_BYTES = 131_072
+
+
+class _VisibleContextValidation(str, Enum):
+    VALID = "valid"
+    PROTECTED = "protected"
+    UNAVAILABLE = "unavailable"
+
+
+_MISSING = object()
+
+_SECTION_ITEM_TYPES: dict[ProjectContextSectionKind, type[object]] = {
+    ProjectContextSectionKind.PROJECT_BASIS: ProjectBasisItem,
+    ProjectContextSectionKind.EXECUTION: ExecutionPlanItem,
+    ProjectContextSectionKind.DELIVERABLES: DeliverableItem,
+    ProjectContextSectionKind.PROJECT_CONTROLS: ProjectControlItem,
+    ProjectContextSectionKind.ENGINEERING_CONTEXT: EngineeringContextProjection,
+    ProjectContextSectionKind.ENGINEERING_OBJECTS: EngineeringObjectItem,
+    ProjectContextSectionKind.EVIDENCE: EvidenceItem,
+    ProjectContextSectionKind.SUPPORTING_FILES: SupportingFileItem,
+    ProjectContextSectionKind.TECHNICAL_REPORTS: TechnicalReportItem,
+    ProjectContextSectionKind.ORGANIZATIONAL_MEMORY: OrganizationalMemoryItem,
+}
+_NOT_ESTABLISHED_SECTIONS = frozenset({
+    ProjectContextSectionKind.PROJECT_BASIS,
+    ProjectContextSectionKind.EXECUTION,
+})
+_CONTEXT_PAYLOAD_TYPES = (
+    ContextPayloadAbsent,
+    ContextFactPayload,
+    ContextEngineeringValuePayload,
+    ContextAssumptionPayload,
+)
 
 _STAGE_RANK = {
     "definition": 0,
@@ -487,25 +537,178 @@ def evaluate_project_context(context: ProjectContextSuccess, *, now: datetime | 
 def _validate_visible_context(
     context: ProjectContextSuccess,
     request: CompletenessAssessmentRequest,
-) -> bool:
-    """Validate the closed ten-section, at-most-1,000-item public input."""
-    if tuple(section.kind for section in context.sections) != CANONICAL_SECTION_ORDER:
-        return False
+    *,
+    guidance_expanded: bool = False,
+) -> _VisibleContextValidation:
+    """Validate structure, scope and the accepted purpose-specific input bound."""
+    if _validate_context_structure(context) is not _VisibleContextValidation.VALID:
+        return _VisibleContextValidation.UNAVAILABLE
+
+    for section in context.sections:
+        for item in section.items:
+            item_result = _validate_item_scope(item, request)
+            if item_result is not _VisibleContextValidation.VALID:
+                return item_result
+            if type(item) is ExecutionPlanItem:
+                for activity in item.activities:
+                    activity_result = _validate_project_scope(
+                        getattr(activity, "project_id", _MISSING), request.project_id,
+                    )
+                    if activity_result is not _VisibleContextValidation.VALID:
+                        return activity_result
+                    workspace_result = _validate_workspace_scope(
+                        getattr(activity, "workspace_id", _MISSING), request.workspace_id,
+                    )
+                    if workspace_result is not _VisibleContextValidation.VALID:
+                        return workspace_result
+                for milestone in item.milestones:
+                    milestone_result = _validate_project_scope(
+                        getattr(milestone, "project_id", _MISSING), request.project_id,
+                    )
+                    if milestone_result is not _VisibleContextValidation.VALID:
+                        return milestone_result
+
     visible_inputs = 0
     for section in context.sections:
         visible_inputs += len(section.items)
-        if visible_inputs > MAX_VISIBLE_INPUTS:
-            return False
         for item in section.items:
-            if getattr(item, "project_id", request.project_id) != request.project_id:
-                return False
-            workspace_id = getattr(item, "workspace_id", None)
-            if request.workspace_id is not None and workspace_id not in {
-                None,
-                request.workspace_id,
-            }:
-                return False
+            if type(item) is ExecutionPlanItem:
+                visible_inputs += len(item.activities) + len(item.milestones)
+                if guidance_expanded:
+                    visible_inputs += len(item.dependencies)
+            elif type(item) is DeliverableItem and item.current_revision is not None:
+                visible_inputs += 1
+            elif guidance_expanded and type(item) is ProjectControlItem:
+                visible_inputs += len(item.impacts)
+            if visible_inputs > MAX_VISIBLE_INPUTS:
+                return _VisibleContextValidation.UNAVAILABLE
+    return _VisibleContextValidation.VALID
+
+
+def _validate_context_structure(context: object) -> _VisibleContextValidation:
+    """Fail closed over the exact PATCH-048 public projection shape."""
+    if type(context) is not ProjectContextSuccess or type(context.sections) is not tuple:
+        return _VisibleContextValidation.UNAVAILABLE
+    if tuple(section.kind for section in context.sections) != CANONICAL_SECTION_ORDER:
+        return _VisibleContextValidation.UNAVAILABLE
+    for section in context.sections:
+        if type(section) is not ProjectContextSection or type(section.kind) is not ProjectContextSectionKind:
+            return _VisibleContextValidation.UNAVAILABLE
+        if type(section.items) is not tuple:
+            return _VisibleContextValidation.UNAVAILABLE
+        state = section.state
+        if type(state) is SectionAvailable:
+            if (
+                not section.items
+                or type(state.visible_count) is not int
+                or state.visible_count != len(section.items)
+                or not _valid_truncation(state.truncated)
+            ):
+                return _VisibleContextValidation.UNAVAILABLE
+            item_type = _SECTION_ITEM_TYPES.get(section.kind)
+            if item_type is None or any(type(item) is not item_type for item in section.items):
+                return _VisibleContextValidation.UNAVAILABLE
+            if any(not _valid_item_structure(item) for item in section.items):
+                return _VisibleContextValidation.UNAVAILABLE
+        elif type(state) is SectionEmpty:
+            if section.kind in _NOT_ESTABLISHED_SECTIONS or section.items:
+                return _VisibleContextValidation.UNAVAILABLE
+        elif type(state) is SectionNotEstablished:
+            if section.kind not in _NOT_ESTABLISHED_SECTIONS or section.items:
+                return _VisibleContextValidation.UNAVAILABLE
+        elif type(state) in {SectionNotDisclosed, SectionUnavailable}:
+            if section.items:
+                return _VisibleContextValidation.UNAVAILABLE
+        else:
+            return _VisibleContextValidation.UNAVAILABLE
+    return _VisibleContextValidation.VALID
+
+
+def _valid_truncation(value: object) -> bool:
+    if type(value) is not TruncationMetadata or type(value.truncated) is not bool:
+        return False
+    if value.truncated != (value.continuation is not None):
+        return False
+    return value.continuation is None or type(value.continuation) is ContinuationMetadata
+
+
+def _valid_item_structure(item: object) -> bool:
+    if not _has_exact_provenance(item):
+        return False
+    if type(item) is ExecutionPlanItem:
+        return (
+            _exact_tuple_of(item.activities, ExecutionActivityItem)
+            and _exact_tuple_of(item.milestones, ExecutionMilestoneItem)
+            and _exact_tuple_of(item.dependencies, ActivityDependencyItem)
+            and type(item.progress) is ExecutionProgressItem
+        )
+    if type(item) is DeliverableItem:
+        return item.current_revision is None or type(item.current_revision) is DeliverableRevisionItem
+    if type(item) is ProjectControlItem:
+        return _exact_tuple_of(item.impacts, ChangeImpactItem)
+    if type(item) is EngineeringContextProjection:
+        return type(item.payload) in _CONTEXT_PAYLOAD_TYPES
     return True
+
+
+def _has_exact_provenance(item: object) -> bool:
+    return type(getattr(item, "provenance", _MISSING)) is FactProvenance
+
+
+def _exact_tuple_of(value: object, item_type: type[object]) -> bool:
+    return type(value) is tuple and all(type(item) is item_type for item in value)
+
+
+def _validate_item_scope(
+    item: object,
+    request: CompletenessAssessmentRequest,
+) -> _VisibleContextValidation:
+    """Validate declared top-level scope fields without deriving trust from them."""
+    fields = getattr(type(item), "model_fields", None)
+    if not isinstance(fields, dict):
+        return _VisibleContextValidation.UNAVAILABLE
+    project_field = fields.get("project_id")
+    if project_field is not None:
+        project_id = getattr(item, "project_id", _MISSING)
+        if project_id is _MISSING:
+            return _VisibleContextValidation.UNAVAILABLE
+        if project_id is not None:
+            project_result = _validate_project_scope(project_id, request.project_id)
+            if project_result is not _VisibleContextValidation.VALID:
+                return project_result
+    workspace_field = fields.get("workspace_id")
+    if workspace_field is not None:
+        workspace_id = getattr(item, "workspace_id", _MISSING)
+        if workspace_id is _MISSING:
+            return _VisibleContextValidation.UNAVAILABLE
+        workspace_result = _validate_workspace_scope(workspace_id, request.workspace_id)
+        if workspace_result is not _VisibleContextValidation.VALID:
+            return workspace_result
+    return _VisibleContextValidation.VALID
+
+
+def _validate_project_scope(
+    project_id: object,
+    trusted_project_id: int,
+) -> _VisibleContextValidation:
+    if type(project_id) is not int or project_id <= 0:
+        return _VisibleContextValidation.UNAVAILABLE
+    if project_id != trusted_project_id:
+        return _VisibleContextValidation.PROTECTED
+    return _VisibleContextValidation.VALID
+
+
+def _validate_workspace_scope(
+    workspace_id: object,
+    trusted_workspace_id: int | None,
+) -> _VisibleContextValidation:
+    if workspace_id is None:
+        return _VisibleContextValidation.VALID
+    if workspace_id is _MISSING or type(workspace_id) is not int or workspace_id <= 0:
+        return _VisibleContextValidation.UNAVAILABLE
+    if trusted_workspace_id is not None and workspace_id != trusted_workspace_id:
+        return _VisibleContextValidation.PROTECTED
+    return _VisibleContextValidation.VALID
 
 
 class ProjectCompletenessService:
@@ -517,10 +720,176 @@ class ProjectCompletenessService:
         *,
         clock: Callable[[], datetime] | None = None,
         evaluator: Callable[[ProjectContextSuccess], CompletenessObservationV1] | None = None,
+        observation_repository: object | None = None,
+        history_authorization: object | None = None,
     ) -> None:
         self._observer = observer
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._evaluator = evaluator or (lambda context: evaluate_project_context(context, now=self._clock()))
+        self._observation_repository = observation_repository
+        self._history_authorization = history_authorization
+
+    @staticmethod
+    def _history_source_digest(context: ProjectContextSuccess) -> str:
+        """Exclude read clocks/cursors, not source facts or owner timestamps."""
+        def stable(value):
+            if isinstance(value, dict):
+                return {key: stable(item) for key, item in value.items()
+                        if key not in {"observation_started_at", "observation_completed_at",
+                                       "observed_at", "continuation"}}
+            if isinstance(value, list):
+                return [stable(item) for item in value]
+            return value
+
+        payload = stable(context.model_dump(mode="json"))
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
+
+    def _history_context(self, *, actor: CompletenessActor,
+                         request: CompletenessAssessmentRequest,
+                         current_user: object) -> ProjectContextSuccess | None:
+        if (self._observation_repository is None or self._history_authorization is None
+                or current_user is None or getattr(current_user, "id", None) != actor.actor_id):
+            return None
+        from app.models.engineering_experience_capture_command import EngineeringExperienceCaptureActor
+        principal = EngineeringExperienceCaptureActor(actor.actor_id, actor.organization_id)
+        if not self._history_authorization.authorize(
+            actor=principal, operation="list", project_id=request.project_id,
+            workspace_id=None,
+        ):
+            return None
+        if request.workspace_id is not None and not self._history_authorization.authorize(
+            actor=principal, operation="list", project_id=request.project_id,
+            workspace_id=request.workspace_id,
+        ):
+            return None
+        context_request = ProjectContextRequest(
+            scope=ProjectContextScope(project_id=request.project_id, workspace_id=request.workspace_id),
+            sections=tuple(ProjectContextSectionRequest(kind=kind, page_size=100)
+                           for kind in ProjectContextSectionKind),
+        )
+        context = self._observer.observe(
+            actor=actor, request=context_request, current_user=current_user,
+        )
+        if (not isinstance(context, ProjectContextSuccess)
+                or _validate_visible_context(context, request) is not _VisibleContextValidation.VALID):
+            return None
+        return context
+
+    @staticmethod
+    def _history_row(row) -> dict:
+        return {
+            "id": row.id, "observation_version": row.observation_version,
+            "organization_id": row.organization_id, "project_id": row.project_id,
+            "workspace_id": row.workspace_id, "source_cutoff": row.source_cutoff,
+            "observed_at": row.observed_at, "method_version": row.method_version,
+            "catalog_digest": row.catalog_digest, "source_digest": row.source_digest,
+            "assessment_status": row.assessment_status,
+            "classifications": tuple(row.classifications_json),
+            "limitations": tuple(row.limitations_json),
+        }
+
+    def record_authorized_observation(
+        self, *, actor: CompletenessActor, request: CompletenessAssessmentRequest,
+        current_user: object,
+    ) -> dict:
+        """Prospective owner command; never reconstructs earlier assessments."""
+        try:
+            context = self._history_context(actor=actor, request=request, current_user=current_user)
+            if context is None:
+                return {"outcome": "protected_not_found"}
+            observation = self._evaluator(context)
+            if len(observation.findings) != MAX_RULES:
+                return {"outcome": "unavailable"}
+            classifications = [
+                {"rule_id": item.rule_id, "category": item.category.value,
+                 "classification": item.classification.value}
+                for item in observation.findings
+            ]
+            limitations = tuple(dict.fromkeys(
+                [code.value for code in observation.limitation_codes]
+                + [code.value for item in observation.findings for code in item.limitation_codes]
+            ))
+            row = self._observation_repository.record_once({
+                "organization_id": actor.organization_id,
+                "project_id": request.project_id, "workspace_id": request.workspace_id,
+                "actor_id": actor.actor_id, "observation_version": 1,
+                "method_version": CATALOG_ID, "catalog_digest": observation.catalog.catalog_digest,
+                "source_digest": self._history_source_digest(context),
+                "source_cutoff": context.observation_completed_at,
+                "observed_at": self._clock(),
+                "assessment_status": observation.assessment_status.value,
+                "classifications_json": classifications,
+                "limitations_json": list(limitations),
+            })
+            return {"outcome": "success", "observation": self._history_row(row)}
+        except Exception:
+            return {"outcome": "unavailable"}
+
+    def list_authorized_observation_history(
+        self, *, actor: CompletenessActor, request: CompletenessAssessmentRequest,
+        current_user: object, window_days: int,
+    ) -> dict:
+        if window_days not in {7, 30, 90, 180}:
+            return {"outcome": "invalid_request"}
+        try:
+            context = self._history_context(actor=actor, request=request, current_user=current_user)
+            if context is None:
+                return {"outcome": "protected_not_found"}
+            # A currently protected/incomplete source cannot re-disclose older classifications.
+            if context.observation_status is not ContextObservationStatus.COMPLETE_WITHIN_BOUNDS:
+                return {"outcome": "unavailable"}
+            cutoff = context.observation_completed_at
+            rows = self._observation_repository.list_history(
+                organization_id=actor.organization_id, project_id=request.project_id,
+                workspace_id=request.workspace_id, actor_id=actor.actor_id,
+                after_cutoff=cutoff - timedelta(days=window_days),
+                before_cutoff=cutoff, limit=1001,
+            )
+            if len(rows) > 1000:
+                return {"outcome": "unavailable"}
+            return {"outcome": "success", "source_cutoff": cutoff,
+                    "observations": tuple(self._history_row(row) for row in rows)}
+        except Exception:
+            return {"outcome": "unavailable"}
+
+    def evaluate_authorized_observation(
+        self,
+        *,
+        actor: CompletenessActor,
+        request: CompletenessAssessmentRequest,
+        context: ProjectContextSuccess,
+        context_observation_digest: str,
+        current_user: object,
+    ) -> CompletenessAssessmentResult:
+        """Run the existing evaluator over the exact supplied Context, never the observer."""
+        if current_user is None or type(actor.actor_id) is not int or actor.actor_id <= 0:
+            return CompletenessProtectedNotFound()
+        try:
+            canonical = json.dumps(
+                context.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+            if hashlib.sha256(canonical).hexdigest() != context_observation_digest:
+                return CompletenessUnavailable()
+            validation = _validate_visible_context(context, request, guidance_expanded=True)
+            if validation is _VisibleContextValidation.PROTECTED:
+                return CompletenessProtectedNotFound()
+            if validation is not _VisibleContextValidation.VALID:
+                return CompletenessUnavailable()
+            observation = self._evaluator(context)
+            if len(observation.findings) != MAX_RULES:
+                return CompletenessUnavailable()
+            result: CompletenessAssessmentResult
+            if observation.assessment_status is CompletenessObservationStatus.PARTIAL:
+                result = CompletenessPartialSuccess(observation=observation)
+            else:
+                result = CompletenessSuccess(observation=observation)
+            encoded = json.dumps(
+                result.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+            return result if len(encoded) <= MAX_RESPONSE_BYTES else CompletenessUnavailable()
+        except Exception:
+            return CompletenessUnavailable()
 
     def assess(
         self,
@@ -559,7 +928,10 @@ class ProjectCompletenessService:
         if not isinstance(result, ProjectContextSuccess):
             return CompletenessUnavailable()
         try:
-            if not _validate_visible_context(result, request):
+            validation = _validate_visible_context(result, request)
+            if validation is _VisibleContextValidation.PROTECTED:
+                return CompletenessProtectedNotFound()
+            if validation is not _VisibleContextValidation.VALID:
                 return CompletenessUnavailable()
             observation = self._evaluator(result)
             if len(observation.findings) != MAX_RULES:

@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from typing import Mapping, Self
 from uuid import UUID
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.exceptions.evidence import EvidenceIdempotencyConflict, EvidenceValidationError
 from app.models.audit_log import AuditLog
@@ -64,6 +65,34 @@ class SqlAlchemyEvidenceAuthorizationPolicy:
         if workspace_id is None: return False
         workspace=self.session.get(EngineeringWorkspace,workspace_id)
         return workspace is not None and workspace.project_id==project_id and (actor.actor_id in {workspace.owner_id,workspace.primary_assignee_id} or self.session.get(EngineeringWorkspaceMember,(workspace.id,actor.actor_id)) is not None)
+
+    def availability_scope(self, *, actor: EvidenceActor, project_id: int,
+                           workspace_id: int | None) -> tuple[bool, tuple[int, ...]] | None:
+        """Return only actor-visible selection scope; never page raw candidates."""
+        user = self.session.get(User, actor.actor_id)
+        project = self.session.query(Project).filter_by(id=project_id,
+                                                        organization_id=actor.organization_id).first()
+        if user is None or not user.is_active or project is None:
+            return None
+        if user.role == "admin" or actor.actor_id in {project.owner_id, project.primary_assignee_id}:
+            if workspace_id is not None and self.session.query(EngineeringWorkspace.id).filter_by(
+                id=workspace_id, project_id=project_id,
+            ).first() is None:
+                return None
+            return True, ()
+        rows = self.session.query(EngineeringWorkspace.id).outerjoin(
+            EngineeringWorkspaceMember,
+            EngineeringWorkspaceMember.workspace_id == EngineeringWorkspace.id,
+        ).filter(
+            EngineeringWorkspace.project_id == project_id,
+            or_(EngineeringWorkspace.owner_id == actor.actor_id,
+                EngineeringWorkspace.primary_assignee_id == actor.actor_id,
+                EngineeringWorkspaceMember.user_id == actor.actor_id),
+        ).distinct().all()
+        allowed = tuple(sorted(row[0] for row in rows))
+        if not allowed or (workspace_id is not None and workspace_id not in allowed):
+            return None
+        return False, ((workspace_id,) if workspace_id is not None else allowed)
 
 class SqlAlchemyEvidenceValidator:
     def __init__(self,session): self.session=session

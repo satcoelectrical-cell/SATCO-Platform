@@ -32,9 +32,12 @@ def _application():
     return app, service
 
 
-def test_exact_single_completeness_route_is_declared():
+def test_exact_completeness_routes_are_declared():
     paths = {route.path for route in router.routes}
-    assert paths == {"/projects/{project_id}/completeness"}
+    assert paths == {
+        "/projects/{project_id}/completeness",
+        "/projects/{project_id}/completeness/observations",
+    }
 
 
 def test_invalid_path_or_workspace_is_payload_free_invalid_request():

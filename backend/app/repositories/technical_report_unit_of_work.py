@@ -493,7 +493,7 @@ class SqlAlchemyTechnicalReportAuthorizationPolicy:
         allowed_operations = {
             "create_draft", "revise_draft", "accept_exact_draft",
             "create_successor", "get", "list", "retrieve_lineage",
-            "request_ai_proposal",
+            "request_ai_proposal", "list_accepted_summaries", "list_lifecycle_evidence",
         }
         if request.operation not in allowed_operations:
             raise TechnicalReportAuthorizationDenied()
@@ -508,17 +508,23 @@ class SqlAlchemyTechnicalReportAuthorizationPolicy:
             (request.actor.actor_id, request.scope.organization_id),
             with_for_update=True,
         )
-        workspace = self.session.get(
+        workspace = None if request.scope.workspace_id is None else self.session.get(
             EngineeringWorkspace, request.scope.workspace_id, with_for_update=True
         )
-        project = None if workspace is None else self.session.get(
-            Project, workspace.project_id, with_for_update=True
+        project = (
+            self.session.get(Project, request.scope.project_id, with_for_update=True)
+            if workspace is None and request.operation == "list_lifecycle_evidence"
+            and request.scope.project_id is not None else
+            None if workspace is None else self.session.get(
+                Project, workspace.project_id, with_for_update=True
+            )
         )
         if (
             user is None or not user.is_active or user.role not in {"admin", "engineer"}
             or organization is None or not organization.is_active
             or membership is None or not membership.is_enabled or not membership.is_selected
-            or workspace is None or workspace.status != WorkspaceStatus.ACTIVE.value
+            or (workspace is None and request.operation != "list_lifecycle_evidence")
+            or (workspace is not None and workspace.status != WorkspaceStatus.ACTIVE.value)
             or project is None
             or project.organization_id != request.scope.organization_id
             or (request.scope.project_id is not None and request.scope.project_id != project.id)
@@ -526,9 +532,10 @@ class SqlAlchemyTechnicalReportAuthorizationPolicy:
             raise TechnicalReportAuthorizationDenied()
         allowed = user.role == "admin" or request.actor.actor_id in {
             project.owner_id, project.primary_assignee_id,
-            workspace.owner_id, workspace.primary_assignee_id,
+            None if workspace is None else workspace.owner_id,
+            None if workspace is None else workspace.primary_assignee_id,
         }
-        if not allowed:
+        if not allowed and workspace is not None:
             allowed = self.session.get(
                 EngineeringWorkspaceMember,
                 (workspace.id, request.actor.actor_id),

@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models.engineering_execution_plan import (
-    EngineeringExecutionActivity, EngineeringExecutionDependency,
+    EngineeringExecutionActivity, EngineeringExecutionActivityHistory, EngineeringExecutionDependency,
     EngineeringExecutionIdempotency,
     EngineeringExecutionMilestone, EngineeringExecutionMilestoneActivity,
     EngineeringExecutionPlan, EngineeringExecutionPlanRevision,
@@ -63,6 +63,19 @@ class EngineeringExecutionPlanRepository:
                         EngineeringExecutionActivity.organization_id == organization_id)
                 .order_by(EngineeringExecutionMilestoneActivity.ordinal, EngineeringExecutionActivity.id).all())
         return tuple(row[0] for row in rows)
+
+    def latest_blocked_events(self, *, organization_id: UUID, activity_ids: tuple[UUID, ...]):
+        if not activity_ids:
+            return {}
+        rows = (self.session.query(EngineeringExecutionActivityHistory)
+                .filter(EngineeringExecutionActivityHistory.organization_id == organization_id,
+                        EngineeringExecutionActivityHistory.activity_id.in_(activity_ids),
+                        EngineeringExecutionActivityHistory.to_standing == "blocked")
+                .distinct(EngineeringExecutionActivityHistory.activity_id)
+                .order_by(EngineeringExecutionActivityHistory.activity_id,
+                          EngineeringExecutionActivityHistory.transitioned_at.desc(),
+                          EngineeringExecutionActivityHistory.id.desc()).all())
+        return {row.activity_id: row for row in rows}
 
     def list_graph_incident(self, *, selector_kind: str, selector_id: UUID,
                             project_id: int, organization_id: UUID, limit: int = 91):

@@ -1,3 +1,4 @@
+from conftest import TEST_DATABASE_REVISION
 """PATCH-038 Customer ownership migration and database-guard evidence."""
 
 from alembic import command
@@ -19,7 +20,7 @@ LEGACY_ORGANIZATION_ID = "7e7c9d7a-7693-4f75-9bc5-3ef7bf528281"
 
 def test_patch_041_parentage_is_preserved_under_the_current_patch_052_head() -> None:
     script = ScriptDirectory.from_config(alembic_config)
-    assert script.get_heads() == ["e05400000006"]
+    assert script.get_heads() == [TEST_DATABASE_REVISION]
     assert script.get_revision("e04100000001").down_revision == "e03800000001"
     assert script.get_revision("e03800000001").down_revision == "e03400000001"
 

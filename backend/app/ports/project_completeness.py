@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
-from app.schemas.project_context import ProjectContextRequest, ProjectContextResult
+from app.schemas.project_context import ProjectContextRequest, ProjectContextResult, ProjectContextSuccess
+from app.schemas.project_completeness import CompletenessAssessmentResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,3 +42,17 @@ class ProjectContextObservationPort(Protocol):
         request: ProjectContextRequest,
         current_user: object,
     ) -> ProjectContextResult: ...
+
+
+class AuthorizedObservationCompletenessPort(Protocol):
+    """Evaluate one already-authorized Context object without observing again."""
+
+    def evaluate_authorized_observation(
+        self,
+        *,
+        actor: CompletenessActor,
+        request: CompletenessAssessmentRequest,
+        context: ProjectContextSuccess,
+        context_observation_digest: str,
+        current_user: object,
+    ) -> CompletenessAssessmentResult: ...

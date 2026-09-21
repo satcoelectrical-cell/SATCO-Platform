@@ -1,7 +1,7 @@
 """SQLAlchemy Evidence repository without policy or transaction ownership."""
 from typing import Mapping
 from uuid import UUID
-from sqlalchemy import update
+from sqlalchemy import update, and_, or_
 from sqlalchemy.orm import Session
 from app.models.evidence import Evidence
 from app.models.supporting_file import EvidenceSupportingFileLink
@@ -22,6 +22,72 @@ class SqlAlchemyEvidenceRepository:
         total=query.count(); items=query.order_by(Evidence.created_at,Evidence.id).offset((page-1)*size).limit(size).all()
         for item in items: self.session.expunge(item)
         return items,total
+
+    def list_authorized_scoped(self, *, organization_id: UUID, project_id: int,
+                               filters: Mapping, page: int, size: int,
+                               project_wide: bool, visible_workspaces: tuple[int, ...]):
+        """Authorize in SQL before both count and page selection."""
+        workspace_id = filters.get("workspace_id")
+        query = self.session.query(Evidence).filter(Evidence.organization_id == organization_id)
+        if project_wide and workspace_id is None:
+            query = query.filter(or_(Evidence.project_id == project_id,
+                                     Evidence.project_id.is_(None)))
+        else:
+            query = query.filter(Evidence.project_id == project_id)
+        if workspace_id is not None:
+            query = query.filter(Evidence.workspace_id == workspace_id)
+        elif not project_wide:
+            query = query.filter(Evidence.workspace_id.in_(visible_workspaces))
+        for name in ("lifecycle", "source_kind", "source_standing"):
+            value = filters.get(name)
+            if value is not None:
+                query = query.filter(getattr(Evidence, name) == getattr(value, "value", value))
+        total = query.count()
+        items = query.order_by(Evidence.created_at, Evidence.id).offset((page - 1) * size).limit(size).all()
+        for item in items:
+            self.session.expunge(item)
+        return items, total
+
+    def _availability_query(self, *, organization_id, project_id, workspace_id,
+                            project_wide, visible_workspaces, source_cutoff):
+        query = self.session.query(Evidence).filter(
+            Evidence.organization_id == organization_id,
+            Evidence.created_at <= source_cutoff,
+        )
+        if project_wide and workspace_id is None:
+            query = query.filter(or_(Evidence.project_id == project_id,
+                                     Evidence.project_id.is_(None)))
+        else:
+            query = query.filter(Evidence.project_id == project_id)
+        if workspace_id is not None:
+            query = query.filter(Evidence.workspace_id == workspace_id)
+        elif not project_wide:
+            query = query.filter(Evidence.workspace_id.in_(visible_workspaces))
+        return query
+
+    def availability_population(self, *, organization_id, project_id, workspace_id,
+                                project_wide, visible_workspaces, source_cutoff):
+        query = self._availability_query(
+            organization_id=organization_id, project_id=project_id,
+            workspace_id=workspace_id, project_wide=project_wide,
+            visible_workspaces=visible_workspaces, source_cutoff=source_cutoff,
+        )
+        return query.count(), query.filter(Evidence.updated_at > source_cutoff).first() is not None
+
+    def list_authorized_availability_page(self, *, organization_id, project_id, workspace_id,
+                                          project_wide, visible_workspaces, source_cutoff,
+                                          anchor, limit):
+        query = self._availability_query(
+            organization_id=organization_id, project_id=project_id,
+            workspace_id=workspace_id, project_wide=project_wide,
+            visible_workspaces=visible_workspaces, source_cutoff=source_cutoff,
+        )
+        if anchor is not None:
+            query = query.filter(or_(
+                Evidence.created_at > anchor[0],
+                and_(Evidence.created_at == anchor[0], Evidence.id > anchor[1]),
+            ))
+        return query.order_by(Evidence.created_at, Evidence.id).limit(limit).all()
     def add(self, evidence: Evidence): self.session.add(evidence); self.session.flush()
     def persist_expected_version(self, evidence: Evidence, expected_version: int):
         with self.session.no_autoflush:

@@ -1,12 +1,13 @@
 from uuid import UUID
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 
 from app.dependencies.engineering_deliverable import EngineeringDeliverableApplication, get_engineering_deliverable_application
-from app.schemas.engineering_deliverable import CreateDeliverableRequest, CreateRevisionRequest, TransitionRevisionRequest, UpdateDeliverableRequest
+from app.schemas.engineering_deliverable import CreateDeliverableRequest, CreateRevisionRequest, ResolveReworkRequest, TransitionRevisionRequest, UpdateDeliverableRequest
 
 
 class DeliverableRoute(APIRoute):
@@ -27,6 +28,9 @@ def _result(result):
 def list_deliverables(project_id:int,app:EngineeringDeliverableApplication=Depends(get_engineering_deliverable_application)): return _result(app.service.list(project_id=project_id,actor=app.actor))
 @router.post("")
 def create_deliverable(project_id:int,data:CreateDeliverableRequest,idempotency_key:UUID=Header(alias="Idempotency-Key"),app:EngineeringDeliverableApplication=Depends(get_engineering_deliverable_application)): return _result(app.service.create(project_id=project_id,data=data,actor=app.actor,idempotency_key=idempotency_key))
+@router.get("/rework-evidence")
+def list_rework_evidence(project_id:int,source_cutoff:datetime,workspace_id:int|None=Query(None,gt=0),app:EngineeringDeliverableApplication=Depends(get_engineering_deliverable_application)):
+    return _result(app.service.list_authorized_rework_evidence(project_id=project_id,actor=app.actor,source_cutoff=source_cutoff,workspace_id=workspace_id))
 @router.get("/{deliverable_id}")
 def get_deliverable(project_id:int,deliverable_id:UUID,app:EngineeringDeliverableApplication=Depends(get_engineering_deliverable_application)): return _result(app.service.get(project_id=project_id,deliverable_id=deliverable_id,actor=app.actor))
 @router.put("/{deliverable_id}")
@@ -37,3 +41,6 @@ def revision_history(project_id:int,deliverable_id:UUID,app:EngineeringDeliverab
 def create_revision(project_id:int,deliverable_id:UUID,data:CreateRevisionRequest,idempotency_key:UUID=Header(alias="Idempotency-Key"),app:EngineeringDeliverableApplication=Depends(get_engineering_deliverable_application)): return _result(app.service.create_revision(project_id=project_id,deliverable_id=deliverable_id,data=data,actor=app.actor,idempotency_key=idempotency_key))
 @router.post("/{deliverable_id}/revisions/{revision_id}/transitions")
 def transition_revision(project_id:int,deliverable_id:UUID,revision_id:UUID,data:TransitionRevisionRequest,idempotency_key:UUID=Header(alias="Idempotency-Key"),app:EngineeringDeliverableApplication=Depends(get_engineering_deliverable_application)): return _result(app.service.transition_revision(project_id=project_id,deliverable_id=deliverable_id,revision_id=revision_id,data=data,actor=app.actor,idempotency_key=idempotency_key))
+@router.post("/{deliverable_id}/revisions/{revision_id}/rework-resolutions")
+def resolve_rework(project_id:int,deliverable_id:UUID,revision_id:UUID,data:ResolveReworkRequest,idempotency_key:UUID=Header(alias="Idempotency-Key"),app:EngineeringDeliverableApplication=Depends(get_engineering_deliverable_application)):
+    return _result(app.service.resolve_rework(project_id=project_id,deliverable_id=deliverable_id,revision_id=revision_id,data=data,actor=app.actor,idempotency_key=idempotency_key))

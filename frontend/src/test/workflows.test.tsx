@@ -12,10 +12,29 @@ const relatedContextMock=vi.fn();
 const projectStandardsMock=vi.fn();
 const projectStandardCandidatesMock=vi.fn();
 Object.assign(apiMock,{projectContext:projectContextMock,relatedContext:relatedContextMock,projectStandards:projectStandardsMock,projectStandardCandidates:projectStandardCandidatesMock});
+const performanceIndicatorsMock = vi.fn();
+const performanceHealthMock = vi.fn();
+const performanceActionsMock = vi.fn();
+const performanceTrendsMock = vi.fn();
+const performanceDrillDownMock = vi.fn();
+Object.assign(apiMock, {
+  engineeringPerformanceIndicators: performanceIndicatorsMock,
+  engineeringPerformanceHealth: performanceHealthMock,
+  engineeringPerformanceActions: performanceActionsMock,
+  engineeringPerformanceTrends: performanceTrendsMock,
+  engineeringPerformanceDrillDown: performanceDrillDownMock,
+});
 const project = { id: 7, project_code: "SAT-007", name: "Substation Modernization", description: "Protection and control renewal.", customer: { id: 2, name: "Grid Operations" }, status: "in_progress", priority: "high", owner: null, primary_assignee: null, progress: 42, target_completion_date: null, updated_at: "2026-08-14T00:00:00Z" };
 
 beforeEach(() => { for (const fn of Object.values(apiMock)) fn.mockReset(); apiMock.workspacePackageApplicability.mockResolvedValue({ state: "success", data: { operational_state: "UNAVAILABLE", component_key: null, allowed_actions: [], effective_package: null } }); apiMock.customers.mockResolvedValue({ state: "success", data: { items: [], total: 0, page: 1, size: 100 } }); apiMock.projectFoundation.mockResolvedValue({ state: "success", data: { outcome: "success", availability: "basis_not_established", project_id: 7, allowed_actions: ["establish"] } }); apiMock.executionPlan.mockResolvedValue({ state: "success", data: { outcome: "success", availability: "plan_not_established", project_id: 7, allowed_actions: [] } }); apiMock.deliverables.mockResolvedValue({ state: "success", data: { outcome: "success", items: [], visible_count: 0, continuation: null } }); apiMock.supportingFiles.mockResolvedValue({ state: "success", data: { outcome: "success", items: [], visible_count: 0, continuation: null } }); apiMock.evidence.mockResolvedValue({ state: "success", data: { items: [], total: 0, page: 1, size: 100 } }); apiMock.reportEvidenceSources.mockResolvedValue({ state: "success", data: { items: [], total: 0, page: 1, size: 20 } }); apiMock.projectControls.mockImplementation((_projectId: number, kind: string) => Promise.resolve({ state: "success", data: { outcome: "success", kind, items: [], visible_count: 0 } })); apiMock.projectCompleteness.mockResolvedValue({ state: "success", data: { status: "success", observation: { assessment_status: "complete_within_bounds", authority_class: "derived", advisory: true, authoritative: false, limitation_codes: [], findings: [] } } }); apiMock.engineeringGuidance.mockResolvedValue({ state: "success", data: { kind: "success", observation: { catalog: { catalog_id: "engineering_guidance.v1", catalog_version: 1, catalog_digest: "workflow-safe-catalog", rules: [] }, context_observation_digest: "workflow-safe-context", status: "complete_within_bounds", source_observation_started_at: "2026-08-27T00:00:00Z", source_observation_completed_at: "2026-08-27T00:00:01Z", generated_at: "2026-08-27T00:00:02Z", items: [], candidate_material_requirements: [], limitations: [], authority_class: "derived", advisory: true, authoritative: false } } }); apiMock.effectiveDisciplinePackages.mockResolvedValue({ state: "success", data: { project_id: 7, items: [] } }); apiMock.projectPackageConfiguration.mockResolvedValue({state:"success",data:{state:"NOT_CONFIGURED",project_id:7,organization_id:"org",configuration_version:0,selections:[]}}); apiMock.supportedPackages.mockResolvedValue({state:"success",data:{registry_digest:"core",items:[],next_cursor:null}}); });
 beforeEach(()=>{projectContextMock.mockResolvedValue({state:"unavailable"});relatedContextMock.mockResolvedValue({state:"unavailable"});projectStandardsMock.mockResolvedValue({state:"success",data:{items:[],next_cursor:null}});projectStandardCandidatesMock.mockResolvedValue({state:"success",data:{items:[]}});});
+beforeEach(() => {
+  performanceIndicatorsMock.mockResolvedValue({ state: "success", data: { window_days: 30, observations: [] } });
+  performanceHealthMock.mockResolvedValue({ state: "success", data: { factors: [] } });
+  performanceActionsMock.mockResolvedValue({ state: "success", data: { actions: [] } });
+  performanceTrendsMock.mockResolvedValue({ state: "success", data: { points: [], limitations: ["no_persisted_trend_points"] } });
+  performanceDrillDownMock.mockResolvedValue({ state: "success", data: { items: [] } });
+});
 
 it("takes an engineer from the authorized Project list into a coherent workspace", async () => {
   apiMock.projects.mockResolvedValue({ state: "success", data: { items: [project], total: 1, page: 1, size: 20 } });

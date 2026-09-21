@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, CheckConstraint, Column, Date, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 
 from app.core.database import Base
@@ -9,6 +9,7 @@ from app.core.database import Base
 
 DELIVERABLE_STANDINGS = "'planned','in_preparation','ready_for_review','reviewed','issued','withdrawn','cancelled'"
 REVISION_STANDINGS = "'draft','ready_for_review','reviewed','issued','superseded','withdrawn'"
+REVISION_REASONS = "'normal_revision','corrective_rework','review_return_rework','change_driven_revision'"
 EXTERNAL_AUTHORITIES = "'cad','eplan','etap','spreadsheet','document','vendor_tool','other'"
 
 
@@ -97,6 +98,14 @@ class EngineeringDeliverableHistory(Base):
     __table_args__ = (
         CheckConstraint("aggregate_version >= 1", name="ck_deliverable_history_version"),
         CheckConstraint("length(btrim(event_type)) BETWEEN 1 AND 80", name="ck_deliverable_history_type"),
+        CheckConstraint(f"revision_target_standing IS NULL OR revision_target_standing IN ({REVISION_STANDINGS})", name="ck_deliverable_history_revision_target"),
+        CheckConstraint(f"revision_reason IS NULL OR revision_reason IN ({REVISION_REASONS})", name="ck_deliverable_history_revision_reason"),
+        CheckConstraint("revision_reason IS NULL OR event_type IN ('deliverable_created','revision_created')", name="ck_deliverable_history_reason_creation_only"),
+        CheckConstraint("event_type <> 'rework_resolved' OR (revision_id IS NOT NULL AND revision_reason IS NULL AND revision_target_standing IS NULL AND workspace_scope_recorded = true)", name="ck_deliverable_rework_resolution_event"),
+        CheckConstraint("(event_type = 'rework_resolved' AND rework_resolution_rationale IS NOT NULL AND length(btrim(rework_resolution_rationale)) BETWEEN 1 AND 2000) OR (event_type <> 'rework_resolved' AND rework_resolution_rationale IS NULL)", name="ck_deliverable_rework_resolution_rationale"),
+        CheckConstraint("(superseded_revision_id IS NULL AND superseded_target_standing IS NULL) OR (superseded_revision_id IS NOT NULL AND superseded_target_standing = 'superseded')", name="ck_deliverable_history_supersession_evidence"),
+        CheckConstraint("workspace_scope_recorded IS NULL OR workspace_scope_recorded = true", name="ck_deliverable_history_scope_recorded"),
+        CheckConstraint("(revision_target_standing IS NULL AND superseded_revision_id IS NULL) OR workspace_scope_recorded = true", name="ck_deliverable_history_transition_scope"),
         UniqueConstraint("deliverable_id", "aggregate_version", name="uq_deliverable_history_version"),
     )
     id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -105,6 +114,14 @@ class EngineeringDeliverableHistory(Base):
     aggregate_version = Column(Integer, nullable=False)
     event_type = Column(String(80), nullable=False)
     revision_id = Column(PGUUID(as_uuid=True), ForeignKey("engineering_deliverable_revisions.id", ondelete="RESTRICT"))
+    # Prospective canonical evidence only. Historical NULLs must never be inferred.
+    revision_target_standing = Column(String(32))
+    revision_reason = Column(String(32))
+    rework_resolution_rationale = Column(String(2000))
+    superseded_revision_id = Column(PGUUID(as_uuid=True), ForeignKey("engineering_deliverable_revisions.id", ondelete="RESTRICT"))
+    superseded_target_standing = Column(String(32))
+    workspace_id_at_event = Column(Integer, ForeignKey("engineering_workspaces.id", ondelete="RESTRICT"))
+    workspace_scope_recorded = Column(Boolean)
     actor_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     occurred_at = Column(DateTime(timezone=True), nullable=False)
 

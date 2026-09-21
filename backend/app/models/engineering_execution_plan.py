@@ -113,6 +113,7 @@ class EngineeringExecutionMilestone(Base):
         CheckConstraint("length(btrim(title)) BETWEEN 1 AND 200", name="ck_execution_milestone_title"),
         CheckConstraint("length(btrim(completion_basis)) BETWEEN 1 AND 2000", name="ck_execution_milestone_basis"),
         CheckConstraint("ordinal BETWEEN 0 AND 49", name="ck_execution_milestone_ordinal"),
+        CheckConstraint("(actual_completed_at IS NULL AND completion_source_kind IS NULL AND completion_source_ref IS NULL) OR (actual_completed_at IS NOT NULL AND completion_source_kind IS NOT NULL AND completion_source_ref IS NOT NULL)", name="ck_execution_milestone_completion_evidence_pair"),
         UniqueConstraint("plan_id", "ordinal", name="uq_execution_milestone_ordinal", deferrable=True, initially="DEFERRED"),
         Index("ix_execution_milestone_order", "organization_id", "project_id", "plan_id", "ordinal", "id"),
     )
@@ -123,6 +124,10 @@ class EngineeringExecutionMilestone(Base):
     title = Column(String(200), nullable=False)
     completion_basis = Column(String(2000), nullable=False)
     target_date = Column(Date)
+    # Future-only canonical owner evidence. Historical achieved standing is not backfilled.
+    actual_completed_at = Column(DateTime(timezone=True))
+    completion_source_kind = Column(String(32))
+    completion_source_ref = Column(String(128))
     ordinal = Column(SmallInteger, nullable=False)
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)

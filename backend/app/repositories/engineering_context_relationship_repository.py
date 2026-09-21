@@ -223,6 +223,18 @@ class EngineeringContextRelationshipRepository:
             total,
         )
 
+    def list_visible_due_evidence(self, *, project_id, workspace_id, current_user, limit=1001):
+        """One bounded actor-visible owner read; caller rejects overflow."""
+        query = self._visible_commitments(current_user).filter(
+            InterfaceCommitment.project_id == project_id,
+        )
+        if workspace_id is not None:
+            query = query.filter(or_(
+                InterfaceCommitment.provider_workspace_id == workspace_id,
+                InterfaceCommitment.consumer_workspace_id == workspace_id,
+            ))
+        return query.order_by(asc(InterfaceCommitment.created_at), asc(InterfaceCommitment.id)).limit(limit).all()
+
     def create_commitment(
         self,
         values: dict,

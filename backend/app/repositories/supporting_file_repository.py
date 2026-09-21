@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import and_, or_, update
 from sqlalchemy.orm import Session
 from app.models.audit_log import AuditLog
-from app.models.supporting_file import SupportingFileAsset, SupportingFileUploadReservation, SupportingFileIdempotencyRecord, SupportingFileOutboxRecord, SupportingFileScanAttempt
+from app.models.supporting_file import EvidenceAvailabilitySnapshotItem, SupportingFileAsset, SupportingFileUploadReservation, SupportingFileIdempotencyRecord, SupportingFileOutboxRecord, SupportingFileScanAttempt, SupportingFileAvailabilityObservation, SupportingFileAvailabilitySnapshot
 
 
 class SqlAlchemySupportingFileRepository:
@@ -16,6 +16,38 @@ class SqlAlchemySupportingFileRepository:
 
     def get_scoped(self, asset_id: UUID, organization_id: UUID):
         return self.session.query(SupportingFileAsset).filter_by(id=asset_id, organization_id=organization_id).first()
+
+    def record_availability(self, observation: SupportingFileAvailabilityObservation) -> None:
+        self.session.add(observation)
+        self.session.flush()
+
+    def availability_at_exact_cutoff(self, *, asset_id: UUID, organization_id: UUID, cutoff):
+        return self.session.query(SupportingFileAvailabilityObservation).filter_by(
+            asset_id=asset_id, organization_id=organization_id, observed_at=cutoff,
+        ).order_by(SupportingFileAvailabilityObservation.id.desc()).first()
+
+    def availability_for_snapshot_asset(self, *, snapshot_id: UUID, asset_id: UUID):
+        return self.session.query(SupportingFileAvailabilityObservation).filter_by(
+            snapshot_id=snapshot_id, asset_id=asset_id,
+        ).one_or_none()
+
+    def add_availability_snapshot(self, snapshot: SupportingFileAvailabilitySnapshot) -> None:
+        self.session.add(snapshot)
+        self.session.flush()
+
+    def get_availability_snapshot(self, *, snapshot_id: UUID, organization_id: UUID):
+        return self.session.query(SupportingFileAvailabilitySnapshot).filter_by(
+            id=snapshot_id, organization_id=organization_id,
+        ).first()
+
+    def add_availability_snapshot_item(self, item: EvidenceAvailabilitySnapshotItem) -> None:
+        self.session.add(item)
+        self.session.flush()
+
+    def list_availability_snapshot_items(self, *, snapshot_id: UUID, limit: int = 5001):
+        return self.session.query(EvidenceAvailabilitySnapshotItem).filter_by(
+            snapshot_id=snapshot_id,
+        ).order_by(EvidenceAvailabilitySnapshotItem.evidence_id).limit(limit).all()
 
     def list_scoped(self, *, organization_id: UUID, project_id: int, workspace_id: int | None, lifecycle: str | None, limit: int):
         query = self.session.query(SupportingFileAsset).filter_by(organization_id=organization_id, project_id=project_id)

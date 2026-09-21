@@ -20,6 +20,8 @@ from app.schemas.engineering_execution_plan import (
     ExecutionPlanUnavailableResult, ExecutionPlanVersionConflictResult,
     ExecutionProgressDTO, ExecutionActivityGraphSummary, ExecutionMilestoneGraphSummary,
     ExecutionGraphIncidentLink, ExecutionGraphIncidentPage,
+    ExecutionMilestoneEvidenceDTO, ExecutionMilestoneEvidencePage,
+    ExecutionActivityEvidenceDTO, ExecutionActivityEvidencePage,
 )
 
 
@@ -42,6 +44,69 @@ class EngineeringExecutionPlanService:
                 activities, milestones, dependencies = uow.repository.load_plan_children(plan_id=plan.id, organization_id=actor.organization_id)
                 return self._read(plan, activities, milestones, dependencies)
         except (SQLAlchemyError, ExecutionPlanUnavailable): return ExecutionPlanUnavailableResult()
+
+    def list_authorized_milestone_evidence(self, *, project_id, actor):
+        """Owner-authorized, bounded evidence for read-only analytical consumers."""
+        try:
+            with self.uow_factory() as uow:
+                project = self.authorization.get_project(actor=actor, project_id=project_id)
+                if project is None or not self.authorization.can_read(actor=actor, project=project):
+                    return ExecutionPlanProtectedResult()
+                plan = uow.repository.get_plan(project_id=project_id, organization_id=actor.organization_id)
+                if plan is None:
+                    return ExecutionMilestoneEvidencePage(items=())
+                activities, milestones, _ = uow.repository.load_plan_children(plan_id=plan.id, organization_id=actor.organization_id)
+                by_id = {item.id: item for item in activities}
+                rows = []
+                for milestone in milestones:
+                    linked = tuple(link.activity_id for link in milestone.links)
+                    standings = tuple(by_id[item].standing for item in linked if item in by_id)
+                    standing = ("achieved" if linked and len(standings) == len(linked) and all(value == "completed" for value in standings)
+                                else "blocked" if any(value == "blocked" for value in standings) else "not_ready")
+                    actual = milestone.actual_completed_at if standing == "achieved" else None
+                    limitations = ["forecast_unavailable"]
+                    if standing == "achieved" and actual is None:
+                        limitations.append("historical_completion_event_unavailable")
+                    if milestone.target_date is None:
+                        limitations.append("target_date_unavailable")
+                    rows.append(ExecutionMilestoneEvidenceDTO(
+                        id=milestone.id, organization_id=actor.organization_id,
+                        project_id=project_id, plan_id=plan.id, plan_version=plan.version,
+                        target_date=milestone.target_date, standing=standing,
+                        activity_ids=linked,
+                        workspace_ids=tuple(sorted({by_id[item].workspace_id for item in linked if item in by_id and by_id[item].workspace_id is not None})),
+                        actual_completed_at=actual, forecast_completion_at=None,
+                        completion_source_kind=milestone.completion_source_kind if actual is not None else None,
+                        completion_source_ref=milestone.completion_source_ref if actual is not None else None,
+                        source_event_at=actual, limitations=tuple(limitations),
+                    ))
+                return ExecutionMilestoneEvidencePage(items=tuple(rows))
+        except (SQLAlchemyError, ExecutionPlanUnavailable):
+            return ExecutionPlanUnavailableResult()
+
+    def list_authorized_activity_evidence(self, *, project_id, actor):
+        """Owner-authorized activity standing and canonical blocked-transition start."""
+        try:
+            with self.uow_factory() as uow:
+                project = self.authorization.get_project(actor=actor, project_id=project_id)
+                if project is None or not self.authorization.can_read(actor=actor, project=project):
+                    return ExecutionPlanProtectedResult()
+                plan = uow.repository.get_plan(project_id=project_id, organization_id=actor.organization_id)
+                if plan is None:
+                    return ExecutionActivityEvidencePage(items=())
+                activities, _, _ = uow.repository.load_plan_children(plan_id=plan.id, organization_id=actor.organization_id)
+                blocked_ids = tuple(row.id for row in activities if row.standing == "blocked")
+                blocked_events = uow.repository.latest_blocked_events(organization_id=actor.organization_id, activity_ids=blocked_ids)
+                return ExecutionActivityEvidencePage(items=tuple(ExecutionActivityEvidenceDTO(
+                    id=row.id, organization_id=actor.organization_id, project_id=project_id,
+                    workspace_id=row.workspace_id, standing=row.standing, version=row.version,
+                    target_date=row.target_date,
+                    blocked_since=blocked_events[row.id].transitioned_at if row.id in blocked_events else None,
+                    blocker_event_id=blocked_events[row.id].id if row.id in blocked_events else None,
+                    updated_at=row.updated_at,
+                ) for row in activities))
+        except (SQLAlchemyError, ExecutionPlanUnavailable):
+            return ExecutionPlanUnavailableResult()
 
     def get_activity_graph_summary(self, *, actor, project_id, activity_id):
         """Exact authorized lookup; intentionally never loads plan children."""
@@ -209,7 +274,20 @@ class EngineeringExecutionPlanService:
             activity.blocked_return_standing = None; activity.blocker_rationale = None
         if target is ExecutionActivityStanding.COMPLETED: activity.completion_rationale = data.rationale
         activity.standing = target.value; activity.version += 1; activity.updated_by_id=actor.actor_id; activity.updated_at=now
-        uow.repository.add(EngineeringExecutionActivityHistory(id=uuid4(), activity_id=activity.id, plan_id=plan.id, organization_id=actor.organization_id, from_standing=previous, to_standing=target.value, activity_version=activity.version, rationale=data.rationale, actor_id=actor.actor_id, transitioned_at=now))
+        transition = EngineeringExecutionActivityHistory(id=uuid4(), activity_id=activity.id, plan_id=plan.id, organization_id=actor.organization_id, from_standing=previous, to_standing=target.value, activity_version=activity.version, rationale=data.rationale, actor_id=actor.actor_id, transitioned_at=now)
+        uow.repository.add(transition)
+        if target is ExecutionActivityStanding.COMPLETED:
+            activities, milestones, _ = uow.repository.load_plan_children(plan_id=plan.id, organization_id=actor.organization_id)
+            standing_by_id = {row.id: row.standing for row in activities}
+            for milestone in milestones:
+                linked = tuple(link.activity_id for link in milestone.links)
+                if activity.id in linked and linked and all(standing_by_id.get(ident) == "completed" for ident in linked):
+                    # The Human-owned activity transition is the first event that makes this milestone achieved.
+                    milestone.actual_completed_at = now
+                    milestone.completion_source_kind = "activity_transition"
+                    milestone.completion_source_ref = str(transition.id)
+                    milestone.updated_at = now
+                    milestone.updated_by_id = actor.actor_id
         return ExecutionPlanMutationSuccess(project_id=project.id, plan_id=plan.id, plan_version=plan.version, activity_id=activity.id, activity_version=activity.version, standing=target)
 
     def _replace_dependencies(self, uow, project, plan, now, data, actor):
@@ -229,6 +307,10 @@ class EngineeringExecutionPlanService:
         for row in reversed(milestones):
             if row.ordinal >= data.ordinal: row.ordinal += 1
         milestone = EngineeringExecutionMilestone(id=uuid4(), plan_id=plan.id, project_id=project.id, organization_id=actor.organization_id, title=data.title, completion_basis=data.completion_basis, target_date=data.target_date, ordinal=data.ordinal, created_by_id=actor.actor_id, created_at=now, updated_by_id=actor.actor_id, updated_at=now)
+        if data.activity_ids and all(row.standing == "completed" for row in activities if row.id in data.activity_ids):
+            milestone.actual_completed_at = now
+            milestone.completion_source_kind = "plan_revision"
+            milestone.completion_source_ref = f"{plan.id}:{plan.version + 1}"
         uow.repository.add(milestone); uow.repository.flush(); uow.repository.replace_milestone_links(milestone_id=milestone.id, organization_id=actor.organization_id, activity_ids=data.activity_ids)
         plan.version += 1; plan.updated_by_id=actor.actor_id; plan.updated_at=now; uow.repository.flush(); uow.repository.append_revision(plan=plan, actor_id=actor.actor_id, rationale=data.rationale, now=now)
         return ExecutionPlanMutationSuccess(project_id=project.id, plan_id=plan.id, plan_version=plan.version, milestone_id=milestone.id)
@@ -242,6 +324,18 @@ class EngineeringExecutionPlanService:
         if data.ordinal >= len(milestones) or any(row.id != milestone.id and row.title.casefold() == data.title.casefold() for row in milestones) or not set(data.activity_ids) <= {row.id for row in activities}: return ExecutionPlanInvalidResult()
         ordered = [row for row in milestones if row.id != milestone.id]; ordered.insert(data.ordinal, milestone)
         for ordinal, row in enumerate(ordered): row.ordinal = ordinal
+        standing_by_id = {row.id: row.standing for row in activities}
+        old_links = tuple(link.activity_id for link in milestone.links)
+        was_achieved = bool(old_links) and all(standing_by_id.get(ident) == "completed" for ident in old_links)
+        now_achieved = bool(data.activity_ids) and all(standing_by_id.get(ident) == "completed" for ident in data.activity_ids)
+        if now_achieved and not was_achieved:
+            milestone.actual_completed_at = now
+            milestone.completion_source_kind = "plan_revision"
+            milestone.completion_source_ref = f"{plan.id}:{plan.version + 1}"
+        elif was_achieved and not now_achieved:
+            milestone.actual_completed_at = None
+            milestone.completion_source_kind = None
+            milestone.completion_source_ref = None
         milestone.title, milestone.completion_basis, milestone.target_date = data.title, data.completion_basis, data.target_date; milestone.updated_by_id=actor.actor_id; milestone.updated_at=now
         uow.repository.replace_milestone_links(milestone_id=milestone.id, organization_id=actor.organization_id, activity_ids=data.activity_ids)
         plan.version += 1; plan.updated_by_id=actor.actor_id; plan.updated_at=now; uow.repository.flush(); uow.repository.append_revision(plan=plan, actor_id=actor.actor_id, rationale=data.rationale, now=now)

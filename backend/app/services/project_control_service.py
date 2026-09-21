@@ -1,11 +1,16 @@
 """Accepted PATCH-047 application behavior for Project controls and Change Impact."""
+import base64
+import binascii
 from datetime import datetime, timezone
 from hashlib import sha256
+import hmac
 import json
-from uuid import uuid4
+import time
+from uuid import UUID, uuid4
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from app.core.config import settings
 from app.adapters.project_control_targets import TargetInvalid, TargetProtected, TargetUnavailable
 from app.models.project_control import (
     ProjectRisk, ProjectIssue, ProjectDecision, ProjectChange,
@@ -14,7 +19,7 @@ from app.models.project_control import (
     ProjectControlOutbox,
 )
 from app.schemas.project_control import (
-    ControlSuccess, ControlReadSuccess, ImpactSuccess, Protected, Invalid,
+    ControlSuccess, ControlReadSuccess, ControlAgingEvidence, ControlAgingEvidencePage, ImpactSuccess, Protected, Invalid,
     Conflict, IdempotencyConflict, Unavailable, ControlListSuccess,
     ControlHistoryEntry, ControlHistorySuccess, ImpactRead, ChangeImpactGraphSummary,
     RiskGraphSummary, IssueGraphSummary, DecisionGraphSummary, ChangeGraphSummary,
@@ -109,6 +114,109 @@ class ProjectControlService:
                     return Protected()
                 items = tuple(self._read_success(uow, kind=kind, row=row) for row in uow.repository.list(kind, organization_id=actor.organization_id, project_id=project_id))
                 return ControlListSuccess(kind=kind, items=items, visible_count=len(items))
+        except SQLAlchemyError:
+            return Unavailable()
+
+    @staticmethod
+    def _aging_cursor_key():
+        return sha256((settings.resolved_secret_key() + ":project-control-aging:v1").encode()).digest()
+
+    @classmethod
+    def _encode_aging_cursor(cls, *, actor, kind, project_id, workspace_id, page_size, cutoff, last):
+        payload = json.dumps({
+            "v": 1, "actor": actor.actor_id, "organization": str(actor.organization_id),
+            "kind": kind, "project": project_id, "workspace": workspace_id,
+            "page_size": page_size, "cutoff": cutoff.isoformat(),
+            "after_time": last.created_at.isoformat(), "after_id": str(last.id),
+            "expires_at": int(time.time()) + 900,
+        }, sort_keys=True, separators=(",", ":")).encode()
+        body = base64.urlsafe_b64encode(payload).rstrip(b"=")
+        signature = hmac.new(cls._aging_cursor_key(), body, "sha256").hexdigest().encode()
+        return (body + b"." + signature).decode()
+
+    @classmethod
+    def _decode_aging_cursor(cls, cursor, *, actor, kind, project_id, workspace_id, page_size):
+        try:
+            if len(cursor) > 4096:
+                raise ValueError
+            body, supplied = cursor.encode().split(b".", 1)
+            expected = hmac.new(cls._aging_cursor_key(), body, "sha256").hexdigest().encode()
+            if not hmac.compare_digest(supplied, expected):
+                raise ValueError
+            raw = base64.urlsafe_b64decode(body + b"=" * (-len(body) % 4))
+            payload = json.loads(raw)
+            if (set(payload) != {"v", "actor", "organization", "kind", "project", "workspace",
+                                 "page_size", "cutoff", "after_time", "after_id", "expires_at"}
+                    or payload["v"] != 1 or payload["actor"] != actor.actor_id
+                    or payload["organization"] != str(actor.organization_id)
+                    or payload["kind"] != kind or payload["project"] != project_id
+                    or payload["workspace"] != workspace_id or payload["page_size"] != page_size
+                    or payload["expires_at"] < int(time.time())):
+                raise ValueError
+            cutoff = datetime.fromisoformat(payload["cutoff"])
+            after = (datetime.fromisoformat(payload["after_time"]), UUID(payload["after_id"]))
+            if cutoff.tzinfo is None or after[0].tzinfo is None or after[0] > cutoff:
+                raise ValueError
+            return cutoff, after
+        except (AttributeError, binascii.Error, KeyError, TypeError, ValueError, UnicodeError) as exc:
+            raise ValueError("invalid Project Control continuation") from exc
+
+    def list_authorized_aging_evidence(self, *, kind, project_id, actor, workspace_id=None,
+                                       page_size=100, continuation=None, source_cutoff=None):
+        """Bounded whole-Project-authorized source read with explicit completion."""
+        if kind not in {"risk", "issue", "change"} or not 1 <= page_size <= 100:
+            return Invalid()
+        try:
+            with self.uow_factory() as uow:
+                project = uow.repository.get_project(
+                    project_id=project_id, organization_id=actor.organization_id,
+                )
+                if project is None or not self.authorization.can_read_project(actor=actor, project=project):
+                    return Protected()
+                now = self.clock()
+                if continuation is not None:
+                    try:
+                        cutoff, after = self._decode_aging_cursor(
+                            continuation, actor=actor, kind=kind, project_id=project_id,
+                            workspace_id=workspace_id, page_size=page_size,
+                        )
+                    except ValueError:
+                        return Invalid()
+                else:
+                    cutoff, after = source_cutoff or now, None
+                if (not isinstance(cutoff, datetime) or not isinstance(now, datetime)
+                        or cutoff.tzinfo is None or now.tzinfo is None or cutoff > now
+                        or (now - cutoff).total_seconds() > 900):
+                    return Invalid()
+                if uow.repository.aging_population_changed(
+                    kind, organization_id=actor.organization_id, project_id=project_id,
+                    cutoff=cutoff,
+                ):
+                    return Unavailable()
+                rows = uow.repository.list_aging_page(
+                    kind, organization_id=actor.organization_id, project_id=project_id,
+                    workspace_id=workspace_id, cutoff=cutoff, after=after, limit=page_size,
+                )
+                if any(row.created_at is None or row.created_at.tzinfo is None
+                       or row.organization_id != actor.organization_id or row.project_id != project_id
+                       or (workspace_id is not None and row.workspace_id != workspace_id)
+                       for row in rows):
+                    return Unavailable()
+                selected = rows[:page_size]
+                more = len(rows) > page_size
+                next_cursor = self._encode_aging_cursor(
+                    actor=actor, kind=kind, project_id=project_id,
+                    workspace_id=workspace_id, page_size=page_size,
+                    cutoff=cutoff, last=selected[-1],
+                ) if more else None
+                return ControlAgingEvidencePage(
+                    kind=kind, items=tuple(ControlAgingEvidence(
+                        id=row.id, kind=kind, organization_id=row.organization_id,
+                        project_id=row.project_id, workspace_id=row.workspace_id,
+                        created_at=row.created_at, standing=row.standing, version=row.version,
+                    ) for row in selected), source_cutoff=cutoff,
+                    next_continuation=next_cursor, complete=not more,
+                )
         except SQLAlchemyError:
             return Unavailable()
 

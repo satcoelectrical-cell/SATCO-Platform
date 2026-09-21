@@ -388,6 +388,7 @@ class EngineeringContextRelationshipService:
                 data.get("stage_or_due_condition"),
                 "Stage or due condition",
             ),
+            "due_at": self._explicit_due_at(data.get("due_at")),
             "criticality": self._enum(
                 CommitmentCriticality,
                 data.get("criticality"),
@@ -467,6 +468,62 @@ class EngineeringContextRelationshipService:
             "page": page,
             "size": size,
         }
+
+    def list_authorized_due_evidence(
+        self, *, project_id: int, workspace_id: int | None,
+        current_user: User,
+    ) -> dict:
+        """Bounded, actor-visible canonical facts; never an implied project census."""
+        self._require_active(current_user)
+        project = self.repository.get_project(project_id, current_user)
+        if project is None:
+            raise CommitmentNotFound()
+        cutoff = datetime.now(timezone.utc)
+        rows = self.repository.list_visible_due_evidence(
+            project_id=project_id, workspace_id=workspace_id,
+            current_user=current_user, limit=1001,
+        )
+        if len(rows) > 1000:
+            return {"outcome": "unavailable", "items": (), "source_cutoff": cutoff}
+        if any(row.updated_at is None or row.updated_at.tzinfo is None
+               or row.updated_at > cutoff for row in rows):
+            return {"outcome": "unavailable", "items": (), "source_cutoff": cutoff}
+        return {
+            "outcome": "success", "source_cutoff": cutoff,
+            "population_scope": "actor_visible_only",
+            "items": tuple({
+                "id": row.id, "commitment_key": row.commitment_key,
+                "organization_id": project.organization_id,
+                "project_id": row.project_id,
+                "provider_workspace_id": row.provider_workspace_id,
+                "consumer_workspace_id": row.consumer_workspace_id,
+                "state": row.state, "current_use": row.current_use,
+                "due_at": row.due_at,
+                "stage_or_due_condition": row.stage_or_due_condition,
+                "fulfilled_at": None, "version": row.version,
+            } for row in rows),
+        }
+
+    def set_commitment_due_at(
+        self, *, commitment_id: int, due_at: datetime | str | None,
+        expected_version: int, reason: str, current_user: User,
+    ) -> dict:
+        """Explicit Human assignment only; never derived from the prose condition."""
+        self._require_active(current_user)
+        if self.repository.get_visible_commitment(commitment_id, current_user) is None:
+            raise CommitmentNotFound()
+        commitment = self._commitment_for_mutation(
+            commitment_id, current_user, governance=True,
+        )
+        parsed = self._explicit_due_at(due_at)
+        if commitment.due_at == parsed:
+            raise InvalidCommitment("Commitment explicit due time is unchanged")
+        return self._mutate_commitment(
+            commitment=commitment, expected_version=expected_version,
+            values={"due_at": parsed},
+            action="INTERFACE_COMMITMENT_DUE_SET" if parsed else "INTERFACE_COMMITMENT_DUE_CLEARED",
+            reason=reason, current_user=current_user,
+        )
 
     def transition_commitment(
         self,
@@ -1028,6 +1085,19 @@ class EngineeringContextRelationshipService:
             raise RelationshipForbidden()
 
     @staticmethod
+    def _explicit_due_at(value: datetime | str | None) -> datetime | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            try:
+                value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise InvalidCommitment("Explicit due_at must be an ISO timestamp") from exc
+        if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+            raise InvalidCommitment("Explicit due_at must be timezone-aware")
+        return value.astimezone(timezone.utc)
+
+    @staticmethod
     def _require_project_capability(
         project: Project,
         current_user: User,
@@ -1148,6 +1218,7 @@ class EngineeringContextRelationshipService:
             "completeness_expectation": commitment.completeness_expectation,
             "expected_source_basis": commitment.expected_source_basis,
             "stage_or_due_condition": commitment.stage_or_due_condition,
+            "due_at": commitment.due_at,
             "criticality": commitment.criticality,
             "confidentiality": commitment.confidentiality,
             "steward_id": commitment.steward_id,

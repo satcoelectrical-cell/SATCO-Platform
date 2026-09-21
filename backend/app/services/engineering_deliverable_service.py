@@ -5,10 +5,10 @@ from uuid import uuid4
 
 from sqlalchemy.exc import DBAPIError, IntegrityError, SQLAlchemyError
 
-from app.enums.engineering_deliverable import revision_transition_allowed
+from app.enums.engineering_deliverable import DeliverableRevisionReason, revision_transition_allowed
 from app.models.engineering_deliverable import EngineeringDeliverable, EngineeringDeliverableRevision, EngineeringDeliverableHistory, EngineeringDeliverableIdempotency, EngineeringDeliverableOutbox
 from app.discipline_packages.descriptors.eic_v1 import DESCRIPTORS_V1
-from app.schemas.engineering_deliverable import DeliverableDTO, DeliverableIdempotencyConflictResult, DeliverableInvalidResult, DeliverableListResponse, DeliverableMutationSuccess, DeliverableProtectedResult, DeliverableRevisionDTO, DeliverableRevisionGraphSummary, DeliverableRepresentationGraphLink, DeliverableUnavailableResult, DeliverableVersionConflictResult, DeliverableGraphIncidentLink, DeliverableGraphIncidentPage
+from app.schemas.engineering_deliverable import DeliverableDTO, DeliverableIdempotencyConflictResult, DeliverableInvalidResult, DeliverableListResponse, DeliverableMutationSuccess, DeliverableProtectedResult, DeliverableRevisionDTO, DeliverableRevisionGraphSummary, DeliverableRepresentationGraphLink, DeliverableUnavailableResult, DeliverableVersionConflictResult, DeliverableGraphIncidentLink, DeliverableGraphIncidentPage, DeliverableTransitionEvidence, DeliverableTransitionEvidencePage, DeliverableReworkEvidence, DeliverableReworkEvidencePage
 from app.services.patch_052_mutation_guard import (
     Patch052MutationProtected,
     Patch052MutationUnavailable,
@@ -67,6 +67,58 @@ class EngineeringDeliverableService:
                 )
         except SQLAlchemyError:
             return DeliverableUnavailableResult()
+    def list_authorized_transition_evidence(self, *, project_id, actor, workspace_id=None):
+        """Whole-project authorized Deliverable transitions; never reconstruct history."""
+        try:
+            with self.uow_factory() as uow:
+                project = self.authorization.project(actor=actor, project_id=project_id)
+                if project is None or not self.authorization.can_read_project(actor=actor, project=project):
+                    return DeliverableProtectedResult()
+                rows = uow.repository.list_transition_history(
+                    organization_id=actor.organization_id, project_id=project_id,
+                )
+                if len(rows) > 1000:
+                    return DeliverableUnavailableResult()
+                items = []
+                for event, deliverable, revision in rows:
+                    if (revision.deliverable_id != deliverable.id or revision.project_id != project_id
+                            or not self._revision_visible(actor=actor, project=project,
+                                                          workspace_id=deliverable.workspace_id, revision=revision)):
+                        return DeliverableProtectedResult()
+                    if workspace_id is not None and event.workspace_scope_recorded is not True:
+                        return DeliverableUnavailableResult()
+                    if workspace_id is not None and event.workspace_id_at_event != workspace_id:
+                        continue
+                    scope_known = event.workspace_scope_recorded is True
+                    common = dict(
+                        source_event_id=event.id, source_event_type=event.event_type,
+                        deliverable_id=deliverable.id, organization_id=actor.organization_id,
+                        project_id=project_id,
+                        workspace_id_at_event=event.workspace_id_at_event if scope_known else None,
+                        workspace_scope_recorded=scope_known,
+                        aggregate_version=event.aggregate_version, occurred_at=event.occurred_at,
+                    )
+                    items.append(DeliverableTransitionEvidence(
+                        **common, revision_id=revision.id,
+                        target_standing=event.revision_target_standing,
+                    ))
+                    if event.superseded_revision_id is not None:
+                        superseded = uow.repository.get_revision(
+                            revision_id=event.superseded_revision_id,
+                            organization_id=actor.organization_id,
+                        )
+                        if (superseded is None or superseded.deliverable_id != deliverable.id
+                                or not self._revision_visible(actor=actor, project=project,
+                                                              workspace_id=deliverable.workspace_id,
+                                                              revision=superseded)):
+                            return DeliverableProtectedResult()
+                        items.append(DeliverableTransitionEvidence(
+                            **common, revision_id=superseded.id,
+                            target_standing=event.superseded_target_standing,
+                        ))
+                return DeliverableTransitionEvidencePage(items=tuple(items))
+        except SQLAlchemyError:
+            return DeliverableUnavailableResult()
     def history(self, *, project_id, deliverable_id, actor):
         result=self.get(project_id=project_id,deliverable_id=deliverable_id,actor=actor)
         if not isinstance(result, DeliverableDTO): return result
@@ -78,6 +130,74 @@ class EngineeringDeliverableService:
                 if any(not self._revision_visible(actor=actor,project=project,workspace_id=row.workspace_id,revision=item) for item in revisions): return DeliverableProtectedResult()
                 return DeliverableListResponse(items=tuple(self._dto(row,item) for item in revisions),visible_count=len(revisions))
         except SQLAlchemyError: return DeliverableUnavailableResult()
+    def list_authorized_rework_evidence(self, *, project_id, actor, source_cutoff, workspace_id=None):
+        """Complete bounded owner event projection; unknown history stays unknown."""
+        if (not isinstance(source_cutoff, datetime) or source_cutoff.tzinfo is None
+                or source_cutoff.utcoffset() is None
+                or source_cutoff > (self.clock() if callable(self.clock) else self.clock.now())):
+            return DeliverableInvalidResult()
+        try:
+            with self.uow_factory() as uow:
+                project = self.authorization.project(actor=actor, project_id=project_id)
+                if project is None or not self.authorization.can_read_project(actor=actor, project=project):
+                    return DeliverableProtectedResult()
+                rows = uow.repository.list_rework_history(
+                    organization_id=actor.organization_id, project_id=project_id,
+                    source_cutoff=source_cutoff,
+                )
+                if len(rows) > 1000:
+                    return DeliverableUnavailableResult()
+                creation, resolved = {}, {}
+                for event, deliverable, revision in rows:
+                    if (revision.deliverable_id != deliverable.id
+                            or revision.project_id != project_id
+                            or not self._revision_visible(actor=actor, project=project,
+                                                          workspace_id=deliverable.workspace_id,
+                                                          revision=revision)):
+                        return DeliverableProtectedResult()
+                    if event.event_type in {"deliverable_created", "revision_created"}:
+                        if revision.id in creation:
+                            return DeliverableUnavailableResult()
+                        if workspace_id is not None and event.workspace_scope_recorded is not True:
+                            return DeliverableUnavailableResult()
+                        creation[revision.id] = (event, deliverable)
+                    elif event.event_type == "rework_resolved":
+                        if revision.id in resolved:
+                            return DeliverableUnavailableResult()
+                        resolved[revision.id] = event
+                if set(resolved) - set(creation):
+                    return DeliverableUnavailableResult()
+                if len(creation) != uow.repository.count_project_revisions_at(
+                    organization_id=actor.organization_id, project_id=project_id,
+                    source_cutoff=source_cutoff,
+                ):
+                    return DeliverableUnavailableResult()
+                items = []
+                for revision_id, (event, deliverable) in creation.items():
+                    if workspace_id is not None and event.workspace_id_at_event != workspace_id:
+                        continue
+                    reason = event.revision_reason
+                    if reason is not None and reason not in {member.value for member in DeliverableRevisionReason}:
+                        return DeliverableUnavailableResult()
+                    resolution = resolved.get(revision_id)
+                    if resolution is not None and (reason not in {"corrective_rework", "review_return_rework"}
+                                                   or resolution.occurred_at < event.occurred_at):
+                        return DeliverableUnavailableResult()
+                    state = ("unknown" if reason is None else
+                             "not_applicable" if reason in {"normal_revision", "change_driven_revision"} else
+                             "resolved" if resolution is not None else "unresolved")
+                    items.append(DeliverableReworkEvidence(
+                        revision_id=revision_id, deliverable_id=deliverable.id,
+                        organization_id=actor.organization_id, project_id=project_id,
+                        workspace_id_at_creation=event.workspace_id_at_event if event.workspace_scope_recorded else None,
+                        revision_reason=reason, created_at=event.occurred_at,
+                        creation_event_id=event.id, resolution_state=state,
+                        resolved_at=resolution.occurred_at if resolution is not None else None,
+                        resolution_event_id=resolution.id if resolution is not None else None,
+                    ))
+                return DeliverableReworkEvidencePage(items=tuple(items), source_cutoff=source_cutoff)
+        except SQLAlchemyError:
+            return DeliverableUnavailableResult()
     def get_authorized_representation_link(self, *, project_id, actor, revision_id=None, asset_id=None):
         """Exact canonical relation read; exactly one endpoint selector is supplied."""
         if (revision_id is None)==(asset_id is None): return DeliverableInvalidResult()
@@ -102,6 +222,9 @@ class EngineeringDeliverableService:
     def update(self, *, project_id,deliverable_id,data,actor,idempotency_key): return self._mutate("update_deliverable",project_id,data,actor,idempotency_key,lambda uow,p,now: self._update(uow,p,deliverable_id,data,actor,now))
     def create_revision(self, *, project_id,deliverable_id,data,actor,idempotency_key): return self._mutate("create_revision",project_id,data,actor,idempotency_key,lambda uow,p,now: self._create_revision(uow,p,deliverable_id,data,actor,now))
     def transition_revision(self, *, project_id,deliverable_id,revision_id,data,actor,idempotency_key): return self._mutate("transition_revision",project_id,data,actor,idempotency_key,lambda uow,p,now: self._transition_revision(uow,p,deliverable_id,revision_id,data,actor,now))
+    def resolve_rework(self, *, project_id, deliverable_id, revision_id, data, actor, idempotency_key):
+        return self._mutate("resolve_rework", project_id, data, actor, idempotency_key,
+                            lambda uow,p,now: self._resolve_rework(uow,p,deliverable_id,revision_id,data,actor,now))
     def _mutate(self, operation,project_id,data,actor,key,handler):
         now=self.clock() if callable(self.clock) else self.clock.now()
         try:
@@ -210,7 +333,16 @@ class EngineeringDeliverableService:
         if (not links_validated and not self.authorization.valid_links(project=project,data=data)) or not self._supporting_file_visible(actor=actor,project=project,workspace_id=data.workspace_id,asset_id=data.supporting_file_id): return DeliverableInvalidResult()
         row=EngineeringDeliverable(id=uuid4(),organization_id=actor.organization_id,project_id=project.id,workspace_id=data.workspace_id,activity_id=data.activity_id,milestone_id=data.milestone_id,code=data.code,title=data.title,discipline=data.discipline,deliverable_type=data.deliverable_type,purpose=data.purpose,external_authority=data.external_authority.value,responsible_user_id=data.responsible_user_id,target_date=data.target_date,standing="planned",current_revision_sequence=1,version=1,created_by_id=actor.actor_id,created_at=now,updated_by_id=actor.actor_id,updated_at=now,**(origin or {}))
         revision=EngineeringDeliverableRevision(id=uuid4(),deliverable_id=row.id,organization_id=actor.organization_id,project_id=project.id,sequence=1,external_label=data.initial_external_label,source_reference=data.source_reference,supporting_file_id=data.supporting_file_id,standing="draft",version=1,rationale=data.rationale,created_by_id=actor.actor_id,created_at=now,transitioned_by_id=actor.actor_id,transitioned_at=now)
-        uow.repository.add(row);uow.repository.flush();uow.repository.add(revision);uow.repository.flush();uow.repository.add(EngineeringDeliverableHistory(id=uuid4(),deliverable_id=row.id,organization_id=actor.organization_id,aggregate_version=1,event_type="deliverable_created",revision_id=revision.id,actor_id=actor.actor_id,occurred_at=now));return DeliverableMutationSuccess(deliverable_id=row.id,deliverable_version=1,revision_id=revision.id,revision_version=1,standing="planned",revision_standing="draft")
+        uow.repository.add(row);uow.repository.flush();uow.repository.add(revision);uow.repository.flush()
+        uow.repository.add(EngineeringDeliverableHistory(
+            id=uuid4(), deliverable_id=row.id, organization_id=actor.organization_id,
+            aggregate_version=1, event_type="deliverable_created", revision_id=revision.id,
+            revision_reason=(data.initial_revision_reason.value
+                             if getattr(data, "initial_revision_reason", None) is not None else None),
+            revision_target_standing="draft", workspace_id_at_event=row.workspace_id,
+            workspace_scope_recorded=True, actor_id=actor.actor_id, occurred_at=now,
+        ))
+        return DeliverableMutationSuccess(deliverable_id=row.id,deliverable_version=1,revision_id=revision.id,revision_version=1,standing="planned",revision_standing="draft")
     def _update(self,uow,project,ident,data,actor,now):
         row=uow.repository.get(deliverable_id=ident,organization_id=actor.organization_id,lock=True)
         if row is None or row.project_id!=project.id:return DeliverableProtectedResult()
@@ -228,7 +360,45 @@ class EngineeringDeliverableService:
         current.standing="superseded";current.version+=1;current.transitioned_by_id=actor.actor_id;current.transitioned_at=now
         row.current_revision_sequence+=1;row.version+=1;row.updated_by_id=actor.actor_id;row.updated_at=now
         revision=EngineeringDeliverableRevision(id=uuid4(),deliverable_id=row.id,organization_id=row.organization_id,project_id=row.project_id,sequence=row.current_revision_sequence,external_label=data.external_label,source_reference=data.source_reference,supporting_file_id=data.supporting_file_id,standing="draft",version=1,rationale=data.rationale,created_by_id=actor.actor_id,created_at=now,transitioned_by_id=actor.actor_id,transitioned_at=now)
-        uow.repository.add(revision);uow.repository.add(EngineeringDeliverableHistory(id=uuid4(),deliverable_id=row.id,organization_id=row.organization_id,aggregate_version=row.version,event_type="revision_created",revision_id=revision.id,actor_id=actor.actor_id,occurred_at=now));return DeliverableMutationSuccess(deliverable_id=row.id,deliverable_version=row.version,revision_id=revision.id,revision_version=1,standing=row.standing,revision_standing="draft")
+        uow.repository.add(revision)
+        uow.repository.add(EngineeringDeliverableHistory(
+            id=uuid4(), deliverable_id=row.id, organization_id=row.organization_id,
+            aggregate_version=row.version, event_type="revision_created", revision_id=revision.id,
+            revision_reason=data.revision_reason.value,
+            revision_target_standing="draft", superseded_revision_id=current.id,
+            superseded_target_standing="superseded", workspace_id_at_event=row.workspace_id,
+            workspace_scope_recorded=True, actor_id=actor.actor_id, occurred_at=now,
+        ))
+        return DeliverableMutationSuccess(deliverable_id=row.id,deliverable_version=row.version,revision_id=revision.id,revision_version=1,standing=row.standing,revision_standing="draft")
+    def _resolve_rework(self,uow,project,ident,revision_id,data,actor,now):
+        row=uow.repository.get(deliverable_id=ident,organization_id=actor.organization_id,lock=True)
+        revision=uow.repository.get_revision(revision_id=revision_id,organization_id=actor.organization_id)
+        if row is None or row.project_id!=project.id or revision is None or revision.deliverable_id!=row.id:
+            return DeliverableProtectedResult()
+        if row.version!=data.expected_deliverable_version:return DeliverableVersionConflictResult()
+        creations=uow.repository.revision_creation_history(
+            revision_id=revision.id,organization_id=actor.organization_id,
+        )
+        if (len(creations)!=1 or creations[0].revision_reason not in
+                {"corrective_rework","review_return_rework"}):
+            return DeliverableInvalidResult()
+        if uow.repository.rework_resolution_history(
+            revision_id=revision.id,organization_id=actor.organization_id,
+        ):
+            return DeliverableInvalidResult()
+        row.version+=1;row.updated_by_id=actor.actor_id;row.updated_at=now
+        uow.repository.add(EngineeringDeliverableHistory(
+            id=uuid4(),deliverable_id=row.id,organization_id=row.organization_id,
+            aggregate_version=row.version,event_type="rework_resolved",
+            revision_id=revision.id,workspace_id_at_event=row.workspace_id,
+            workspace_scope_recorded=True,actor_id=actor.actor_id,occurred_at=now,
+            rework_resolution_rationale=data.rationale,
+        ))
+        return DeliverableMutationSuccess(
+            deliverable_id=row.id,deliverable_version=row.version,
+            revision_id=revision.id,revision_version=revision.version,
+            standing=row.standing,revision_standing=revision.standing,
+        )
     def _transition_revision(self,uow,project,ident,revision_id,data,actor,now):
         row=uow.repository.get(deliverable_id=ident,organization_id=actor.organization_id,lock=True)
         if row is None or row.project_id!=project.id:return DeliverableProtectedResult()
@@ -240,7 +410,13 @@ class EngineeringDeliverableService:
         if revision.standing in {"ready_for_review","reviewed"}:row.standing=revision.standing
         elif revision.standing=="issued":row.standing="issued"
         elif revision.standing=="withdrawn":row.standing="withdrawn"
-        uow.repository.add(EngineeringDeliverableHistory(id=uuid4(),deliverable_id=row.id,organization_id=row.organization_id,aggregate_version=row.version,event_type="revision_transitioned",revision_id=revision.id,actor_id=actor.actor_id,occurred_at=now));return DeliverableMutationSuccess(deliverable_id=row.id,deliverable_version=row.version,revision_id=revision.id,revision_version=revision.version,standing=row.standing,revision_standing=revision.standing)
+        uow.repository.add(EngineeringDeliverableHistory(
+            id=uuid4(), deliverable_id=row.id, organization_id=row.organization_id,
+            aggregate_version=row.version, event_type="revision_transitioned", revision_id=revision.id,
+            revision_target_standing=revision.standing, workspace_id_at_event=row.workspace_id,
+            workspace_scope_recorded=True, actor_id=actor.actor_id, occurred_at=now,
+        ))
+        return DeliverableMutationSuccess(deliverable_id=row.id,deliverable_version=row.version,revision_id=revision.id,revision_version=revision.version,standing=row.standing,revision_standing=revision.standing)
     def _supporting_file_visible(self, *, actor, project, workspace_id, asset_id):
         return asset_id is None or (self.supporting_files is not None and self.supporting_files.visible(actor=actor,project=project,workspace_id=workspace_id,asset_id=asset_id))
     def _revision_visible(self, *, actor, project, workspace_id, revision):

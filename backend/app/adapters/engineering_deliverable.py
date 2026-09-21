@@ -21,6 +21,12 @@ class SqlAlchemyDeliverableAuthorization:
         if user is None or project is None: return False
         if user.role=="admin" or actor.actor_id in {project.owner_id, project.primary_assignee_id}: return True
         return self.session.query(EngineeringWorkspace.id).filter(EngineeringWorkspace.project_id==project.id, or_(EngineeringWorkspace.owner_id==actor.actor_id, EngineeringWorkspace.primary_assignee_id==actor.actor_id, exists().where(and_(EngineeringWorkspaceMember.workspace_id==EngineeringWorkspace.id, EngineeringWorkspaceMember.user_id==actor.actor_id)))).first() is not None
+    def can_read_project(self, *, actor, project):
+        """Whole-project authority for aggregate transition evidence."""
+        user = self._active(actor)
+        return bool(user and project and (
+            user.role == "admin" or actor.actor_id in {project.owner_id, project.primary_assignee_id}
+        ))
     def can_mutate(self, *, actor, project):
         user=self._active(actor)
         return bool(user and project and (user.role=="admin" or actor.actor_id in {project.owner_id,project.primary_assignee_id}))

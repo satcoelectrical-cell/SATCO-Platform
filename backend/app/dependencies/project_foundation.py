@@ -47,6 +47,14 @@ class SqlAlchemyProjectFoundationAuthorization:
             ),
         ).first() is not None
 
+    def can_read_project(self, *, actor, project):
+        """Whole-project read authority; Workspace membership alone is insufficient."""
+        user = self._active(actor)
+        return bool(user and project and project.organization_id == actor.organization_id
+                    and (user.role == "admin" or actor.actor_id in {
+                        project.owner_id, project.primary_assignee_id,
+                    }))
+
     def can_mutate(self, *, actor, project):
         user = self._active(actor)
         return bool(user and project.organization_id == actor.organization_id and (user.role == "admin" or actor.actor_id in {project.owner_id, project.primary_assignee_id}))

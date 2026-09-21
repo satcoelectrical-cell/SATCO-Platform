@@ -247,6 +247,18 @@ class SqlAlchemyTechnicalReportRepository:
             criteria.size,
         )
 
+    def list_lifecycle_roots(self, *, scope, limit: int) -> tuple[TechnicalReportRecord, ...]:
+        """Single bounded owner read; no protected total or silent truncation."""
+        query = self.session.query(TechnicalReportRecord).filter(
+            TechnicalReportRecord.organization_id == scope.organization_id,
+            TechnicalReportRecord.project_id == scope.project_id,
+        )
+        if scope.workspace_id is not None:
+            query = query.filter(TechnicalReportRecord.workspace_id == scope.workspace_id)
+        return tuple(query.order_by(
+            TechnicalReportRecord.created_at.asc(), TechnicalReportRecord.id.asc(),
+        ).limit(limit).all())
+
     def list_successors_scoped(
         self, predecessor_id: UUID, criteria: TechnicalReportReadCriteria
     ) -> TechnicalReportReadPage:

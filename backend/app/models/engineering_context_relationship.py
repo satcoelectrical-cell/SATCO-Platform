@@ -371,6 +371,8 @@ class InterfaceCommitment(Base):
     completeness_expectation = Column(Text, nullable=False)
     expected_source_basis = Column(Text, nullable=False)
     stage_or_due_condition = Column(Text, nullable=False)
+    # Human-assigned calendar due evidence only; never derived from prose.
+    due_at = Column(DateTime(timezone=True), nullable=True)
     criticality = Column(String(16), nullable=False)
     confidentiality = Column(String(32), nullable=False)
     steward_id = Column(

@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from fastapi import Depends
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.repositories.engineering_experience_capture_unit_of_work import SqlAlchemyCaptureAuthorizationPolicy
+from app.repositories.project_completeness_observation_repository import ProjectCompletenessObservationRepository
 
 from app.dependencies.project_context import (
     ProjectContextApplication,
@@ -54,13 +59,18 @@ class ProjectCompletenessApplication:
 
 def get_project_completeness_application(
     context: ProjectContextApplication = Depends(get_project_context_application),
+    db: Session = Depends(get_db),
 ) -> ProjectCompletenessApplication:
     actor = CompletenessActor(
         actor_id=context.actor.actor_id,
         organization_id=context.actor.organization_id,
     )
     return ProjectCompletenessApplication(
-        service=ProjectCompletenessService(ProjectContextCompletenessObserver(context)),
+        service=ProjectCompletenessService(
+            ProjectContextCompletenessObserver(context),
+            observation_repository=ProjectCompletenessObservationRepository(db),
+            history_authorization=SqlAlchemyCaptureAuthorizationPolicy(db),
+        ),
         actor=actor,
         current_user=context.current_user,
     )

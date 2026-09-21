@@ -1,3 +1,4 @@
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 from app.models.project_control import ProjectRisk,ProjectIssue,ProjectDecision,ProjectChange,ProjectChangeImpact,ProjectControlIdempotency,ProjectRiskHistory,ProjectIssueHistory,ProjectDecisionHistory,ProjectChangeHistory
 class ProjectControlRepository:
@@ -8,6 +9,30 @@ class ProjectControlRepository:
         model={"risk":ProjectRisk,"issue":ProjectIssue,"decision":ProjectDecision,"change":ProjectChange}[kind]; query=self.session.query(model).filter_by(id=id,organization_id=organization_id); return (query.with_for_update() if lock else query).first()
     def list(self,kind,*,organization_id,project_id,limit=100):
         model={"risk":ProjectRisk,"issue":ProjectIssue,"decision":ProjectDecision,"change":ProjectChange}[kind]; return self.session.query(model).filter_by(organization_id=organization_id,project_id=project_id).order_by(model.created_at.desc(),model.id.asc()).limit(limit).all()
+    def list_aging_page(self,kind,*,organization_id,project_id,workspace_id,cutoff,after,limit):
+        """Authorized caller's deterministic keyset page; returns one lookahead row."""
+        model={"risk":ProjectRisk,"issue":ProjectIssue,"change":ProjectChange}[kind]
+        query=self.session.query(model).filter(
+            model.organization_id==organization_id, model.project_id==project_id,
+            model.created_at<=cutoff,
+        )
+        if workspace_id is not None:
+            query=query.filter(model.workspace_id==workspace_id)
+        if after is not None:
+            created_at,record_id=after
+            query=query.filter(or_(model.created_at>created_at,
+                                   and_(model.created_at==created_at,model.id>record_id)))
+        return query.order_by(model.created_at,model.id).limit(limit+1).all()
+    def aging_population_changed(self,kind,*,organization_id,project_id,cutoff):
+        """Fail closed if a standing/version changed after the traversal cutoff."""
+        model={"risk":ProjectRisk,"issue":ProjectIssue,"change":ProjectChange}[kind]
+        query=self.session.query(model.id).filter(
+            model.organization_id==organization_id, model.project_id==project_id,
+            model.created_at<=cutoff, model.updated_at>cutoff,
+        )
+        # Check the whole Project: a post-cutoff move out of a Workspace must
+        # not silently remove an item from an in-progress scoped traversal.
+        return query.first() is not None
     def list_history(self,kind,*,control_id,organization_id,project_id,limit=100):
         model={"risk":ProjectRiskHistory,"issue":ProjectIssueHistory,"decision":ProjectDecisionHistory,"change":ProjectChangeHistory}[kind]
         key=f"{kind}_id"

@@ -57,6 +57,20 @@ class ProjectControlGraphIncidentPage(ControlSchema):
 class ControlReadSuccess(ControlSuccess):
     organization_id:UUID; project_id:int=Field(gt=0); workspace_id:int|None=None; standing:str; statement:str; rationale:str|None=None; predecessor_id:UUID|None=None; owner_id:int|None=None; disposition:str|None=None; observed_context:str|None=None; alternatives:tuple[str,...]=(); accepted_by_id:int|None=None; accepted_at:datetime|None=None; confirmed_by_id:int|None=None; confirmed_at:datetime|None=None; impacts:tuple[ImpactRead,...]=()
 class ControlListSuccess(ControlSchema): outcome:Literal["success"]="success"; kind:Literal["risk","issue","decision","change"]; items:tuple[ControlReadSuccess,...]=Field(max_length=100); visible_count:int=Field(ge=0,le=100)
+class ControlAgingEvidence(ControlSchema):
+    """Minimal canonical projection for authorized aggregate aging reads."""
+    model_config=ConfigDict(extra="forbid",frozen=True)
+    id:UUID; kind:Literal["risk","issue","change"]
+    organization_id:UUID; project_id:int=Field(gt=0); workspace_id:int|None=None
+    created_at:datetime; standing:str; version:int=Field(ge=1)
+class ControlAgingEvidencePage(ControlSchema):
+    model_config=ConfigDict(extra="forbid",frozen=True)
+    outcome:Literal["success"]="success"
+    kind:Literal["risk","issue","change"]
+    items:tuple[ControlAgingEvidence,...]=Field(max_length=100)
+    source_cutoff:datetime
+    next_continuation:str|None=None
+    complete:bool
 class ControlHistoryEntry(ControlSchema): id:UUID; aggregate_version:int=Field(ge=1); event_type:str; actor_id:int=Field(gt=0); occurred_at:datetime
 class ControlHistorySuccess(ControlSchema): outcome:Literal["success"]="success"; kind:Literal["risk","issue","decision","change"]; control_id:UUID; items:tuple[ControlHistoryEntry,...]=Field(max_length=100); visible_count:int=Field(ge=0,le=100)
 class Protected(ControlSchema): outcome:Literal["protected_not_found"]="protected_not_found"

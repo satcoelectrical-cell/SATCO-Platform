@@ -24,6 +24,7 @@ from app.exceptions.technical_report import (
     TechnicalReportAuthorizationDenied,
     TechnicalReportHistoricalBasisIncomplete,
     TechnicalReportVersionConflict,
+    TechnicalReportException,
 )
 from app.models.technical_report import TechnicalReport
 from app.standards.handles import issue_handle
@@ -62,6 +63,8 @@ from app.ports.technical_report import (
     TechnicalReportAIRequest,
     AcceptedTechnicalReportSummary,
     AcceptedTechnicalReportSummaryPage,
+    TechnicalReportLifecycleEvidence,
+    TechnicalReportLifecycleEvidencePage,
     TechnicalReportGraphProvenanceLink,
     TechnicalReportAuditRecord,
     TechnicalReportAuthorizationRequest,
@@ -563,6 +566,50 @@ class TechnicalReportService:
                 items=tuple(summaries), page=page.page, size=page.size,
                 has_more=page.total > page.page * page.size,
             )
+
+    def list_authorized_lifecycle_evidence(
+        self, *, actor: TechnicalReportActor, project_id: int,
+        workspace_id: int | None = None,
+    ) -> TechnicalReportLifecycleEvidencePage | None:
+        """Complete bounded draft/accepted owner facts at one source cutoff."""
+        if type(project_id) is not int or project_id <= 0:
+            raise TechnicalReportAuthorizationDenied()
+        scope = TechnicalReportScope(actor.organization_id, workspace_id, project_id)
+        with self._uow_factory() as uow:
+            uow.authorization.require(TechnicalReportAuthorizationRequest(
+                actor, "list_lifecycle_evidence", scope,
+            ))
+            cutoff = self._clock.now()
+            if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+                return None
+            roots = uow.technical_reports.list_lifecycle_roots(scope=scope, limit=1001)
+            if len(roots) > 1000:
+                return None
+            items = []
+            for root in roots:
+                if (root.updated_at is None or root.updated_at.tzinfo is None
+                        or root.updated_at.utcoffset() is None
+                        or root.updated_at > cutoff):
+                    return None
+                try:
+                    report = uow.technical_reports.get_scoped(root.id, actor.organization_id)
+                except TechnicalReportException:
+                    return None
+                if (report is None or report.project_id != project_id
+                        or (workspace_id is not None and report.workspace_id != workspace_id)):
+                    return None
+                acceptance = report.acceptance_record
+                items.append(TechnicalReportLifecycleEvidence(
+                    report_id=report.id, organization_id=report.organization_id,
+                    project_id=report.project_id, workspace_id=report.workspace_id,
+                    version=report.version, lifecycle=report.lifecycle,
+                    created_at=report.created_at,
+                    accepted_at=None if acceptance is None else acceptance.accepted_at,
+                    accepted_snapshot_digest=None if acceptance is None else acceptance.snapshot_digest,
+                    accepted_aggregate_version=None if acceptance is None else acceptance.accepted_aggregate_version,
+                    predecessor_report_id=report.predecessor_report_id,
+                ))
+            return TechnicalReportLifecycleEvidencePage(tuple(items), cutoff)
 
     def list_authorized_graph_provenance(self, *, actor, scope, source_kind, source_id):
         """One bounded canonical-owner read for report provenance incidence."""

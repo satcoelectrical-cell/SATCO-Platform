@@ -63,6 +63,15 @@ class SupportingFileListResponse(SupportingFileSchema):
         return self
 
 
+class SupportingFileAvailabilityResponse(SupportingFileSchema):
+    asset_id: UUID
+    object_version: str
+    state: str = Field(pattern=r"^(available|unavailable|indeterminate)$")
+    verified_at: datetime | None
+    source_event_id: UUID | None
+    limitation: str | None = None
+
+
 class SupportingFileScanResultRequest(SupportingFileSchema):
     asset_id: UUID
     asset_version: int = Field(gt=0)

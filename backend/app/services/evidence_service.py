@@ -93,10 +93,19 @@ class EvidenceService:
             return EvidenceSupportingFileGraphPage(items=tuple(visible))
     def list(self,*,project_id,filters,page,size,actor):
         if not self.authorization.authorize(actor=actor,operation="ListEvidence",evidence=None,project_id=project_id,workspace_id=filters.workspace_id): raise EvidenceProtectedNotFound()
+        scope = self.authorization.availability_scope(
+            actor=actor, project_id=project_id, workspace_id=filters.workspace_id,
+        )
+        if scope is None: raise EvidenceProtectedNotFound()
+        project_wide, visible_workspaces = scope
         with self.uow_factory() as uow:
-            items,total=uow.evidence.list_scoped(organization_id=actor.organization_id,project_id=project_id,filters=filters.model_dump(),page=page,size=size)
-            visible=[_response(x,("transition_lifecycle",)) for x in items if self.authorization.authorize(actor=actor,operation="ReadEvidence",evidence=x,project_id=x.project_id,workspace_id=x.workspace_id)]
-            return EvidenceListResponse(items=visible,total=len(visible) if len(visible)!=len(items) else total,page=page,size=size)
+            items,total=uow.evidence.list_authorized_scoped(
+                organization_id=actor.organization_id, project_id=project_id,
+                filters=filters.model_dump(), page=page, size=size,
+                project_wide=project_wide, visible_workspaces=visible_workspaces,
+            )
+            return EvidenceListResponse(items=[_response(x,("transition_lifecycle",)) for x in items],
+                                        total=total,page=page,size=size)
     @staticmethod
     def _stage(uow,result,metadata,response):
         uow.audit.record(command_type=result.command_type,actor=metadata.actor,evidence_id=result.evidence_id,correlation_id=metadata.correlation_id,idempotency_id=metadata.idempotency_id,rationale=metadata.rationale,previous_version=result.previous_version,version=result.version)

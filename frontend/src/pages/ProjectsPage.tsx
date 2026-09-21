@@ -12,6 +12,7 @@ import { EngineeringDeliverableRegisterPanel } from "../components/EngineeringDe
 import { ProjectControlsPanel } from "../components/ProjectControlsPanel";
 import { ProjectEngineeringContextPanel } from "../components/ProjectEngineeringContextPanel";
 import { ProjectCompletenessPanel } from "../components/ProjectCompletenessPanel";
+import { EngineeringPerformancePanel } from "../components/EngineeringPerformancePanel";
 import { EngineeringGuidancePanel } from "../components/EngineeringGuidancePanel";
 import { CrossDisciplineIntelligencePanel } from "../components/CrossDisciplineIntelligencePanel";
 import { EffectiveDisciplinePackagesPanel } from "../components/EffectiveDisciplinePackagesPanel";
@@ -115,6 +116,7 @@ export function ProjectWorkspacePage() {
     <ProjectStandardsPanel projectId={id} />
     <StandardsIntelligencePanel projectId={id} />
     <ProjectCompletenessPanel projectId={id} workspaceId={workspaceId ? Number(workspaceId) : null} />
+    <EngineeringPerformancePanel projectId={id} workspaceId={workspaceId ? Number(workspaceId) : null} />
     <EngineeringGuidancePanel projectId={id} workspaceId={workspaceId ? Number(workspaceId) : null} />
     <CrossDisciplineIntelligencePanel projectId={id} workspaceIds={workspaceItems.map((item) => item.id).sort((a,b) => a-b)} />
     <ProjectEngineeringContextPanel projectId={id} workspaceId={workspaceId ? Number(workspaceId) : null} />

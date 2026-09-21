@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 from app.schemas.engineering_execution_plan import (
     CreateExecutionActivityRequest, EstablishExecutionPlanRequest,
-    ExecutionActor, TransitionExecutionActivityRequest,
+    CreateExecutionMilestoneRequest, ExecutionActor, TransitionExecutionActivityRequest,
 )
 from app.services.engineering_execution_plan_service import EngineeringExecutionPlanService
 
@@ -13,7 +13,7 @@ ORG = UUID("02810000-0000-4000-8000-000000000001")
 
 
 class Repository:
-    def __init__(self): self.plan = None; self.activities=[]; self.milestones=[]; self.dependencies=[]; self.idempotency=[]; self.revisions=[]
+    def __init__(self): self.plan = None; self.activities=[]; self.activity_histories=[]; self.milestones=[]; self.dependencies=[]; self.idempotency=[]; self.revisions=[]
     def get_plan(self, **kwargs): return self.plan
     def get_activity(self, *, activity_id, **kwargs): return next((row for row in self.activities if row.id == activity_id), None)
     def get_idempotency(self, **kwargs): return next((row for row in self.idempotency if row.operation == kwargs["operation"] and row.idempotency_key == kwargs["idempotency_key"]), None)
@@ -21,12 +21,18 @@ class Repository:
         name = item.__class__.__name__
         if name == "EngineeringExecutionPlan": self.plan = item
         elif name == "EngineeringExecutionActivity": self.activities.append(item)
+        elif name == "EngineeringExecutionMilestone": self.milestones.append(item)
+        elif name == "EngineeringExecutionActivityHistory": self.activity_histories.append(item)
         elif name == "EngineeringExecutionIdempotency": self.idempotency.append(item)
     def flush(self): pass
     def load_plan_children(self, **kwargs): return self.activities, self.milestones, self.dependencies
     def append_revision(self, **kwargs): self.revisions.append((kwargs["plan"].version, kwargs["rationale"]))
     def replace_dependencies(self, *, edges, **kwargs): self.dependencies=[SimpleNamespace(predecessor_activity_id=a, dependent_activity_id=b) for a,b in edges]
-    def replace_milestone_links(self, **kwargs): pass
+    def replace_milestone_links(self, *, milestone_id, activity_ids, **kwargs):
+        milestone=next(row for row in self.milestones if row.id==milestone_id)
+        milestone.links=[SimpleNamespace(activity_id=ident) for ident in activity_ids]
+    def latest_blocked_events(self, *, activity_ids, **kwargs):
+        return {ident: max((row for row in self.activity_histories if row.activity_id==ident and row.to_standing=="blocked"), key=lambda row:row.transitioned_at) for ident in activity_ids}
     def list_graph_incident(self, **kwargs):
         return (("plan_activity","execution_plan",self.plan.id,"activity",self.activities[0].id,self.plan.version),),False
 
@@ -84,3 +90,42 @@ def test_execution_incident_read_uses_exact_owner_repository_contract():
     page=app.list_authorized_incident_graph_links(actor=actor,project_id=7,selector_kind="activity",selector_id=created.activity_id)
     assert page.items[0].relationship=="plan_activity" and page.items[0].target_id==created.activity_id
     assert set(page.items[0].model_dump())=={"relationship","relationship_selector","source_kind","source_id","target_kind","target_id","owner_version"}
+
+
+def test_future_milestone_completion_is_recorded_only_at_owner_transition():
+    app, repository, _ = service()
+    actor = ExecutionActor(actor_id=4, organization_id=ORG)
+    app.establish(project_id=7, data=EstablishExecutionPlanRequest(expected_plan_version=0, rationale="Human establishes"), actor=actor, idempotency_key=uuid4())
+    activity = app.create_activity(project_id=7, data=CreateExecutionActivityRequest(expected_plan_version=1, title="Verify system", description=None, ordinal=0, workspace_id=None, responsible_user_id=None, target_date=None, completion_basis="Human verified", rationale="Human adds"), actor=actor, idempotency_key=uuid4())
+    milestone = app.create_milestone(project_id=7, data=CreateExecutionMilestoneRequest(expected_plan_version=2, title="System ready", completion_basis="Verification complete", target_date=None, ordinal=0, activity_ids=(activity.activity_id,), rationale="Human defines milestone"), actor=actor, idempotency_key=uuid4())
+    before = app.list_authorized_milestone_evidence(project_id=7, actor=actor).items[0]
+    assert before.standing == "not_ready" and before.actual_completed_at is None
+    assert before.forecast_completion_at is None and "forecast_unavailable" in before.limitations
+    ready = app.transition_activity(project_id=7, activity_id=activity.activity_id, data=TransitionExecutionActivityRequest(expected_activity_version=1, target_standing="ready", rationale="Ready"), actor=actor, idempotency_key=uuid4())
+    progress = app.transition_activity(project_id=7, activity_id=activity.activity_id, data=TransitionExecutionActivityRequest(expected_activity_version=ready.activity_version, target_standing="in_progress", rationale="Work started"), actor=actor, idempotency_key=uuid4())
+    app.transition_activity(project_id=7, activity_id=activity.activity_id, data=TransitionExecutionActivityRequest(expected_activity_version=progress.activity_version, target_standing="completed", rationale="Human verified"), actor=actor, idempotency_key=uuid4())
+    after = app.list_authorized_milestone_evidence(project_id=7, actor=actor).items[0]
+    assert after.id == milestone.milestone_id and after.standing == "achieved"
+    assert after.actual_completed_at is not None and after.source_event_at == after.actual_completed_at
+    assert after.completion_source_kind == "activity_transition" and after.completion_source_ref
+    assert after.forecast_completion_at is None
+
+    # An already-achieved historical milestone is not assigned a guessed date.
+    repository.milestones[0].actual_completed_at = None
+    repository.milestones[0].completion_source_kind = None
+    repository.milestones[0].completion_source_ref = None
+    historical = app.list_authorized_milestone_evidence(project_id=7, actor=actor).items[0]
+    assert historical.actual_completed_at is None
+    assert "historical_completion_event_unavailable" in historical.limitations
+
+
+def test_blocked_age_source_is_canonical_transition_event_not_updated_at():
+    app, repository, _ = service()
+    actor=ExecutionActor(actor_id=4,organization_id=ORG)
+    app.establish(project_id=7,data=EstablishExecutionPlanRequest(expected_plan_version=0,rationale="Human establishes"),actor=actor,idempotency_key=uuid4())
+    activity=app.create_activity(project_id=7,data=CreateExecutionActivityRequest(expected_plan_version=1,title="Review drawings",description=None,ordinal=0,workspace_id=None,responsible_user_id=None,target_date=None,completion_basis="Review complete",rationale="Human adds"),actor=actor,idempotency_key=uuid4())
+    app.transition_activity(project_id=7,activity_id=activity.activity_id,data=TransitionExecutionActivityRequest(expected_activity_version=1,target_standing="blocked",rationale="Missing source"),actor=actor,idempotency_key=uuid4())
+    row=app.list_authorized_activity_evidence(project_id=7,actor=actor).items[0]
+    event=repository.latest_blocked_events(activity_ids=(activity.activity_id,))[activity.activity_id]
+    assert row.standing=="blocked" and row.blocked_since==event.transitioned_at
+    assert row.blocker_event_id==event.id
