@@ -200,6 +200,35 @@ def reject_assertion(project_id: int, assertion_id: UUID, data: AssertionRejecti
     except StandardsError as error: application.db.rollback(); return _error(error)
 
 
+@router.get("/projects/{project_id}/standards/selector-options", operation_id="list_standards_selector_options")
+def list_standards_selector_options(project_id: int, application: StandardsApplication = Depends(get_standards_application)):
+    if not _project_authorized(application, project_id): return _protected()
+    rows = application.repository.selector_editions(application.context.organization_id, project_id, limit=100)
+    items = [{"handle": str(edition.id), "label": f"{identity.issuer_display} {identity.designation} — {edition.edition_designation}", "current_revision": 0 if current is None else current.revision} for edition, identity, current in rows]
+    edition_ids = tuple(edition.id for edition, _, _ in rows)
+    rights = application.repository.selector_rights(application.context.organization_id, edition_ids, limit=100)
+    rights_items = [{
+        "edition_handle": str(row.standard_edition_id),
+        "provider_handle": row.source_provider_id,
+        "label": row.source_provider_id.replace("_", " "),
+        "reference_allowed": application.service.evaluate_capability(row, "metadata_visibility"),
+        "material_support_allowed": application.service.evaluate_capability(row, "source_retrieval"),
+    } for row in rights if row.source_provider_id in application.service.providers and (
+        application.service.evaluate_capability(row, "metadata_visibility")
+        or application.service.evaluate_capability(row, "source_retrieval")
+    )]
+    return {"editions": items, "rights": rights_items}
+
+
+@router.get("/projects/{project_id}/standards/intelligence-options", operation_id="list_standards_intelligence_options")
+def list_standards_intelligence_options(project_id: int, application: StandardsApplication = Depends(get_standards_application)):
+    if not _project_authorized(application, project_id): return _protected()
+    return application.service.intelligence_selector_options(
+        organization_id=application.context.organization_id,
+        project_id=project_id,
+    )
+
+
 @router.post("/projects/{project_id}/standards/intelligence-runs", operation_id="create_standards_intelligence_run", status_code=201)
 def create_intelligence_run(project_id: int, data: StandardsIntelligenceRunCreate, idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=160), correlation_id: UUID | None = Header(None, alias="X-Correlation-ID"), application: StandardsApplication = Depends(get_standards_application)):
     # Authorization precedes every context, idempotency, or run lookup.

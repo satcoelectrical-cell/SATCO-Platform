@@ -170,6 +170,28 @@ def supported_packages(
     ], "next_cursor": next_cursor}
 
 
+@router.get("/discipline-packages/compatibility-profiles")
+def compatibility_profiles(
+    context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
+    db: Session = Depends(get_db),
+):
+    """Authorized read-only profile options for Human selectors."""
+    registry = _current_registry(db)
+    rows = list(db.execute(
+        select(RegistryProfileMembership.profile_id, RegistryProfileMembership.profile_digest)
+        .where(RegistryProfileMembership.registry_digest == registry.registry_digest)
+        .order_by(RegistryProfileMembership.profile_id, RegistryProfileMembership.profile_digest)
+        .limit(50)
+    ))
+    return {
+        "registry_digest": registry.registry_digest,
+        "items": [
+            {"handle": profile_id, "label": profile_id.replace(".", " ").replace("_", " ").replace("-", " ").strip().title(), "profile_digest": profile_digest}
+            for profile_id, profile_digest in rows
+        ],
+    }
+
+
 @router.get("/organizations/current/discipline-package-configuration")
 def organization_configuration(context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context), db: Session = Depends(get_db)):
     _admin(context); registry = _current_registry(db)

@@ -4,20 +4,23 @@ import type { ApiResult, StandardApplicability, StandardAssertion, StandardCandi
 import { StandardsStatePresentation } from "./StandardsStatePresentation";
 
 type ApplicabilityPage = { items: StandardApplicability[]; next_cursor: string | null };
+type SelectorOptions={editions:{handle:string;label:string;current_revision:number}[];rights:{edition_handle:string;provider_handle:string;label:string;reference_allowed:boolean;material_support_allowed:boolean}[]};
 
 export function ProjectStandardsPanel({ projectId }: { projectId: number }) {
   const [result, setResult] = useState<ApiResult<ApplicabilityPage> | null>(null);
   const [candidates, setCandidates] = useState<ApiResult<{ items: StandardCandidate[] }> | null>(null);
   const [message, setMessage] = useState("");
   const [editionId, setEditionId] = useState("");
+  const [editionOptions,setEditionOptions]=useState<{edition_id:string;label:string;current_revision:number}[]>([]);
+  const [selector,setSelector]=useState<SelectorOptions|null>(null);
   const [status, setStatus] = useState("declared_applicable");
   const [role, setRole] = useState("design_basis");
   const [rationale, setRationale] = useState("");
   const [mandatoryKind, setMandatoryKind] = useState("contract");
   const [mandatoryReference, setMandatoryReference] = useState("");
   const [mandatoryDigest, setMandatoryDigest] = useState("");
-  const [expectedRevision, setExpectedRevision] = useState(0);
-  const [providerId, setProviderId] = useState("registry_metadata");
+
+  const [providerId, setProviderId] = useState("");
   const [sourcePurpose, setSourcePurpose] = useState("reference_only");
   const [locations, setLocations] = useState("");
   const [snapshots, setSnapshots] = useState<StandardSourceSnapshot[]>([]);
@@ -28,11 +31,13 @@ export function ProjectStandardsPanel({ projectId }: { projectId: number }) {
   const messageRef = useRef<HTMLParagraphElement>(null);
 
   async function load() {
-    const [applicability, advisory] = await Promise.all([api.projectStandards(projectId), api.projectStandardCandidates(projectId)]);
+    const [applicability, advisory, selector] = await Promise.all([api.projectStandards(projectId), api.projectStandardCandidates(projectId), api.standardsSelectorOptions(projectId)]);
     setResult(applicability); setCandidates(advisory);
+    if(selector.state==="success") { setSelector(selector.data);setEditionOptions(selector.data.editions.map(item=>({edition_id:item.handle,label:item.label,current_revision:item.current_revision}))); }
+    else { setSelector(null);setEditionOptions([]); }
   }
   useEffect(() => {
-    setResult(null); setCandidates(null); setSnapshots([]); setDisplay(null); setAssertion(null); setMessage("");
+    setResult(null); setCandidates(null); setSelector(null); setEditionId("");setProviderId("");setSnapshots([]); setDisplay(null); setAssertion(null); setMessage("");
     if (projectId > 0) void load();
   }, [projectId]);
   useEffect(() => {
@@ -43,14 +48,14 @@ export function ProjectStandardsPanel({ projectId }: { projectId: number }) {
     event.preventDefault();
     const response = await api.declareProjectStandard(projectId, {
       edition_id: editionId, status, applicability_role: role,
-      rationale_code: "human_review", rationale, expected_revision: expectedRevision,
+      rationale_code: "human_review", rationale, expected_revision: editionOptions.find(item=>item.edition_id===editionId)?.current_revision ?? 0,
       ...(role === "mandatory" ? {
         mandatory_source_kind: mandatoryKind,
         mandatory_source_reference: mandatoryReference,
         mandatory_source_digest: mandatoryDigest,
       } : {}),
     });
-    if (response.state === "success") { setMessage("Human applicability declaration recorded."); setRationale(""); setExpectedRevision(response.data.revision); await load(); }
+    if (response.state === "success") { setMessage("Human applicability declaration recorded."); setRationale(""); await load(); }
     else setMessage(response.state === "conflict" ? "Applicability changed; reload the current revision." : "Applicability declaration was not accepted.");
   }
 
@@ -69,6 +74,9 @@ export function ProjectStandardsPanel({ projectId }: { projectId: number }) {
     if (response.state === "success") { setSnapshots(response.data.items); setMessage(`${response.data.items.length} governed source snapshot record(s) created.`); }
     else { setSnapshots([]); setMessage(response.state === "protected" ? "Source context is not available." : "Source retrieval was not accepted."); }
   }
+
+  const providerOptions=(selector?.rights??[]).filter(item=>item.edition_handle===editionId&&(sourcePurpose==="material_support"?item.material_support_allowed:item.reference_allowed));
+  const editionLabel=(handle:string|null)=>editionOptions.find(item=>item.edition_id===handle)?.label??"Authorized registry edition";
 
   async function displaySnapshot(snapshot: StandardSourceSnapshot) {
     if (!snapshot.authorized_handle) return;
@@ -103,30 +111,29 @@ export function ProjectStandardsPanel({ projectId }: { projectId: number }) {
 
     {candidates?.state === "success" && candidates.data.items.length ? <div><h3>Package advisory candidates</h3><ul className="standards-list">{candidates.data.items.map((item) => <li key={item.candidate_id}><bdi dir="ltr">{item.designation_key}</bdi> · suggested {item.suggested_role}<small>{item.package_key}@{item.package_version} · advisory only; resolve to registry metadata before Human declaration.</small></li>)}</ul></div> : null}
     {result?.state === "success" ? <div><h3>Current Human declarations</h3><div className="standards-list">{result.data.items.map((item) => <article key={item.applicability_id}>
-      <div className="standards-row-heading"><strong><code dir="ltr">{item.edition_id ?? item.candidate_designation_key ?? "candidate"}</code></strong><StandardsStatePresentation state={item.status} /></div>
+      <div className="standards-row-heading"><strong>{item.edition_id?editionLabel(item.edition_id):item.candidate_designation_key??"Advisory candidate"}</strong><StandardsStatePresentation state={item.status} /></div>
       <span>{item.applicability_role.replaceAll("_", " ")} · {item.rationale_code.replaceAll("_", " ")}</span><small>{item.rationale}</small>
       {item.status !== "retired" && item.status !== "candidate_advisory" ? <button type="button" className="button ghost compact" onClick={() => void retire(item)}>Retire declaration</button> : null}
     </article>)}</div></div> : null}
 
     <form className="standards-governed-form" onSubmit={declare} aria-labelledby="declare-standard-title"><h3 id="declare-standard-title">Human applicability declaration</h3>
-      <label>Registry edition ID<input required dir="ltr" value={editionId} onChange={(event) => setEditionId(event.target.value)} /></label>
+      <label>Registry edition<select required value={editionId} onChange={(event)=>{setEditionId(event.target.value);setProviderId("");}}><option value="">Select authorized edition</option>{editionOptions.map(item=><option key={item.edition_id} value={item.edition_id}>{item.label}</option>)}</select></label>
       <div className="form-row"><label>Declaration<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="declared_applicable">Applicable</option><option value="declared_not_applicable">Not applicable</option></select></label><label>Role<select value={role} onChange={(event) => setRole(event.target.value)}><option value="informative">Informative</option><option value="design_basis">Design basis</option><option value="mandatory">Mandatory (Human-attributed)</option></select></label></div>
       {role === "mandatory" ? <fieldset><legend>Attributable mandatory basis</legend><label>Authority kind<select value={mandatoryKind} onChange={(event) => setMandatoryKind(event.target.value)}><option value="contract">Contract</option><option value="regulation">Regulation</option><option value="customer_requirement">Customer requirement</option><option value="company_policy">Company policy</option></select></label><label>Authority reference<input required maxLength={500} value={mandatoryReference} onChange={(event) => setMandatoryReference(event.target.value)} /></label><label>Authority SHA-256 digest<input required dir="ltr" pattern="[0-9a-f]{64}" value={mandatoryDigest} onChange={(event) => setMandatoryDigest(event.target.value)} /></label></fieldset> : null}
       <label>Human rationale<textarea required maxLength={1000} value={rationale} onChange={(event) => setRationale(event.target.value)} /></label>
-      <label>Expected current revision<input required min={0} type="number" value={expectedRevision} onChange={(event) => setExpectedRevision(Number(event.target.value))} /></label>
-      <button className="button secondary">Record declaration</button>
+      <button className="button secondary" disabled={!editionOptions.some(item=>item.edition_id===editionId)}>Record declaration</button>
     </form>
 
     <form className="standards-governed-form" onSubmit={retrieve} aria-labelledby="retrieve-source-title"><h3 id="retrieve-source-title">Create governed source snapshots</h3>
       <p>Locations are registered provider-local identifiers, never arbitrary URLs. Material support requires current retrieval rights.</p>
-      <div className="form-row"><label>Provider ID<input required pattern="[a-z][a-z0-9_]*" value={providerId} onChange={(event) => setProviderId(event.target.value)} /></label><label>Purpose<select value={sourcePurpose} onChange={(event) => setSourcePurpose(event.target.value)}><option value="reference_only">Reference only</option><option value="material_support">Material support</option></select></label></div>
+      <div className="form-row"><label>Authorized source provider<select required value={providerId} onChange={(event)=>setProviderId(event.target.value)}><option value="">Select provider</option>{providerOptions.map(item=><option key={`${item.edition_handle}:${item.provider_handle}`} value={item.provider_handle}>{item.label}</option>)}</select></label><label>Purpose<select value={sourcePurpose} onChange={(event) => {setSourcePurpose(event.target.value);setProviderId("");}}><option value="reference_only">Reference only</option><option value="material_support">Material support</option></select></label></div>
       <label>Provider-local locations <span>(one per line, maximum 8)</span><textarea required value={locations} onChange={(event) => setLocations(event.target.value)} /></label>
       <button className="button secondary">Create bounded snapshots</button>
     </form>
-    {snapshots.length ? <div className="standards-list" aria-label="Created source snapshots">{snapshots.map((snapshot) => <article key={snapshot.snapshot_id}><div className="standards-row-heading"><code dir="ltr">{snapshot.snapshot_id}</code><StandardsStatePresentation state={snapshot.availability_status} /></div><span>{snapshot.source_location} · integrity {snapshot.integrity_verified ? "verified" : "not verified"}</span>{snapshot.authorized_handle ? <button type="button" className="button ghost compact" onClick={() => void displaySnapshot(snapshot)}>Freshly authorize display</button> : null}</article>)}</div> : null}
+    {snapshots.length ? <div className="standards-list" aria-label="Created source snapshots">{snapshots.map((snapshot) => <article key={snapshot.snapshot_id}><div className="standards-row-heading"><strong>{snapshot.source_location}</strong><StandardsStatePresentation state={snapshot.availability_status} /></div><span>{editionLabel(snapshot.edition_id)} · integrity {snapshot.integrity_verified ? "verified" : "not verified"}</span>{snapshot.authorized_handle ? <button type="button" className="button ghost compact" onClick={() => void displaySnapshot(snapshot)}>Freshly authorize display</button> : null}</article>)}</div> : null}
     {display?.state === "success" ? <div className="standards-protected-display" role="region" aria-label="Authorized standards excerpt"><pre>{JSON.stringify(display.data, null, 2)}</pre><small>Protected display is not cached and grants no applicability or acceptance authority.</small></div> : null}
 
     {snapshots.some((item) => item.availability_status === "available" && item.integrity_verified) ? <form className="standards-governed-form" onSubmit={createAssertion} aria-labelledby="assertion-title"><h3 id="assertion-title">Human assertion from current material support</h3><label>Requirement statement<textarea required maxLength={4000} value={assertionStatement} onChange={(event) => setAssertionStatement(event.target.value)} /></label><button className="button secondary">Record unverified assertion</button></form> : null}
-    {assertion ? <article className="standards-decision"><div className="standards-row-heading"><strong>Assertion decision</strong><StandardsStatePresentation state={assertion.verification_status} /></div><code dir="ltr">{assertion.assertion_id}</code>{assertion.verification_status === "unverified" ? <><label>Human decision rationale<textarea required value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} /></label><div className="standards-actions"><button type="button" className="button primary" onClick={() => void decide(true)}>Verify assertion</button><button type="button" className="button ghost" onClick={() => void decide(false)}>Reject assertion</button></div></> : null}</article> : null}
+    {assertion ? <article className="standards-decision"><div className="standards-row-heading"><strong>Requirement assertion decision</strong><StandardsStatePresentation state={assertion.verification_status} /></div>{assertion.verification_status === "unverified" ? <><label>Human decision rationale<textarea required value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} /></label><div className="standards-actions"><button type="button" className="button primary" onClick={() => void decide(true)}>Verify assertion</button><button type="button" className="button ghost" onClick={() => void decide(false)}>Reject assertion</button></div></> : null}</article> : null}
   </section>;
 }

@@ -23,6 +23,10 @@ def _foundation_fixture(
     effective_until=None,
     allow_excerpt_display=True,
     allow_source_retrieval=True,
+    allow_derived_current_use=True,
+    availability_status="available",
+    standing="current",
+    rights_status="active",
     source_location="clause 1",
 ):
     organization_id = UUID("02810000-0000-4000-8000-000000000001")
@@ -43,15 +47,16 @@ def _foundation_fixture(
       VALUES (:edition,:identity,'2026',:designation,'','{}','test-catalog',:digest,:actor);
       INSERT INTO standard_edition_standing_observations(id,standard_edition_id,standing,observed_effective_at,
         source_reference,source_digest,actor_kind,created_by,observation_digest)
-      VALUES (:standing,:edition,'current',now(),'test-catalog',:digest,'human',:actor,:digest);
+      VALUES (:standing,:edition,:standing_status,now(),'test-catalog',:digest,'human',:actor,:digest);
       INSERT INTO standard_rights_bindings(id,organization_id,standard_edition_id,source_provider_id,rights_basis,
         rights_status,allow_metadata_visibility,allow_content_storage,allow_indexing,allow_excerpt_display,
         allow_source_retrieval,allow_derived_retention,allow_derived_current_use,ai_processing_permission,
         approved_processor_policy_ids,effective_from,effective_until,rights_authority_reference,rights_authority_digest,
         reason_code,rights_digest,created_by)
-      VALUES (:rights,:organization,:edition,'test_provider','organization_license','active',true,true,true,
+      VALUES (:rights,:organization,:edition,'test_provider','organization_license',:rights_status,true,
+        :allow_content_storage,:allow_indexing,
         :allow_excerpt_display,
-        :allow_source_retrieval,true,true,'prohibited','[]',:effective_from,:effective_until,
+        :allow_source_retrieval,:allow_derived_retention,:allow_derived_current_use,'prohibited','[]',:effective_from,:effective_until,
         'test-rights',:digest,'created',:digest,:actor);
       INSERT INTO standard_source_snapshots(id,organization_id,project_id,standard_identity_id,standard_edition_id,
         source_provider_id,adapter_policy_id,adapter_policy_version,source_location,availability_status,
@@ -60,8 +65,8 @@ def _foundation_fixture(
         standing_observation_digest,source_metadata_digest,integrity_verified,integrity_verified_at,snapshot_digest,
         retrieved_at,retrieved_by)
       VALUES (:snapshot,:organization,:project,:identity,:edition,'test_provider','test_policy','1',:source_location,
-        'available','verification',:correlation,'standards/test-object','v1',:digest,8,'text/plain',:rights,1,
-        :digest,'{}',:standing,:digest,:digest,true,now(),:digest,now(),:actor)
+        :availability_status,'verification',:correlation,:object_key,:object_version,:content_sha256,:byte_count,:media_type,:rights,1,
+        :digest,'{}',:standing,:digest,:digest,:integrity_verified,now(),:digest,now(),:actor)
     """), {
         **ids,
         "organization": organization_id,
@@ -72,6 +77,19 @@ def _foundation_fixture(
         "digest": digest,
         "allow_excerpt_display": allow_excerpt_display,
         "allow_source_retrieval": allow_source_retrieval,
+        "allow_derived_current_use": allow_derived_current_use,
+        "standing_status": standing,
+        "rights_status": rights_status,
+        "allow_content_storage": rights_status == "active",
+        "allow_indexing": rights_status == "active",
+        "allow_derived_retention": rights_status == "active",
+        "availability_status": availability_status,
+        "object_key": "standards/test-object" if availability_status == "available" else None,
+        "object_version": "v1" if availability_status == "available" else None,
+        "content_sha256": digest if availability_status == "available" else None,
+        "byte_count": 8 if availability_status == "available" else None,
+        "media_type": "text/plain" if availability_status == "available" else None,
+        "integrity_verified": availability_status == "available",
         "source_location": source_location,
         "effective_from": effective_from,
         "effective_until": effective_until,

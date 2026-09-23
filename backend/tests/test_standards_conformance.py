@@ -69,7 +69,7 @@ def test_each_batch_five_vector_has_executable_evidence_not_just_a_count():
         assert test_marker in evidence.read_text(), vector
 
 
-def test_exact_twenty_two_operation_inventory():
+def test_exact_standards_operation_inventory_including_patch_057_selectors():
     expected = {
         ("GET", "/standards"),
         ("GET", "/standards/{standard_id}"),
@@ -93,6 +93,8 @@ def test_exact_twenty_two_operation_inventory():
         ("POST", "/technical-reports/{report_id}/acceptance"),
         ("POST", "/projects/{project_id}/standards/intelligence-runs"),
         ("GET", "/projects/{project_id}/standards/intelligence-runs/{run_id}"),
+        ("GET", "/projects/{project_id}/standards/selector-options"),
+        ("GET", "/projects/{project_id}/standards/intelligence-options"),
     }
     contract_routes = [*standards_router.routes] + [
         route for route in reports_router.routes
@@ -105,7 +107,7 @@ def test_exact_twenty_two_operation_inventory():
         if method != "HEAD"
     }
     assert exposed == expected
-    assert len(exposed) == 22
+    assert len(exposed) == 24
     assert not any(
         forbidden in path
         for _, path in exposed

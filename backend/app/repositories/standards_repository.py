@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.models.standards import OrganizationRightsBinding, ProjectStandardApplicability, StandardEdition, StandardEditionStandingObservation, StandardIdentity, StandardIntelligenceRun, StandardsIdempotency, StandardSourceSnapshot, StandardKnowledgeAssertion
@@ -29,6 +29,79 @@ class StandardsRepository:
         if before:
             statement = statement.where(StandardIdentity.id < before)
         return list(self.session.scalars(statement.order_by(StandardIdentity.id).limit(limit + 1)))
+
+    def selector_editions(self, organization_id: UUID, project_id: int, *, limit: int = 100):
+        statement = select(StandardEdition, StandardIdentity, ProjectStandardApplicability).join(StandardIdentity, StandardIdentity.id == StandardEdition.standard_identity_id).outerjoin(ProjectStandardApplicability, (ProjectStandardApplicability.organization_id == organization_id) & (ProjectStandardApplicability.project_id == project_id) & (ProjectStandardApplicability.standard_edition_id == StandardEdition.id) & ProjectStandardApplicability.is_current.is_(True)).where((StandardIdentity.catalog_scope == "global_trusted") | ((StandardIdentity.catalog_scope == "organization_private") & (StandardIdentity.organization_id == organization_id))).order_by(StandardIdentity.id, StandardEdition.created_at).limit(limit)
+        return list(self.session.execute(statement).all())
+
+    def selector_rights(self, organization_id: UUID, edition_ids: tuple[UUID, ...], *, limit: int = 100):
+        if not edition_ids:
+            return []
+        statement = select(OrganizationRightsBinding).where(
+            OrganizationRightsBinding.organization_id == organization_id,
+            OrganizationRightsBinding.standard_edition_id.in_(edition_ids),
+            OrganizationRightsBinding.is_current.is_(True),
+        ).order_by(
+            OrganizationRightsBinding.standard_edition_id,
+            OrganizationRightsBinding.source_provider_id,
+        ).limit(limit)
+        return list(self.session.scalars(statement))
+
+    def intelligence_selector_snapshots(self, organization_id: UUID, project_id: int, *, now: datetime, limit: int = 8):
+        """One bounded query for source-owner intelligence eligibility context."""
+        statement = select(
+            StandardSourceSnapshot,
+            StandardEditionStandingObservation,
+            ProjectStandardApplicability,
+            OrganizationRightsBinding,
+        ).join(
+            StandardEditionStandingObservation,
+            (StandardEditionStandingObservation.standard_edition_id == StandardSourceSnapshot.standard_edition_id)
+            & StandardEditionStandingObservation.is_current.is_(True),
+        ).join(
+            ProjectStandardApplicability,
+            (ProjectStandardApplicability.organization_id == organization_id)
+            & (ProjectStandardApplicability.project_id == project_id)
+            & (ProjectStandardApplicability.standard_edition_id == StandardSourceSnapshot.standard_edition_id)
+            & ProjectStandardApplicability.is_current.is_(True),
+        ).join(
+            OrganizationRightsBinding,
+            (OrganizationRightsBinding.organization_id == organization_id)
+            & (OrganizationRightsBinding.standard_edition_id == StandardSourceSnapshot.standard_edition_id)
+            & (OrganizationRightsBinding.source_provider_id == StandardSourceSnapshot.source_provider_id)
+            & OrganizationRightsBinding.is_current.is_(True),
+        ).where(
+            StandardSourceSnapshot.organization_id == organization_id,
+            StandardSourceSnapshot.project_id == project_id,
+            StandardSourceSnapshot.availability_status == "available",
+            StandardSourceSnapshot.integrity_verified.is_(True),
+            StandardEditionStandingObservation.standing == "current",
+            ProjectStandardApplicability.status == "declared_applicable",
+            OrganizationRightsBinding.rights_status == "active",
+            OrganizationRightsBinding.rights_basis != "unknown",
+            OrganizationRightsBinding.allow_derived_current_use.is_(True),
+            OrganizationRightsBinding.effective_from <= now,
+            or_(OrganizationRightsBinding.effective_until.is_(None), OrganizationRightsBinding.effective_until > now),
+        ).order_by(
+            StandardSourceSnapshot.retrieved_at.desc(),
+            StandardSourceSnapshot.id,
+        ).limit(limit)
+        return list(self.session.execute(statement))
+
+    def intelligence_selector_assertions(self, organization_id: UUID, project_id: int, snapshot_ids: tuple[UUID, ...], *, limit: int = 20):
+        if not snapshot_ids:
+            return []
+        statement = select(StandardKnowledgeAssertion).where(
+            StandardKnowledgeAssertion.organization_id == organization_id,
+            StandardKnowledgeAssertion.project_id == project_id,
+            StandardKnowledgeAssertion.source_snapshot_id.in_(snapshot_ids),
+            StandardKnowledgeAssertion.verification_status == "human_verified",
+            StandardKnowledgeAssertion.retained_derived_use_eligible.is_(True),
+        ).order_by(
+            StandardKnowledgeAssertion.created_at.desc(),
+            StandardKnowledgeAssertion.id,
+        ).limit(limit)
+        return list(self.session.scalars(statement))
 
     def get_identity(self, identity_id: UUID, organization_id: UUID | None = None):
         statement = select(StandardIdentity).where(StandardIdentity.id == identity_id)

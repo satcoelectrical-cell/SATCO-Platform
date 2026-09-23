@@ -686,12 +686,7 @@ class StandardsService:
             standing = self.repository.current_standing(row.standard_edition_id, lock=lock)
             rights = self.repository.get_current_rights(organization_id, row.standard_edition_id, row.source_provider_id, lock=lock)
             applicability = self.repository.current_applicability(organization_id, project_id, row.standard_edition_id, lock=lock)
-            eligible = bool(
-                row.availability_status == "available" and row.integrity_verified and standing is not None
-                and standing.standing == "current" and applicability is not None
-                and applicability.status == "declared_applicable"
-                and self.evaluate_capability(rights, "derived_current_use")
-            )
+            eligible = self._intelligence_snapshot_eligible(row, standing, applicability, rights)
             handle = "stdh_" + canonical_digest({"snapshot": str(row.id), "digest": row.snapshot_digest, "rights": row.rights_digest})
             snapshots.append({"snapshot": row, "rights": rights, "eligible": eligible, "handle": handle,
                               "code": "eligible" if eligible else "deterministic_unavailable"})
@@ -716,6 +711,57 @@ class StandardsService:
             "conflicts": "none_detected", "bounds": "pass",
         }
         return snapshots, assertions, deterministic
+
+    @classmethod
+    def _intelligence_snapshot_eligible(cls, snapshot, standing, applicability, rights) -> bool:
+        """Canonical read predicate shared by execution and Human selectors."""
+        return bool(
+            snapshot.availability_status == "available"
+            and snapshot.integrity_verified
+            and standing is not None
+            and standing.standing == "current"
+            and applicability is not None
+            and applicability.status == "declared_applicable"
+            and cls.evaluate_capability(rights, "derived_current_use")
+        )
+
+    def intelligence_selector_options(self, *, organization_id: UUID, project_id: int) -> dict:
+        """Return only bounded, currently eligible handles; never dispatch AI or mutate."""
+        now = datetime.now(timezone.utc)
+        rows = self.repository.intelligence_selector_snapshots(
+            organization_id, project_id, now=now, limit=8,
+        )
+        eligible = [
+            (snapshot, rights)
+            for snapshot, standing, applicability, rights in rows
+            if self._intelligence_snapshot_eligible(snapshot, standing, applicability, rights)
+        ]
+        snapshot_ids = tuple(snapshot.id for snapshot, _ in eligible)
+        assertions = self.repository.intelligence_selector_assertions(
+            organization_id, project_id, snapshot_ids, limit=20,
+        )
+        return {
+            "snapshots": [
+                {
+                    "handle": str(snapshot.id),
+                    "label": f"{snapshot.source_provider_id.replace('_', ' ')} — {snapshot.source_location}",
+                    "availability_status": snapshot.availability_status,
+                }
+                for snapshot, _ in eligible
+            ],
+            "assertions": [
+                {
+                    "handle": str(assertion.id),
+                    "snapshot_handle": str(assertion.source_snapshot_id),
+                    "label": f"{assertion.assertion_kind.replace('_', ' ')} — {assertion.source_location}",
+                    "verification_status": assertion.verification_status,
+                }
+                for assertion in assertions
+                if assertion.source_snapshot_id in snapshot_ids
+                and assertion.verification_status == "human_verified"
+                and assertion.retained_derived_use_eligible
+            ],
+        }
 
     @staticmethod
     def _rights_manifest(snapshots: list[dict]) -> list[dict]:

@@ -4,8 +4,10 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.core.database import SessionLocal
+from app.core.database import SessionLocal, get_db
 from app.dependencies.auth import AuthenticatedOrganizationContext, get_current_user_organization_context
 from app.schemas.discipline_package_operations import (
     PackageObjectCreateRequest,
@@ -40,6 +42,9 @@ from app.services.electrical_package_service import (
 from app.services.instrumentation_package_service import InstrumentationPackageService
 from app.services.control_automation_package_service import ControlAutomationPackageService
 from app.services.package_declaration_binding_service import PackageDeclarationBindingService
+from app.services.engineering_context_service import EngineeringContextService
+from app.models.engineering_identifier import EngineeringIdentifier
+from app.models.engineering_object import EngineeringObject
 from app.repositories.patch_052_operation_unit_of_work import Patch052OperationUnitOfWork
 from app.services.patch_052_mutation_guard import (
     Patch052MutationProtected,
@@ -228,6 +233,74 @@ def bind_package_context(
         workspace_id=workspace_id, data=data, correlation_id=correlation_id,
         idempotency_key=idempotency_key,
     ))
+
+
+@router.get("/workspaces/{workspace_id}/context-binding-options")
+def context_binding_options(
+    project_id: int,
+    workspace_id: int,
+    context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
+    db: Session = Depends(get_db),
+):
+    """Bounded read-only selector for exact canonical Context subjects."""
+    response = EngineeringContextService(db).list_for_scope(
+        project_id=project_id,
+        workspace_id=workspace_id,
+        current_user=context.user,
+        page=1,
+        size=100,
+        include_withdrawn=False,
+    )
+    contexts = response["items"]
+    object_ids = tuple({
+        subject["engineering_object_id"]
+        for item in contexts
+        for subject in item.get("subjects", [])
+        if subject.get("subject_kind") == "engineering_object"
+        and subject.get("engineering_object_id") is not None
+    })
+    object_labels = {}
+    if object_ids:
+        rows = db.execute(select(
+            EngineeringObject.id,
+            EngineeringObject.object_type,
+            EngineeringIdentifier.display_value,
+        ).outerjoin(
+            EngineeringIdentifier,
+            (EngineeringIdentifier.engineering_object_id == EngineeringObject.id)
+            & (EngineeringIdentifier.lifecycle == "current")
+            & (EngineeringIdentifier.primary_role == "primary"),
+        ).where(
+            EngineeringObject.id.in_(object_ids),
+            EngineeringObject.organization_id == context.organization_id,
+            EngineeringObject.project_id == project_id,
+            EngineeringObject.workspace_id == workspace_id,
+        ))
+        object_labels = {
+            object_id: display_value or str(object_type).replace("_", " ")
+            for object_id, object_type, display_value in rows
+        }
+    items = []
+    for item in contexts:
+        context_label = item.get("purpose") or str(item["kind"]).replace("_", " ")
+        context_key = str(item["context_key"]).replace("_", " ")
+        for subject in item.get("subjects", []):
+            subject_label = None
+            if subject.get("subject_kind") == "workspace" and subject.get("workspace_id") == workspace_id:
+                subject_label = "selected engineering workspace"
+            elif subject.get("subject_kind") == "engineering_object":
+                subject_label = object_labels.get(subject.get("engineering_object_id"))
+            if not subject_label:
+                continue
+            items.append({
+                "context_handle": item["id"],
+                "subject_handle": subject["id"],
+                "context_version": item["version"],
+                "label": f"{context_label} — {subject_label} · {context_key}",
+            })
+            if len(items) == 100:
+                return {"items": items}
+    return {"items": items}
 
 
 @router.post(
