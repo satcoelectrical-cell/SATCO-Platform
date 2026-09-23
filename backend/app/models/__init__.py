@@ -76,3 +76,14 @@ from .retention import (
 
 from .engineering_performance import EngineeringNextActionProjection, EngineeringPerformanceSnapshot
 from .project_completeness_observation import ProjectCompletenessObservation
+
+from .auth_security import (
+    AuthRecoveryCredential,
+    AuthRefreshFamily,
+    AuthRefreshSession,
+    AuthSecurityEvent,
+    AuthThrottleState,
+    MfaRecoveryCode,
+    OrganizationMfaPolicy,
+    UserTotpAuthenticator,
+)
