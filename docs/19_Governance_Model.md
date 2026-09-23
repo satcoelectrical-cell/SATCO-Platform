@@ -934,3 +934,52 @@ snapshot for current state without rewriting its historical record:
 `PATCH-057: DONE / CLOSED`
 
 `PATCH-058 / PATCH-059 / PATCH-060: SEPARATE / NOT STARTED BY THIS CLOSURE`
+
+### Controlling PATCH-058 Discovery Acceptance and Registration — 2026-09-23
+
+The Human Authority accepts the Post-PATCH-057 Capability Discovery for
+**PATCH-058 — Commercial Authentication, Application Security & Reproducible
+Release Foundation**. Its independent review records Critical/Major/Minor
+findings `0/0/0`.
+
+Under explicit Human registration authority, PATCH-058 is now **REGISTERED /
+OPEN — DISCOVERY ACCEPTED**.
+
+The accepted Discovery preserves the Human-frozen Commercial V1 roadmap,
+canonical identity, Organization, membership and engineering source-owner
+boundaries, Human Engineering Authority and AI non-authority.
+
+PATCH-058 owns the Commercial V1 authentication/session, application-security,
+tenant-isolation reconciliation and reproducible-release foundation boundary.
+
+PATCH-059 commercial entitlements/licensing and PATCH-060 representative
+deployment qualification/Commercial V1 Release Certification remain separate
+and unauthorized.
+
+Registration authorizes Architecture-058 and the next repository-consistent ADR
+as the next separately reviewed governance stage only. It creates or accepts no
+EDS, IDS, Implementation Plan, implementation or migration and grants no
+deployment, PATCH-059 or PATCH-060 authority.
+
+The sole Alembic head at registration remains `e05600000008`.
+
+This append-only registration supersedes the preceding PATCH-058-not-started
+snapshot for current state without rewriting its historical record:
+
+`PATCH-053: DONE / CLOSED — HISTORICAL RECONCILIATION COMPLETE`
+
+`PATCH-054: DONE / CLOSED`
+
+`PATCH-055: DONE / CLOSED`
+
+`PATCH-056: DONE / CLOSED`
+
+`PATCH-057: DONE / CLOSED`
+
+`PATCH-058: REGISTERED / OPEN — DISCOVERY ACCEPTED`
+
+`PATCH-058 ARCHITECTURE / ADR: NEXT AUTHORIZED GOVERNANCE STAGE / NOT STARTED`
+
+`PATCH-058 IMPLEMENTATION: NOT STARTED / NOT AUTHORIZED`
+
+`PATCH-059 / PATCH-060: NOT STARTED / NOT AUTHORIZED`
