@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.models.user import User
+from app.models.auth_security import AuthRefreshSession
 from app.models.organization import Organization
 from app.models.organization import UserOrganizationMembership
 from app.exceptions.organization_context import ActiveOrganizationContextRequired
@@ -68,7 +70,41 @@ def get_current_user(
                 detail="Inactive user",
             )
 
-        if payload.get("av", 1) != user.auth_version:
+        auth_version = payload.get("av")
+        session_id = payload.get("sid")
+        if (
+            not isinstance(auth_version, int)
+            or auth_version < 1
+            or not isinstance(session_id, str)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+            )
+
+        try:
+            session_uuid = UUID(session_id)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+            )
+
+        if auth_version != user.auth_version:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+            )
+
+        session = db.get(AuthRefreshSession, session_uuid)
+        now = datetime.now(timezone.utc)
+        if (
+            session is None
+            or session.user_id != user.id
+            or session.auth_version != user.auth_version
+            or session.revoked_at is not None
+            or session.expires_at <= now
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials",
@@ -139,5 +175,3 @@ def require_role(*roles: str | Role):
         return current_user
 
     return role_checker
-from dataclasses import dataclass
-from uuid import UUID

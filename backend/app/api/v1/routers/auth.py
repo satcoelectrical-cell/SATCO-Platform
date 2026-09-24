@@ -4,12 +4,9 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import (
-    create_access_token,
-    create_refresh_token,
-)
+from app.core.security import create_access_token
 
-from app.schemas.token import TokenResponse
+from app.schemas.token import RefreshRequest, TokenResponse
 from app.schemas.onboarding import ClosedOutcome, PasswordChangeRequest
 from app.models.organization import Organization
 
@@ -20,6 +17,7 @@ from app.dependencies.auth import (
     get_current_user_organization_context,
 )
 from app.services.onboarding_service import OnboardingService, ProtectedOnboarding
+from app.services.refresh_session_service import RefreshRejected, RefreshSessionService
 
 
 router = APIRouter(
@@ -60,21 +58,49 @@ def login(
         )
 
 
+    try:
+        refresh = RefreshSessionService(db).create(user)
+    except RefreshRejected:
+        db.rollback()
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password",
+        )
+
     access_token = create_access_token(
-        user.id, user.auth_version
+        user.id,
+        user.auth_version,
+        session_id=refresh.session_id,
     )
-
-
-    refresh_token = create_refresh_token(
-        user.id, user.auth_version
-    )
-
 
     return TokenResponse(
         access_token=access_token,
-        refresh_token=refresh_token,
+        refresh_token=refresh.credential,
     )
 
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_session(
+    data: RefreshRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        user, refresh = RefreshSessionService(db).rotate(data.refresh_token)
+    except RefreshRejected:
+        db.rollback()
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+        )
+    return TokenResponse(
+        access_token=create_access_token(
+            user.id,
+            user.auth_version,
+            session_id=refresh.session_id,
+        ),
+        refresh_token=refresh.credential,
+    )
 
 
 @router.get("/me")

@@ -11,8 +11,12 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "CHANGE_THIS_SECRET_KEY"
     ALGORITHM: str = "HS256"
 
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    ACCESS_TOKEN_ISSUER: str = "satco-platform"
+    ACCESS_TOKEN_AUDIENCE: str = "satco-web"
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    REFRESH_VERIFIER_KEY: str = "satco-development-refresh-verifier-key-change-me"
+    REFRESH_VERIFIER_KEY_FILE: str = ""
     PLATFORM_BOOTSTRAP_KEY: str = ""
     ACCOUNT_ACTIVATION_EXPIRE_HOURS: int = 24
     ACCOUNT_RESET_EXPIRE_MINUTES: int = 30
@@ -105,6 +109,11 @@ class Settings(BaseSettings):
                 self.PLATFORM_BOOTSTRAP_KEY_FILE,
                 self.PLATFORM_BOOTSTRAP_KEY,
             )
+        if self.REFRESH_VERIFIER_KEY_FILE:
+            self.REFRESH_VERIFIER_KEY = self._secret_from_file(
+                self.REFRESH_VERIFIER_KEY_FILE,
+                self.REFRESH_VERIFIER_KEY,
+            )
         return self
 
     @staticmethod
@@ -116,6 +125,11 @@ class Settings(BaseSettings):
 
     def resolved_secret_key(self) -> str:
         return self._secret_from_file(self.SECRET_KEY_FILE, self.SECRET_KEY)
+
+    def resolved_refresh_verifier_key(self) -> str:
+        return self._secret_from_file(
+            self.REFRESH_VERIFIER_KEY_FILE, self.REFRESH_VERIFIER_KEY
+        )
 
     def resolved_bootstrap_key(self) -> str:
         return self._secret_from_file(
@@ -146,6 +160,15 @@ class Settings(BaseSettings):
         secret_key = self.resolved_secret_key()
         if len(secret_key) < 32 or secret_key == "CHANGE_THIS_SECRET_KEY":
             errors.append("signing_secret")
+        try:
+            refresh_verifier_key = self.resolved_refresh_verifier_key()
+        except OSError:
+            refresh_verifier_key = ""
+        if (
+            len(refresh_verifier_key) < 32
+            or refresh_verifier_key == "satco-development-refresh-verifier-key-change-me"
+        ):
+            errors.append("refresh_verifier_key")
         if not self.SATCO_RELEASE_MANIFEST_PATH:
             errors.append("release_manifest")
         if not self.SATCO_PUBLIC_URL.startswith("https://"):

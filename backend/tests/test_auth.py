@@ -1,6 +1,6 @@
 import pytest
 
-from app.core.security import create_access_token, create_refresh_token
+from app.core.security import create_access_token
 from app.dependencies.auth import require_role
 from app.models.user import User
 from app.permissions.roles import Role
@@ -133,22 +133,28 @@ def test_protected_endpoint_rejects_invalid_token(client):
     assert response.status_code == 401
 
 
-def test_refresh_token_is_not_an_access_token(
+def test_refresh_credential_is_not_an_access_token(
     client,
     engineer_user,
 ):
-    refresh_token = create_refresh_token(engineer_user.id)
+    login = client.post(
+        "/auth/login",
+        data={
+            "username": engineer_user.username,
+            "password": "correct-password",
+        },
+    )
+    refresh_credential = login.json()["refresh_token"]
 
     response = client.get(
         "/customers/",
         headers={
-            "Authorization": f"Bearer {refresh_token}",
+            "Authorization": f"Bearer {refresh_credential}",
         },
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid token type"
-
+    assert response.json()["detail"] == "Invalid authentication credentials"
 
 def test_unknown_token_subject_is_rejected(client):
     access_token = create_access_token(999999)

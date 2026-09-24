@@ -17,6 +17,7 @@ def production_settings(manifest_path: str, **overrides) -> Settings:
     values = {
         "SATCO_ENVIRONMENT": "production",
         "SECRET_KEY": "a" * 40,
+        "REFRESH_VERIFIER_KEY": "r" * 40,
         "SATCO_RELEASE_MANIFEST_PATH": manifest_path,
         "SATCO_PUBLIC_URL": "https://satco.example",
         "SATCO_TRUSTED_HOSTS": "satco.example",
@@ -63,6 +64,7 @@ def test_production_configuration_accepts_complete_safe_values(tmp_path):
 
 @pytest.mark.parametrize("override", [
     {"SECRET_KEY": "CHANGE_THIS_SECRET_KEY"},
+    {"REFRESH_VERIFIER_KEY": "satco-development-refresh-verifier-key-change-me"},
     {"SATCO_TRUSTED_HOSTS": "*"},
     {"SATCO_ALLOWED_ORIGINS": "*"},
     {"SATCO_OBJECT_HEALTH_URL": "http://unsafe"},
@@ -91,11 +93,15 @@ def test_bootstrap_requires_secret_and_window(tmp_path):
 def test_application_secret_files_are_the_values_consumed_by_runtime(tmp_path):
     signing = tmp_path / "signing"
     bootstrap = tmp_path / "bootstrap"
+    refresh_verifier = tmp_path / "refresh-verifier"
     signing.write_text("s" * 40, encoding="utf-8")
     bootstrap.write_text("b" * 40, encoding="utf-8")
+    refresh_verifier.write_text("r" * 40, encoding="utf-8")
     configured = Settings(
         SECRET_KEY_FILE=str(signing),
         PLATFORM_BOOTSTRAP_KEY_FILE=str(bootstrap),
+        REFRESH_VERIFIER_KEY_FILE=str(refresh_verifier),
     )
     assert configured.SECRET_KEY == "s" * 40
     assert configured.PLATFORM_BOOTSTRAP_KEY == "b" * 40
+    assert configured.REFRESH_VERIFIER_KEY == "r" * 40
