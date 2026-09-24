@@ -15,6 +15,10 @@ from app.schemas.mfa import (
     RecoveryCodeRequest,
     RecoveryCodesResponse,
     StepUpRequest,
+    RecoveryIssueRequest,
+    RecoveryIssueResponse,
+    AccountRecoveryCompleteRequest,
+    MfaRecoveryCompleteRequest,
 )
 from app.schemas.onboarding import ClosedOutcome, PasswordChangeRequest
 from app.models.organization import Organization, UserOrganizationMembership
@@ -31,6 +35,7 @@ from app.services.onboarding_service import OnboardingService, ProtectedOnboardi
 from app.services.refresh_session_service import RefreshRejected, RefreshSessionService
 from app.services.mfa_service import MfaRejected, MfaService
 from app.services.auth_throttle_service import AuthThrottleService, ThrottleConfigurationError
+from app.services.recovery_service import RecoveryRejected, RecoveryService
 
 
 router = APIRouter(
@@ -356,4 +361,83 @@ def admin_revoke_user_sessions(
     except RefreshRejected:
         db.rollback()
         raise HTTPException(status_code=403, detail="Permission denied")
+    return {"outcome": "success"}
+
+
+@router.post("/admin/users/{user_id}/recovery", response_model=RecoveryIssueResponse)
+def issue_security_recovery(
+    user_id: int,
+    data: RecoveryIssueRequest,
+    context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
+    auth: AuthenticatedSessionContext = Depends(get_current_session_context),
+    db: Session = Depends(get_db),
+):
+    if auth.user.role != "admin" or context.user.id != auth.user.id:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    sessions = RefreshSessionService(db)
+    if not sessions.has_recent_authentication(auth.session):
+        raise HTTPException(status_code=403, detail="Recent authentication required")
+    target = (
+        db.query(type(auth.user))
+        .join(UserOrganizationMembership, UserOrganizationMembership.user_id == type(auth.user).id)
+        .filter(
+            type(auth.user).id == user_id,
+            UserOrganizationMembership.organization_id == context.organization_id,
+            UserOrganizationMembership.is_enabled.is_(True),
+        )
+        .one_or_none()
+    )
+    if target is None:
+        raise HTTPException(status_code=404, detail="Protected resource not found")
+    try:
+        issued = RecoveryService(db).issue(actor=auth.user, target=target, organization_id=context.organization_id, purpose=data.purpose)
+    except RecoveryRejected:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="Protected resource not found")
+    return RecoveryIssueResponse(recovery_credential=issued.credential, expires_at=issued.expires_at)
+
+
+@router.post("/recovery/account/complete", response_model=ClosedOutcome)
+def complete_account_recovery(data: AccountRecoveryCompleteRequest, request: Request, db: Session = Depends(get_db)):
+    network_context = request.client.host if request.client else "unknown"
+    throttle = AuthThrottleService(db)
+    identity = data.recovery_credential.partition(".")[0]
+    try:
+        if throttle.is_blocked("recovery_verification", identity, network_context):
+            raise HTTPException(status_code=429, detail="Invalid or expired recovery credential")
+        RecoveryService(db).recover_account(data.recovery_credential, data.new_password)
+        throttle.clear("recovery_verification", identity, network_context)
+    except RecoveryRejected:
+        db.rollback()
+        try:
+            throttle.record_failure("recovery_verification", identity, network_context)
+        except ThrottleConfigurationError:
+            db.rollback()
+        raise HTTPException(status_code=400, detail="Invalid or expired recovery credential")
+    except (OSError, ThrottleConfigurationError):
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Recovery unavailable")
+    return {"outcome": "success"}
+
+
+@router.post("/recovery/mfa/complete", response_model=ClosedOutcome)
+def complete_mfa_recovery(data: MfaRecoveryCompleteRequest, request: Request, db: Session = Depends(get_db)):
+    network_context = request.client.host if request.client else "unknown"
+    throttle = AuthThrottleService(db)
+    identity = data.recovery_credential.partition(".")[0]
+    try:
+        if throttle.is_blocked("recovery_verification", identity, network_context):
+            raise HTTPException(status_code=429, detail="Invalid or expired recovery credential")
+        RecoveryService(db).recover_mfa(data.recovery_credential)
+        throttle.clear("recovery_verification", identity, network_context)
+    except RecoveryRejected:
+        db.rollback()
+        try:
+            throttle.record_failure("recovery_verification", identity, network_context)
+        except ThrottleConfigurationError:
+            db.rollback()
+        raise HTTPException(status_code=400, detail="Invalid or expired recovery credential")
+    except (OSError, ThrottleConfigurationError):
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Recovery unavailable")
     return {"outcome": "success"}

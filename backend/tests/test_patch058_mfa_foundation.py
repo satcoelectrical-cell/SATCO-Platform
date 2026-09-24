@@ -282,7 +282,9 @@ def test_mfa_verification_throttles_after_five_failures_without_plain_identity(
     assert blocked.status_code == 429
     state = db_session.query(AuthThrottleState).one()
     assert state.failure_count == 5
-    assert str(admin_user.id) not in state.credential_key
+    assert state.credential_key != str(admin_user.id)
+    assert len(state.credential_key) == 64
+    assert all(ch in "0123456789abcdef" for ch in state.credential_key)
     assert len(state.credential_key) == 64
     assert len(state.network_key) == 64
     threshold_events = db_session.query(AuthSecurityEvent).filter_by(

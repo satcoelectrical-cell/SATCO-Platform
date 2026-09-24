@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, Field
 
 
@@ -33,3 +34,22 @@ class RecoveryCodesResponse(BaseModel):
 class StepUpRequest(BaseModel):
     password: str = Field(min_length=1, max_length=512)
     totp_code: str | None = Field(default=None, min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class RecoveryIssueRequest(BaseModel):
+    purpose: str = Field(pattern=r"^(account_recovery|mfa_recovery)$")
+
+
+class RecoveryIssueResponse(BaseModel):
+    outcome: str = "success"
+    recovery_credential: str
+    expires_at: datetime
+
+
+class AccountRecoveryCompleteRequest(BaseModel):
+    recovery_credential: str = Field(min_length=55, max_length=256)
+    new_password: str = Field(min_length=12, max_length=512)
+
+
+class MfaRecoveryCompleteRequest(BaseModel):
+    recovery_credential: str = Field(min_length=55, max_length=256)
