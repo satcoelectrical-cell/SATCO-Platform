@@ -1,6 +1,9 @@
+from uuid import UUID
+
 from sqlalchemy.orm import Session
 
 from app.models.contact import Contact
+from app.models.customer import Customer
 from app.schemas.contact import ContactCreate, ContactUpdate
 
 
@@ -14,8 +17,14 @@ class ContactRepository:
         page: int = 1,
         size: int = 20,
         customer_id: int | None = None,
+        *,
+        organization_id: UUID,
     ):
-        query = self.db.query(Contact)
+        query = (
+            self.db.query(Contact)
+            .join(Customer, Customer.id == Contact.customer_id)
+            .filter(Customer.organization_id == organization_id)
+        )
 
         if customer_id:
             query = query.filter(
@@ -36,10 +45,16 @@ class ContactRepository:
     def get_by_id(
         self,
         contact_id: int,
+        *,
+        organization_id: UUID,
     ):
         return (
             self.db.query(Contact)
-            .filter(Contact.id == contact_id)
+            .join(Customer, Customer.id == Contact.customer_id)
+            .filter(
+                Contact.id == contact_id,
+                Customer.organization_id == organization_id,
+            )
             .first()
         )
 
