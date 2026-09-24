@@ -320,3 +320,65 @@ class MfaService:
         )
         self.db.commit()
         return EnrollmentComplete(recovery_codes=tuple(raw_codes))
+
+    def consume_recovery_code(self, user: User, organization_id: UUID, code: str) -> None:
+        verifier = self._recovery_verifier(code)
+        recovery = (
+            self.db.query(MfaRecoveryCode)
+            .filter(
+                MfaRecoveryCode.user_id == user.id,
+                MfaRecoveryCode.code_verifier == verifier,
+                MfaRecoveryCode.used_at.is_(None),
+            )
+            .with_for_update()
+            .one_or_none()
+        )
+        if recovery is None:
+            raise MfaRejected()
+        latest = self.db.query(func.max(MfaRecoveryCode.generation)).filter(MfaRecoveryCode.user_id == user.id).scalar()
+        if latest is None or recovery.generation != latest:
+            raise MfaRejected()
+        recovery.used_at = self._now()
+        self._event(event_type="mfa_recovery_code_used", user_id=user.id, organization_id=organization_id, outcome="success", reason_code="single_use_consumed")
+        self.db.commit()
+
+    def regenerate_recovery_codes(self, user: User, organization_id: UUID) -> tuple[str, ...]:
+        authenticator = (
+            self.db.query(UserTotpAuthenticator)
+            .filter(UserTotpAuthenticator.user_id == user.id)
+            .with_for_update()
+            .one_or_none()
+        )
+        if authenticator is None or authenticator.disabled_at is not None or authenticator.verified_at is None:
+            raise MfaRejected()
+        existing = self.db.query(MfaRecoveryCode).filter(MfaRecoveryCode.user_id == user.id, MfaRecoveryCode.used_at.is_(None)).with_for_update().all()
+        now = self._now()
+        for item in existing:
+            item.used_at = now
+        current_generation = self.db.query(func.max(MfaRecoveryCode.generation)).filter(MfaRecoveryCode.user_id == user.id).scalar() or 0
+        generation = current_generation + 1
+        raw_codes = []
+        for ordinal in range(1, self._RECOVERY_COUNT + 1):
+            value = secrets.token_urlsafe(18)
+            raw_codes.append(value)
+            self.db.add(MfaRecoveryCode(id=uuid4(), user_id=user.id, generation=generation, ordinal=ordinal, code_verifier=self._recovery_verifier(value)))
+        self._event(event_type="mfa_recovery_codes_generated", user_id=user.id, organization_id=organization_id, outcome="success", reason_code="regenerated")
+        self.db.commit()
+        return tuple(raw_codes)
+
+    def verify_active_totp(self, user: User, organization_id: UUID, code: str) -> None:
+        authenticator = (
+            self.db.query(UserTotpAuthenticator)
+            .filter(UserTotpAuthenticator.user_id == user.id)
+            .with_for_update()
+            .one_or_none()
+        )
+        if authenticator is None or authenticator.disabled_at is not None or authenticator.verified_at is None:
+            raise MfaRejected()
+        secret = self._decrypt_secret(authenticator)
+        counter = self._matching_counter(secret, code)
+        if counter is None or (authenticator.last_accepted_counter is not None and counter <= authenticator.last_accepted_counter):
+            raise MfaRejected()
+        authenticator.last_accepted_counter = counter
+        self._event(event_type="mfa_verification", user_id=user.id, organization_id=organization_id, outcome="success", reason_code="active_totp")
+        self.db.commit()

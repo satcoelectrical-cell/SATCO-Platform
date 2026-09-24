@@ -235,3 +235,102 @@ class RefreshSessionService:
         )
         self.db.commit()
         return user, successor
+
+    def list_active(self, user: User) -> list[AuthRefreshSession]:
+        now = self._now()
+        return (
+            self.db.query(AuthRefreshSession)
+            .join(AuthRefreshFamily, AuthRefreshFamily.id == AuthRefreshSession.family_id)
+            .filter(
+                AuthRefreshSession.user_id == user.id,
+                AuthRefreshSession.revoked_at.is_(None),
+                AuthRefreshSession.consumed_at.is_(None),
+                AuthRefreshSession.expires_at > now,
+                AuthRefreshFamily.revoked_at.is_(None),
+            )
+            .order_by(AuthRefreshSession.created_at.desc(), AuthRefreshSession.id.desc())
+            .all()
+        )
+
+    def revoke_current(self, user: User, session_id: UUID, *, actor_user_id: int | None = None) -> None:
+        session = (
+            self.db.query(AuthRefreshSession)
+            .filter(AuthRefreshSession.id == session_id, AuthRefreshSession.user_id == user.id)
+            .with_for_update()
+            .one_or_none()
+        )
+        if session is None:
+            raise RefreshRejected()
+        now = self._now()
+        if session.revoked_at is None:
+            session.revoked_at = now
+            session.revocation_reason = "current_session_logout"
+        self.db.add(AuthSecurityEvent(
+            event_type="current_session_revocation", user_id=user.id,
+            actor_user_id=actor_user_id or user.id, session_id=session.id,
+            outcome="success", reason_code="human_logout",
+        ))
+        self.db.commit()
+
+    def revoke_all(self, user: User, *, actor_user_id: int | None = None, reason: str = "all_sessions_logout") -> int:
+        now = self._now()
+        active = (
+            self.db.query(AuthRefreshSession)
+            .filter(AuthRefreshSession.user_id == user.id, AuthRefreshSession.revoked_at.is_(None))
+            .with_for_update()
+            .all()
+        )
+        for session in active:
+            session.revoked_at = now
+            session.revocation_reason = reason
+        families = (
+            self.db.query(AuthRefreshFamily)
+            .filter(AuthRefreshFamily.user_id == user.id, AuthRefreshFamily.revoked_at.is_(None))
+            .with_for_update()
+            .all()
+        )
+        for family in families:
+            family.revoked_at = now
+            family.revocation_reason = reason
+        self.db.add(AuthSecurityEvent(
+            event_type="all_session_revocation" if actor_user_id in (None, user.id) else "admin_session_revocation",
+            user_id=user.id, actor_user_id=actor_user_id or user.id,
+            outcome="success", reason_code=reason,
+        ))
+        self.db.commit()
+        return len(active)
+
+    def revoke_target(self, actor: User, target: User) -> int:
+        if actor.role != "admin" or actor.id == target.id:
+            raise RefreshRejected()
+        return self.revoke_all(target, actor_user_id=actor.id, reason="administrator_revocation")
+
+    def has_recent_authentication(self, session: AuthRefreshSession, *, minutes: int = 10) -> bool:
+        family = self.db.get(AuthRefreshFamily, session.family_id)
+        if family is None:
+            return False
+        latest_step_up = (
+            self.db.query(AuthSecurityEvent.occurred_at)
+            .filter(
+                AuthSecurityEvent.session_id == session.id,
+                AuthSecurityEvent.user_id == session.user_id,
+                AuthSecurityEvent.event_type == "step_up_success",
+                AuthSecurityEvent.outcome == "success",
+            )
+            .order_by(AuthSecurityEvent.occurred_at.desc())
+            .limit(1)
+            .scalar()
+        )
+        trusted_at = latest_step_up or family.created_at
+        if trusted_at is None:
+            return False
+        if trusted_at.tzinfo is None:
+            trusted_at = trusted_at.replace(tzinfo=timezone.utc)
+        return trusted_at >= self._now() - timedelta(minutes=minutes)
+
+    def record_step_up(self, user: User, session: AuthRefreshSession) -> None:
+        self.db.add(AuthSecurityEvent(
+            event_type="step_up_success", user_id=user.id, actor_user_id=user.id,
+            session_id=session.id, outcome="success", reason_code="recent_authentication",
+        ))
+        self.db.commit()

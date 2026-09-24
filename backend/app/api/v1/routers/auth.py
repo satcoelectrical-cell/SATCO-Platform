@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import create_access_token
+from app.core.security import create_access_token, verify_password
 
 from app.schemas.token import RefreshRequest, TokenResponse
 from app.schemas.mfa import (
@@ -12,15 +12,20 @@ from app.schemas.mfa import (
     TotpEnrollmentStartResponse,
     TotpEnrollmentVerifyRequest,
     TotpEnrollmentVerifyResponse,
+    RecoveryCodeRequest,
+    RecoveryCodesResponse,
+    StepUpRequest,
 )
 from app.schemas.onboarding import ClosedOutcome, PasswordChangeRequest
-from app.models.organization import Organization
+from app.models.organization import Organization, UserOrganizationMembership
 
 from app.services.user_service import UserService
 from app.dependencies.auth import (
     AuthenticatedOrganizationContext,
     get_current_user,
     get_current_user_organization_context,
+    get_current_session_context,
+    AuthenticatedSessionContext,
 )
 from app.services.onboarding_service import OnboardingService, ProtectedOnboarding
 from app.services.refresh_session_service import RefreshRejected, RefreshSessionService
@@ -227,3 +232,128 @@ def verify_totp_enrollment(
     return TotpEnrollmentVerifyResponse(
         recovery_codes=list(completed.recovery_codes)
     )
+
+
+@router.get("/sessions")
+def list_sessions(
+    auth: AuthenticatedSessionContext = Depends(get_current_session_context),
+    db: Session = Depends(get_db),
+):
+    sessions = RefreshSessionService(db).list_active(auth.user)
+    return {"sessions": [
+        {
+            "id": str(item.id),
+            "current": item.id == auth.session.id,
+            "created_at": item.created_at,
+            "expires_at": item.expires_at,
+            "device_label": item.device_label,
+        }
+        for item in sessions
+    ]}
+
+
+@router.post("/logout", response_model=ClosedOutcome)
+def logout_current(
+    auth: AuthenticatedSessionContext = Depends(get_current_session_context),
+    db: Session = Depends(get_db),
+):
+    RefreshSessionService(db).revoke_current(auth.user, auth.session.id)
+    return {"outcome": "success"}
+
+
+@router.post("/step-up", response_model=ClosedOutcome)
+def step_up(
+    data: StepUpRequest,
+    context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
+    auth: AuthenticatedSessionContext = Depends(get_current_session_context),
+    db: Session = Depends(get_db),
+):
+    if context.user.id != auth.user.id or not verify_password(data.password, auth.user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    mfa = MfaService(db)
+    status = mfa.status(auth.user, context.organization_id)
+    if status.required or status.active:
+        if not data.totp_code:
+            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+        try:
+            mfa.verify_active_totp(auth.user, context.organization_id, data.totp_code)
+        except MfaRejected:
+            db.rollback()
+            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    RefreshSessionService(db).record_step_up(auth.user, auth.session)
+    return {"outcome": "success"}
+
+
+@router.post("/logout-all", response_model=ClosedOutcome)
+def logout_all(
+    auth: AuthenticatedSessionContext = Depends(get_current_session_context),
+    db: Session = Depends(get_db),
+):
+    sessions = RefreshSessionService(db)
+    if not sessions.has_recent_authentication(auth.session):
+        raise HTTPException(status_code=403, detail="Recent authentication required")
+    sessions.revoke_all(auth.user)
+    return {"outcome": "success"}
+
+
+@router.post("/mfa/recovery-code/use", response_model=ClosedOutcome)
+def use_recovery_code(
+    data: RecoveryCodeRequest,
+    context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
+    db: Session = Depends(get_db),
+):
+    try:
+        MfaService(db).consume_recovery_code(context.user, context.organization_id, data.code)
+    except MfaRejected:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Invalid recovery credential")
+    return {"outcome": "success"}
+
+
+@router.post("/mfa/recovery-codes/regenerate", response_model=RecoveryCodesResponse)
+def regenerate_recovery_codes(
+    context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
+    auth: AuthenticatedSessionContext = Depends(get_current_session_context),
+    db: Session = Depends(get_db),
+):
+    sessions = RefreshSessionService(db)
+    if not sessions.has_recent_authentication(auth.session):
+        raise HTTPException(status_code=403, detail="Recent authentication required")
+    try:
+        codes = MfaService(db).regenerate_recovery_codes(context.user, context.organization_id)
+    except MfaRejected:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="MFA recovery unavailable")
+    return RecoveryCodesResponse(recovery_codes=list(codes))
+
+
+@router.post("/admin/users/{user_id}/sessions/revoke", response_model=ClosedOutcome)
+def admin_revoke_user_sessions(
+    user_id: int,
+    context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
+    auth: AuthenticatedSessionContext = Depends(get_current_session_context),
+    db: Session = Depends(get_db),
+):
+    if auth.user.role != "admin" or context.user.id != auth.user.id:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    sessions = RefreshSessionService(db)
+    if not sessions.has_recent_authentication(auth.session):
+        raise HTTPException(status_code=403, detail="Recent authentication required")
+    target = (
+        db.query(type(auth.user))
+        .join(UserOrganizationMembership, UserOrganizationMembership.user_id == type(auth.user).id)
+        .filter(
+            type(auth.user).id == user_id,
+            UserOrganizationMembership.organization_id == context.organization_id,
+            UserOrganizationMembership.is_enabled.is_(True),
+        )
+        .one_or_none()
+    )
+    if target is None:
+        raise HTTPException(status_code=404, detail="Protected resource not found")
+    try:
+        sessions.revoke_target(auth.user, target)
+    except RefreshRejected:
+        db.rollback()
+        raise HTTPException(status_code=403, detail="Permission denied")
+    return {"outcome": "success"}

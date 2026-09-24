@@ -30,6 +30,12 @@ class AuthenticatedOrganizationContext:
     organization_id: UUID
 
 
+@dataclass(frozen=True, slots=True)
+class AuthenticatedSessionContext:
+    user: User
+    session: AuthRefreshSession
+
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -117,6 +123,21 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
         )
+
+
+def get_current_session_context(
+    token: str = Depends(oauth2_scheme),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AuthenticatedSessionContext:
+    try:
+        session_id = UUID(str(decode_token(token).get("sid")))
+    except (JWTError, TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+    session = db.get(AuthRefreshSession, session_id)
+    if session is None or session.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+    return AuthenticatedSessionContext(user=current_user, session=session)
 
 
 def get_current_user_id(
