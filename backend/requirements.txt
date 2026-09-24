@@ -11,6 +11,7 @@ python-dotenv
 pwdlib[argon2]
 
 python-jose[cryptography]
+pyotp>=2.9.0,<3
 python-multipart
 
 email-validator

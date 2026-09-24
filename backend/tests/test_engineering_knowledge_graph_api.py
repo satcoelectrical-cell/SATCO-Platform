@@ -1,6 +1,6 @@
 """PATCH-033 Batch 3 authenticated transport evidence."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -14,6 +14,7 @@ from app.core.security import create_access_token
 from app.exceptions.engineering_object import EngineeringObjectProtectedNotFound
 from app.main import app
 from app.models.organization import UserOrganizationMembership
+from app.models.auth_security import AuthRefreshFamily, AuthRefreshSession
 from app.permissions.roles import Role
 from app.schemas.engineering_object import EngineeringObjectResponse
 from conftest import create_user
@@ -71,8 +72,22 @@ def real_context_graph_api(db_session):
     app.dependency_overrides.clear()
 
 
-def _headers(user_id):
-    return {"Authorization": f"Bearer {create_access_token(user_id)}"}
+def _headers(user, db_session):
+    family = AuthRefreshFamily(user_id=user.id)
+    db_session.add(family)
+    db_session.flush()
+    session = AuthRefreshSession(
+        family_id=family.id,
+        user_id=user.id,
+        selector=uuid4().hex,
+        secret_verifier="0" * 64,
+        auth_version=user.auth_version,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add(session)
+    db_session.commit()
+    token = create_access_token(user.id, user.auth_version, session.id)
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_real_jwt_and_organization_context_disclose_exact_authorized_projection(
@@ -84,7 +99,7 @@ def test_real_jwt_and_organization_context_disclose_exact_authorized_projection(
 
     response = client.get(
         f"/engineering-knowledge-graph/nodes/{NODE_ID}",
-        headers=_headers(user.id),
+        headers=_headers(user, db_session),
         params={"project_id": 11, "workspace_id": 12},
     )
 
@@ -125,7 +140,7 @@ def test_missing_invalid_and_inactive_auth_are_rejected_before_canonical_read(
         ),
         client.get(
             f"/engineering-knowledge-graph/nodes/{NODE_ID}",
-            headers=_headers(inactive.id),
+            headers=_headers(inactive, db_session),
         ),
     )
 
@@ -158,7 +173,7 @@ def test_disabled_or_missing_organization_context_denies_before_canonical_read(
 
     response = client.get(
         f"/engineering-knowledge-graph/nodes/{NODE_ID}",
-        headers=_headers(user.id),
+        headers=_headers(user, db_session),
     )
 
     assert response.status_code == 403
@@ -182,7 +197,7 @@ def test_genuine_nonmember_has_same_stable_organization_denial(
 
     response = client.get(
         f"/engineering-knowledge-graph/nodes/{NODE_ID}",
-        headers=_headers(user.id),
+        headers=_headers(user, db_session),
     )
 
     assert response.status_code == 403
@@ -208,16 +223,16 @@ def test_closed_application_outcomes_are_payload_free_and_non_disclosing(
     canonical.outcome = EngineeringObjectProtectedNotFound(NODE_ID)
     protected = client.get(
         f"/engineering-knowledge-graph/nodes/{NODE_ID}",
-        headers=_headers(user.id),
+        headers=_headers(user, db_session),
     )
     canonical.outcome = RuntimeError(secret)
     unavailable = client.get(
         f"/engineering-knowledge-graph/nodes/{NODE_ID}",
-        headers=_headers(user.id),
+        headers=_headers(user, db_session),
     )
     invalid = client.get(
         "/engineering-knowledge-graph/nodes/not-a-uuid",
-        headers=_headers(user.id),
+        headers=_headers(user, db_session),
     )
 
     assert protected.json() == {"status": "protected_not_found"}
@@ -242,7 +257,7 @@ def test_optional_scope_mismatch_is_protected_after_one_authorized_read(
         before = len(canonical.calls)
         response = client.get(
             f"/engineering-knowledge-graph/nodes/{NODE_ID}",
-            headers=_headers(user.id),
+            headers=_headers(user, db_session),
             params=params,
         )
         assert response.json() == {"status": "protected_not_found"}
@@ -275,6 +290,6 @@ def test_deferred_and_collection_routes_are_absent(
     )
     response = client.get(
         f"/engineering-knowledge-graph/{suffix}",
-        headers=_headers(user.id),
+        headers=_headers(user, db_session),
     )
     assert response.status_code == 404

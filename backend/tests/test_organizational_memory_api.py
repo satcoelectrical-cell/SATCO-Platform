@@ -1,6 +1,7 @@
 """PATCH-034 Batch 6 authenticated transport and composition evidence."""
 
 from dataclasses import fields
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.core.database import get_db
 from app.core.security import create_access_token
+from app.models.auth_security import AuthRefreshFamily, AuthRefreshSession
 from app.dependencies.organizational_memory import (
     OrganizationalMemoryApplication,
     get_organizational_memory_application,
@@ -97,12 +99,25 @@ def memory_api(db_session):
         )
     )
     with TestClient(app) as client:
-        yield client, service, user, source, memory_id, replacement_id
+        yield client, service, user, source, memory_id, replacement_id, db_session
     app.dependency_overrides.clear()
 
 
-def _auth(user):
-    return {"Authorization": f"Bearer {create_access_token(user.id)}", **HEADERS}
+def _auth(user, db_session):
+    family = AuthRefreshFamily(user_id=user.id)
+    db_session.add(family)
+    db_session.flush()
+    session = AuthRefreshSession(
+        family_id=family.id,
+        user_id=user.id,
+        selector=uuid4().hex,
+        secret_verifier="0" * 64,
+        auth_version=user.auth_version,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add(session)
+    db_session.commit()
+    return {"Authorization": f"Bearer {create_access_token(user.id, user.auth_version, session.id)}", **HEADERS}
 
 
 def _admission(source, predecessor=None):
@@ -123,8 +138,8 @@ def _admission(source, predecessor=None):
 
 
 def test_all_seven_routes_delegate_once_and_serialize_closed_success(memory_api):
-    client, service, user, source, memory_id, replacement_id = memory_api
-    headers = _auth(user)
+    client, service, user, source, memory_id, replacement_id, db_session = memory_api
+    headers = _auth(user, db_session)
     requests = (
         ("admit", "post", "/organizational-memory/admissions", _admission(source)),
         ("get_active", "get", f"/organizational-memory/{memory_id}", None),
@@ -145,10 +160,10 @@ def test_all_seven_routes_delegate_once_and_serialize_closed_success(memory_api)
 
 
 def test_protected_results_are_discriminator_only_for_every_route(memory_api):
-    client, service, user, source, memory_id, replacement_id = memory_api
+    client, service, user, source, memory_id, replacement_id, db_session = memory_api
     for operation in service.results:
         service.results[operation] = MemoryProtectedNotFound()
-    headers = _auth(user)
+    headers = _auth(user, db_session)
     calls = (
         client.post("/organizational-memory/admissions", headers=headers, json=_admission(source)),
         client.get(f"/organizational-memory/{memory_id}", headers=headers),
@@ -162,12 +177,12 @@ def test_protected_results_are_discriminator_only_for_every_route(memory_api):
 
 
 def test_validation_is_payload_free_and_client_cannot_inject_authority(memory_api):
-    client, service, user, source, _, _ = memory_api
+    client, service, user, source, _, _, db_session = memory_api
     body = _admission(source)
     body["organization_id"] = str(uuid4())
     body["actor_id"] = 999
     response = client.post(
-        "/organizational-memory/admissions", headers=_auth(user), json=body,
+        "/organizational-memory/admissions", headers=_auth(user, db_session), json=body,
     )
     assert response.status_code == 422
     assert response.json() == {"outcome": "invalid_request"}
@@ -175,10 +190,10 @@ def test_validation_is_payload_free_and_client_cannot_inject_authority(memory_ap
 
 
 def test_continuation_is_passed_unchanged_to_application(memory_api):
-    client, service, user, source, _, _ = memory_api
+    client, service, user, source, _, _, db_session = memory_api
     token = "opaque-authenticated-continuation"
     response = client.get(
-        "/organizational-memory", headers=_auth(user),
+        "/organizational-memory", headers=_auth(user, db_session),
         params={"workspace_id": source.workspace_id, "continuation": token},
     )
     assert response.status_code == 200
@@ -214,8 +229,8 @@ def test_payload_free_result_types_have_no_hidden_fields():
 
 
 def test_human_rationales_are_required_and_never_synthesized(memory_api):
-    client, service, user, source, memory_id, replacement_id = memory_api
-    headers = _auth(user)
+    client, service, user, source, memory_id, replacement_id, db_session = memory_api
+    headers = _auth(user, db_session)
     admission = _admission(source)
     without_admission = dict(admission); without_admission.pop("admission_rationale")
     without_authority = dict(admission); without_authority.pop("authority_rationale")
@@ -259,7 +274,7 @@ def test_human_rationales_are_required_and_never_synthesized(memory_api):
 def test_transport_rejects_audience_and_restriction_contract_violations(
     memory_api,
 ):
-    client, service, user, source, _, _ = memory_api
+    client, service, user, source, _, _, db_session = memory_api
     invalid_bodies = []
     for audience in ([2, 1], [1, 1]):
         body = _admission(source); body["audience_actor_ids"] = audience
@@ -272,7 +287,7 @@ def test_transport_rejects_audience_and_restriction_contract_violations(
     invalid_bodies.append(malformed)
 
     responses = [client.post(
-        "/organizational-memory/admissions", headers=_auth(user), json=body,
+        "/organizational-memory/admissions", headers=_auth(user, db_session), json=body,
     ) for body in invalid_bodies]
     assert all(response.status_code == 422 for response in responses)
     assert all(response.json() == {"outcome": "invalid_request"}
@@ -281,11 +296,11 @@ def test_transport_rejects_audience_and_restriction_contract_violations(
 
 
 def test_downstream_domain_validation_is_closed_and_non_disclosing(memory_api):
-    client, service, user, source, _, _ = memory_api
+    client, service, user, source, _, _, db_session = memory_api
     body = _admission(source)
     body["admission_rationale"] = "   "
     response = client.post(
-        "/organizational-memory/admissions", headers=_auth(user), json=body,
+        "/organizational-memory/admissions", headers=_auth(user, db_session), json=body,
     )
     assert response.status_code == 422
     assert response.json() == {"outcome": "invalid_request"}
@@ -306,7 +321,7 @@ def test_real_authentication_and_server_organization_build_trusted_actor(db_sess
     with TestClient(app) as client:
         unauthenticated = client.get(f"/organizational-memory/{memory_id}")
         authenticated = client.get(
-            f"/organizational-memory/{memory_id}", headers=_auth(user),
+            f"/organizational-memory/{memory_id}", headers=_auth(user, db_session),
         )
     app.dependency_overrides.clear()
 
@@ -334,7 +349,7 @@ def test_disabled_membership_denies_before_application_call(db_session):
     app.dependency_overrides[get_organizational_memory_service] = lambda: service
     with TestClient(app) as client:
         response = client.get(
-            f"/organizational-memory/{uuid4()}", headers=_auth(user),
+            f"/organizational-memory/{uuid4()}", headers=_auth(user, db_session),
         )
     app.dependency_overrides.clear()
 

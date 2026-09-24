@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     REFRESH_VERIFIER_KEY: str = "satco-development-refresh-verifier-key-change-me"
     REFRESH_VERIFIER_KEY_FILE: str = ""
+    TOTP_ENCRYPTION_KEY_FILE: str = ""
+    TOTP_ENCRYPTION_KEY_ID: str = "development-v1"
+    TOTP_ENCRYPTION_KEY_VERSION: int = 1
+    TOTP_PREVIOUS_KEY_FILES: str = ""
+    RECOVERY_CODE_VERIFIER_KEY_FILE: str = ""
+    AUTH_THROTTLE_KEY_FILE: str = ""
+    AUTH_THROTTLE_FAILURE_THRESHOLD: int = 5
+    AUTH_THROTTLE_WINDOW_SECONDS: int = 300
+    AUTH_THROTTLE_MAX_BACKOFF_SECONDS: int = 900
     PLATFORM_BOOTSTRAP_KEY: str = ""
     ACCOUNT_ACTIVATION_EXPIRE_HOURS: int = 24
     ACCOUNT_RESET_EXPIRE_MINUTES: int = 30
@@ -131,6 +140,26 @@ class Settings(BaseSettings):
             self.REFRESH_VERIFIER_KEY_FILE, self.REFRESH_VERIFIER_KEY
         )
 
+    def resolved_totp_encryption_key(self) -> str:
+        return self._secret_from_file(self.TOTP_ENCRYPTION_KEY_FILE, "")
+
+    def resolved_recovery_code_verifier_key(self) -> str:
+        return self._secret_from_file(self.RECOVERY_CODE_VERIFIER_KEY_FILE, "")
+
+    def resolved_totp_previous_keys(self) -> dict[str, str]:
+        result: dict[str, str] = {}
+        if not self.TOTP_PREVIOUS_KEY_FILES.strip():
+            return result
+        for item in self.TOTP_PREVIOUS_KEY_FILES.split(","):
+            key_id, separator, path = item.strip().partition("=")
+            if not separator or not key_id or not path or key_id in result:
+                raise ValueError("Invalid TOTP previous-key configuration")
+            result[key_id] = self._secret_from_file(path, "")
+        return result
+
+    def resolved_auth_throttle_key(self) -> str:
+        return self._secret_from_file(self.AUTH_THROTTLE_KEY_FILE, "")
+
     def resolved_bootstrap_key(self) -> str:
         return self._secret_from_file(
             self.PLATFORM_BOOTSTRAP_KEY_FILE, self.PLATFORM_BOOTSTRAP_KEY
@@ -169,6 +198,38 @@ class Settings(BaseSettings):
             or refresh_verifier_key == "satco-development-refresh-verifier-key-change-me"
         ):
             errors.append("refresh_verifier_key")
+        try:
+            import base64
+            totp_key = base64.urlsafe_b64decode(self.resolved_totp_encryption_key().encode("ascii"))
+            recovery_key = self.resolved_recovery_code_verifier_key()
+            throttle_key = self.resolved_auth_throttle_key()
+            previous_keys = self.resolved_totp_previous_keys()
+        except (OSError, ValueError, UnicodeError):
+            totp_key = b""
+            recovery_key = ""
+            throttle_key = ""
+            previous_keys = {}
+        if len(totp_key) != 32 or not self.TOTP_ENCRYPTION_KEY_ID or self.TOTP_ENCRYPTION_KEY_VERSION < 1:
+            errors.append("totp_encryption_key")
+        if len(recovery_key) < 32:
+            errors.append("recovery_code_verifier_key")
+        if (
+            len(throttle_key) < 32
+            or self.AUTH_THROTTLE_FAILURE_THRESHOLD < 1
+            or self.AUTH_THROTTLE_WINDOW_SECONDS < 1
+            or self.AUTH_THROTTLE_MAX_BACKOFF_SECONDS < 1
+        ):
+            errors.append("auth_throttle")
+        try:
+            previous_key_material_valid = all(
+                key_id
+                and len(base64.urlsafe_b64decode(value.encode("ascii"))) == 32
+                for key_id, value in previous_keys.items()
+            )
+        except (ValueError, UnicodeError):
+            previous_key_material_valid = False
+        if not previous_key_material_valid:
+            errors.append("totp_previous_keys")
         if not self.SATCO_RELEASE_MANIFEST_PATH:
             errors.append("release_manifest")
         if not self.SATCO_PUBLIC_URL.startswith("https://"):

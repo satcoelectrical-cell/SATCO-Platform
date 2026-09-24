@@ -11,13 +11,27 @@ def production_settings(manifest_path: str, **overrides) -> Settings:
     scanner_token = str(parent / "scanner-token")
     object_access = str(parent / "object-access")
     object_secret = str(parent / "object-secret")
+    totp_key = str(parent / "totp-key")
+    recovery_key = str(parent / "recovery-key")
+    throttle_key = str(parent / "throttle-key")
     parent.joinpath("scanner-token").write_text("s" * 40, encoding="utf-8")
     parent.joinpath("object-access").write_text("access-key", encoding="utf-8")
     parent.joinpath("object-secret").write_text("o" * 40, encoding="utf-8")
+    import base64
+    parent.joinpath("totp-key").write_text(
+        base64.urlsafe_b64encode(b"t" * 32).decode("ascii"), encoding="utf-8"
+    )
+    parent.joinpath("recovery-key").write_text("c" * 40, encoding="utf-8")
+    parent.joinpath("throttle-key").write_text("h" * 40, encoding="utf-8")
     values = {
         "SATCO_ENVIRONMENT": "production",
         "SECRET_KEY": "a" * 40,
         "REFRESH_VERIFIER_KEY": "r" * 40,
+        "TOTP_ENCRYPTION_KEY_FILE": totp_key,
+        "TOTP_ENCRYPTION_KEY_ID": "production-v1",
+        "TOTP_ENCRYPTION_KEY_VERSION": 1,
+        "RECOVERY_CODE_VERIFIER_KEY_FILE": recovery_key,
+        "AUTH_THROTTLE_KEY_FILE": throttle_key,
         "SATCO_RELEASE_MANIFEST_PATH": manifest_path,
         "SATCO_PUBLIC_URL": "https://satco.example",
         "SATCO_TRUSTED_HOSTS": "satco.example",
@@ -65,6 +79,9 @@ def test_production_configuration_accepts_complete_safe_values(tmp_path):
 @pytest.mark.parametrize("override", [
     {"SECRET_KEY": "CHANGE_THIS_SECRET_KEY"},
     {"REFRESH_VERIFIER_KEY": "satco-development-refresh-verifier-key-change-me"},
+    {"TOTP_ENCRYPTION_KEY_FILE": ""},
+    {"RECOVERY_CODE_VERIFIER_KEY_FILE": ""},
+    {"AUTH_THROTTLE_KEY_FILE": ""},
     {"SATCO_TRUSTED_HOSTS": "*"},
     {"SATCO_ALLOWED_ORIGINS": "*"},
     {"SATCO_OBJECT_HEALTH_URL": "http://unsafe"},

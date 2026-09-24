@@ -7,6 +7,12 @@ from app.core.database import get_db
 from app.core.security import create_access_token
 
 from app.schemas.token import RefreshRequest, TokenResponse
+from app.schemas.mfa import (
+    MfaStatusResponse,
+    TotpEnrollmentStartResponse,
+    TotpEnrollmentVerifyRequest,
+    TotpEnrollmentVerifyResponse,
+)
 from app.schemas.onboarding import ClosedOutcome, PasswordChangeRequest
 from app.models.organization import Organization
 
@@ -18,6 +24,8 @@ from app.dependencies.auth import (
 )
 from app.services.onboarding_service import OnboardingService, ProtectedOnboarding
 from app.services.refresh_session_service import RefreshRejected, RefreshSessionService
+from app.services.mfa_service import MfaRejected, MfaService
+from app.services.auth_throttle_service import AuthThrottleService, ThrottleConfigurationError
 
 
 router = APIRouter(
@@ -141,3 +149,81 @@ async def change_password(
     except (ProtectedOnboarding, ValidationError, ValueError, TypeError):
         db.rollback()
         return {"outcome": "invalid_request"}
+
+
+@router.get("/mfa/status", response_model=MfaStatusResponse)
+def mfa_status(
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
+    db: Session = Depends(get_db),
+):
+    status = MfaService(db).status(context.user, context.organization_id)
+    return MfaStatusResponse(
+        required=status.required,
+        enrolled=status.enrolled,
+        active=status.active,
+    )
+
+
+@router.post("/mfa/totp/enrollment", response_model=TotpEnrollmentStartResponse)
+def start_totp_enrollment(
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        enrollment = MfaService(db).start_enrollment(
+            context.user, context.organization_id
+        )
+    except MfaRejected:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="MFA enrollment unavailable")
+    return TotpEnrollmentStartResponse(
+        secret=enrollment.secret,
+        provisioning_uri=enrollment.provisioning_uri,
+    )
+
+
+@router.post(
+    "/mfa/totp/enrollment/verify",
+    response_model=TotpEnrollmentVerifyResponse,
+)
+def verify_totp_enrollment(
+    request: Request,
+    data: TotpEnrollmentVerifyRequest,
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
+    db: Session = Depends(get_db),
+):
+    network_context = request.client.host if request.client else "unknown"
+    throttle = AuthThrottleService(db)
+    identity = str(context.user.id)
+    try:
+        if throttle.is_blocked("mfa_verification", identity, network_context):
+            raise HTTPException(status_code=429, detail="Invalid MFA verification")
+        completed = MfaService(db).verify_enrollment(
+            context.user, context.organization_id, data.code
+        )
+        throttle.clear("mfa_verification", identity, network_context)
+    except MfaRejected:
+        db.rollback()
+        try:
+            threshold_reached = throttle.record_failure(
+                "mfa_verification", identity, network_context
+            )
+            if threshold_reached:
+                MfaService(db).record_throttle_threshold(
+                    context.user, context.organization_id
+                )
+        except ThrottleConfigurationError:
+            db.rollback()
+        raise HTTPException(status_code=400, detail="Invalid MFA verification")
+    except ThrottleConfigurationError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="MFA verification unavailable")
+    return TotpEnrollmentVerifyResponse(
+        recovery_codes=list(completed.recovery_codes)
+    )
