@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import json
 
 import pytest
@@ -106,6 +107,32 @@ def test_bootstrap_requires_secret_and_window(tmp_path):
             str(path), SATCO_BOOTSTRAP_ENABLED=True, PLATFORM_BOOTSTRAP_KEY="a" * 40
         ))
 
+
+
+@pytest.mark.parametrize("window_end", ["not-a-time", "2020-01-01T00:00:00+00:00", "2099-01-01T00:00:00"])
+def test_bootstrap_rejects_malformed_expired_or_naive_window(tmp_path, window_end):
+    path = tmp_path / "manifest.json"
+    manifest(path)
+    with pytest.raises(ProductionConfigurationError):
+        validate_production_settings(production_settings(
+            str(path),
+            SATCO_BOOTSTRAP_ENABLED=True,
+            PLATFORM_BOOTSTRAP_KEY="a" * 40,
+            SATCO_BOOTSTRAP_WINDOW_END=window_end,
+        ))
+
+
+def test_bootstrap_accepts_future_timezone_aware_window(tmp_path):
+    path = tmp_path / "manifest.json"
+    manifest(path)
+    future = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    configured = production_settings(
+        str(path),
+        SATCO_BOOTSTRAP_ENABLED=True,
+        PLATFORM_BOOTSTRAP_KEY="a" * 40,
+        SATCO_BOOTSTRAP_WINDOW_END=future,
+    )
+    assert "bootstrap" not in configured.production_validation_errors()
 
 def test_application_secret_files_are_the_values_consumed_by_runtime(tmp_path):
     signing = tmp_path / "signing"

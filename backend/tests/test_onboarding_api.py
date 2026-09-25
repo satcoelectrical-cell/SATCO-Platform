@@ -23,8 +23,13 @@ def bearer(user, db_session):
     return {"Authorization": f"Bearer {create_access_token(user.id, user.auth_version, session.id)}"}
 
 
-def test_platform_bootstrap_requires_configured_secret(client, monkeypatch):
+def test_platform_bootstrap_requires_configured_secret(client, monkeypatch, tmp_path):
+    throttle = tmp_path / "bootstrap-throttle-key"
+    throttle.write_text("h" * 40, encoding="utf-8")
+    monkeypatch.setattr(settings, "AUTH_THROTTLE_KEY_FILE", str(throttle))
     monkeypatch.setattr(settings, "PLATFORM_BOOTSTRAP_KEY", "x" * 40)
+    monkeypatch.setattr(settings, "SATCO_BOOTSTRAP_ENABLED", True)
+    monkeypatch.setattr(settings, "SATCO_BOOTSTRAP_WINDOW_END", "2099-01-01T00:00:00+00:00")
     payload = {
         "organization_name": "First Customer",
         "organization_slug": "first-customer",

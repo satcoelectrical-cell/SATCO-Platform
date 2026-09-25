@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from pydantic import field_validator, model_validator
@@ -279,7 +280,18 @@ class Settings(BaseSettings):
             errors.append("supporting_file_object_store")
         if self.SATCO_BOOTSTRAP_ENABLED:
             bootstrap = self.resolved_bootstrap_key()
-            if len(bootstrap) < 32 or not self.SATCO_BOOTSTRAP_WINDOW_END:
+            bootstrap_window_valid = False
+            try:
+                window_end = datetime.fromisoformat(
+                    self.SATCO_BOOTSTRAP_WINDOW_END.strip().replace("Z", "+00:00")
+                )
+                bootstrap_window_valid = (
+                    window_end.tzinfo is not None
+                    and window_end.astimezone(timezone.utc) > datetime.now(timezone.utc)
+                )
+            except (AttributeError, TypeError, ValueError):
+                bootstrap_window_valid = False
+            if len(bootstrap) < 32 or not bootstrap_window_valid:
                 errors.append("bootstrap")
         if self.COPILOT_ENABLED and (
             not self.COPILOT_PROVIDER_ENDPOINT.startswith("https://")

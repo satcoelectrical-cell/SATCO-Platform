@@ -120,7 +120,14 @@ class AuthThrottleService:
         self.db.commit()
         return threshold_reached
 
-    def clear(self, operation: str, credential_identity: str, network_context: str) -> None:
+    def clear(
+        self,
+        operation: str,
+        credential_identity: str,
+        network_context: str,
+        *,
+        commit: bool = True,
+    ) -> None:
         credential_key, network_key = self._keys(
             operation, credential_identity, network_context
         )
@@ -132,4 +139,5 @@ class AuthThrottleService:
             )
             .delete(synchronize_session=False)
         )
-        self.db.commit()
+        if commit:
+            self.db.commit()

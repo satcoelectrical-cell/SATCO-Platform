@@ -328,6 +328,25 @@ class RefreshSessionService:
             trusted_at = trusted_at.replace(tzinfo=timezone.utc)
         return trusted_at >= self._now() - timedelta(minutes=minutes)
 
+    def has_recent_step_up(self, session: AuthRefreshSession, *, minutes: int = 10) -> bool:
+        latest_step_up = (
+            self.db.query(AuthSecurityEvent.occurred_at)
+            .filter(
+                AuthSecurityEvent.session_id == session.id,
+                AuthSecurityEvent.user_id == session.user_id,
+                AuthSecurityEvent.event_type == "step_up_success",
+                AuthSecurityEvent.outcome == "success",
+            )
+            .order_by(AuthSecurityEvent.occurred_at.desc())
+            .limit(1)
+            .scalar()
+        )
+        if latest_step_up is None:
+            return False
+        if latest_step_up.tzinfo is None:
+            latest_step_up = latest_step_up.replace(tzinfo=timezone.utc)
+        return latest_step_up >= self._now() - timedelta(minutes=minutes)
+
     def record_step_up(self, user: User, session: AuthRefreshSession) -> None:
         self.db.add(AuthSecurityEvent(
             event_type="step_up_success", user_id=user.id, actor_user_id=user.id,
