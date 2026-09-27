@@ -109,6 +109,7 @@ jobs:
           test "$BUILDX_DRIVER" = "docker-container"
           docker buildx inspect --bootstrap
           source_epoch="$(git show -s --format=%ct "$GITHUB_SHA")"
+          export SOURCE_DATE_EPOCH="$source_epoch"
           docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
             --file backend/Dockerfile.production \
             --output type=oci,dest=backend-image.oci.tar backend

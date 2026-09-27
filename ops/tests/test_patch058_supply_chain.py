@@ -270,6 +270,11 @@ class SupplyChainTests(unittest.TestCase):
         self.assertIn("BUILDX_DRIVER: ${{ steps.buildx.outputs.driver }}", text)
         self.assertIn('test "$BUILDX_DRIVER" = "docker-container"', text)
         self.assertIn("docker buildx inspect --bootstrap", text)
+        self.assertIn(
+            'source_epoch="$(git show -s --format=%ct "$GITHUB_SHA")"',
+            text,
+        )
+        self.assertIn('export SOURCE_DATE_EPOCH="$source_epoch"', text)
         self.assertIn("--output type=oci,dest=backend-image.oci.tar backend", text)
         self.assertLess(
             text.index("Set up pinned OCI-capable Buildx builder"),
