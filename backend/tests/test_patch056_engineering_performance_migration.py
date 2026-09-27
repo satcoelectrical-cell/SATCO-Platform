@@ -103,6 +103,10 @@ def test_p056_dat_04_empty_downgrade_and_reupgrade_are_safe():
     command.upgrade(alembic_config, PATCH_056_HEAD)
     assert _revision() == PATCH_056_HEAD
     assert TABLES <= set(inspect(owner_engine).get_table_names())
+    # Restore the shared disposable database to the repository head so this
+    # historical PATCH-056 migration test cannot contaminate later suites.
+    command.upgrade(alembic_config, TEST_DATABASE_REVISION)
+    assert _revision() == TEST_DATABASE_REVISION
 
 
 def test_p056_project_and_workspace_snapshot_idempotency_on_postgresql(derived_scope):

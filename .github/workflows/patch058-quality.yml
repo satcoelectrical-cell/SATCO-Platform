@@ -164,3 +164,40 @@ jobs:
           npm run typecheck
           npm run test:run
           npm run build
+
+  qualification-evidence:
+    needs: [backend-tests, migration-upgrade, frontend]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Record exact successful qualification identity
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          common = {
+              "result": "PASS",
+              "source_commit": os.environ["SOURCE_COMMIT"],
+              "workflow": "patch058-quality.yml",
+              "run_id": os.environ["RUN_ID"],
+              "run_attempt": os.environ["RUN_ATTEMPT"],
+          }
+          for name in ("backend", "frontend", "migration"):
+              with open(f"{name}-qualification.json", "w") as output:
+                  json.dump({**common, "gate": name}, output, indent=2, sort_keys=True)
+                  output.write("\n")
+          PY
+      - name: Upload exact qualification evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: patch058-quality-evidence-${{ github.sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            backend-qualification.json
+            frontend-qualification.json
+            migration-qualification.json

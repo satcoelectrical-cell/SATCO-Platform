@@ -1,44 +1,331 @@
-import copy, datetime as dt, hashlib, importlib.util, json, pathlib, tempfile, unittest
-ROOT=pathlib.Path(__file__).resolve().parents[2]
-SPEC=importlib.util.spec_from_file_location("dossier",ROOT/"ops/scripts/patch058-release-dossier.py")
-M=importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(M)
-NOW=dt.datetime(2026,9,27,9,0,tzinfo=dt.timezone.utc)
+import copy
+import datetime as dt
+import importlib.util
+import json
+import pathlib
+import tempfile
+import unittest
 
-def ev(path): return {"reference":str(path),"digest":M.digest(path)}
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+SPEC = importlib.util.spec_from_file_location(
+    "dossier", ROOT / "ops/scripts/patch058-release-dossier.py"
+)
+M = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(M)
+NOW = dt.datetime(2026, 9, 27, 9, 0, tzinfo=dt.timezone.utc)
+REVISION = "a" * 40
+RELEASE_ID = "p058-test"
+
+
+def ev(path):
+    return {"reference": str(path), "digest": M.digest(path)}
+
+
 class DossierTests(unittest.TestCase):
- def setUp(self):
-  self.t=tempfile.TemporaryDirectory(); self.p=pathlib.Path(self.t.name)
-  def f(name,data):
-   x=self.p/name; x.write_text(json.dumps(data) if not isinstance(data,str) else data); return x
-  self.backend=f("backend","candidate"); self.lock=f("lock","lock")
-  self.qual=f("qual",{"result":"PASS"}); self.sbom=f("sbom",{"bomFormat":"CycloneDX"})
-  self.prov=f("prov",{"_type":"https://in-toto.io/Statement/v1"}); self.sig=f("sig",{"verified":True})
-  self.exc=f("exc",[{"status":"active","artifact_digest":M.digest(self.backend),"expires_at":"2026-10-27T07:58:25Z"}])
-  self.gate=f("gate",{"result":"PASS","blockingFindings":[],"artifactDigest":M.digest(self.backend)})
-  self.d={"schema_version":"v1","release_id":"p058-test","source_commit":"a"*40,
-   "artifacts":{"backend":ev(self.backend)},"build_inputs":{"lock":ev(self.lock)},
-   "qualification_evidence":{"backend":ev(self.qual)},"security_evidence":{"vulnerability_gate":ev(self.gate)},
-   "exceptions":{"high_findings":ev(self.exc)},"sboms":{"backend":ev(self.sbom)},"provenance":ev(self.prov),
-   "signature_verification":ev(self.sig),"human_signing_authorization":{"status":"pending","reference":"protected-environment"},
-   "human_release_approval":{"status":"pending","reference":"human-release-authority"},"created_at":"2026-09-27T08:00:00Z"}
- def tearDown(self): self.t.cleanup()
- def blocked(self,d):
-  with self.assertRaises(ValueError): M.validate(d,NOW)
- def test_valid_candidate(self): self.assertTrue(M.validate(self.d,NOW))
- def test_missing_mandatory_evidence_blocks(self):
-  d=copy.deepcopy(self.d); del d["sboms"]; self.blocked(d)
- def test_substituted_evidence_blocks(self):
-  d=copy.deepcopy(self.d); self.sbom.write_text("tampered"); self.blocked(d)
- def test_gate_artifact_mismatch_blocks(self):
-  d=copy.deepcopy(self.d); self.gate.write_text(json.dumps({"result":"PASS","blockingFindings":[],"artifactDigest":"sha256:"+"0"*64})); d["security_evidence"]["vulnerability_gate"]=ev(self.gate); self.blocked(d)
- def test_blocking_finding_blocks(self):
-  d=copy.deepcopy(self.d); self.gate.write_text(json.dumps({"result":"FAIL","blockingFindings":["CVE-X"],"artifactDigest":M.digest(self.backend)})); d["security_evidence"]["vulnerability_gate"]=ev(self.gate); self.blocked(d)
- def test_expired_exception_blocks(self):
-  d=copy.deepcopy(self.d); self.exc.write_text(json.dumps([{"status":"active","artifact_digest":M.digest(self.backend),"expires_at":"2026-09-26T00:00:00Z"}])); d["exceptions"]["high_findings"]=ev(self.exc); self.blocked(d)
- def test_exception_for_other_artifact_blocks(self):
-  d=copy.deepcopy(self.d); self.exc.write_text(json.dumps([{"status":"active","artifact_digest":"sha256:"+"1"*64,"expires_at":"2026-10-27T00:00:00Z"}])); d["exceptions"]["high_findings"]=ev(self.exc); self.blocked(d)
- def test_approved_human_evidence_requires_digest(self):
-  d=copy.deepcopy(self.d); d["human_release_approval"]={"status":"approved","reference":"missing-file"}; self.blocked(d)
- def test_rejected_is_not_silently_approved(self):
-  d=copy.deepcopy(self.d); d["human_release_approval"]={"status":"rejected","reference":"human-release-authority"}; self.assertTrue(M.validate(d,NOW))
-if __name__=="__main__": unittest.main()
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.path = pathlib.Path(self.temporary.name)
+
+        def write(name, data):
+            path = self.path / name
+            path.write_text(data if isinstance(data, str) else json.dumps(data))
+            return path
+
+        self.artifacts = {
+            "backend": write("backend.tar", "backend"),
+            "frontend": write("frontend.tar", "frontend"),
+            "migrations": write("migrations.tar", "migrations"),
+        }
+        self.lock = write("lock", "lock")
+        self.build_inputs = {
+            name: self.lock for name in M.REQUIRED_BUILD_INPUTS
+        }
+        self.qualifications = {
+            name: write(
+                f"{name}-qualification.json",
+                {"result": "PASS", "source_commit": REVISION, "gate": name},
+            )
+            for name in M.REQUIRED_QUALIFICATION
+        }
+        self.sboms = {}
+        for name in ("backend", "frontend"):
+            self.sboms[name] = write(
+                f"{name}-sbom.json",
+                {
+                    "bomFormat": "CycloneDX",
+                    "metadata": {
+                        "properties": [
+                            {
+                                "name": "satco:patch058:source-revision",
+                                "value": REVISION,
+                            },
+                            {
+                                "name": "satco:patch058:artifact-digest",
+                                "value": M.digest(self.artifacts[name]),
+                            },
+                        ]
+                    },
+                },
+            )
+        self.exceptions = write(
+            "exceptions.json",
+            [
+                {
+                    "status": "active",
+                    "artifact_digest": M.digest(self.artifacts["backend"]),
+                    "expires_at": "2026-10-27T07:58:25Z",
+                }
+            ],
+        )
+        self.gate = write(
+            "gate.json",
+            {
+                "result": "PASS",
+                "blockingFindings": [],
+                "artifactDigest": M.digest(self.artifacts["backend"]),
+            },
+        )
+        self.security = {
+            name: (
+                self.gate if name == "vulnerability_gate"
+                else write(f"{name}.json", {"result": "PASS"})
+            )
+            for name in M.REQUIRED_SECURITY
+        }
+        provenance_evidence = {
+            name.replace("_", "-"): path for name, path in self.security.items()
+        }
+        provenance_evidence["high-exceptions"] = self.exceptions
+        self.provenance = write(
+            "provenance.json",
+            {
+                "_type": "https://in-toto.io/Statement/v1",
+                "subject": [
+                    {
+                        "name": name,
+                        "digest": {"sha256": M.digest(path).removeprefix("sha256:")},
+                    }
+                    for name, path in self.artifacts.items()
+                ],
+                "predicate": {
+                    "buildDefinition": {
+                        "externalParameters": {
+                            "releaseId": RELEASE_ID,
+                            "revision": REVISION,
+                        },
+                        "internalParameters": {
+                            "governedInputs": [
+                                {
+                                    "name": name,
+                                    "digest": {
+                                        "sha256": M.digest(path).removeprefix("sha256:")
+                                    },
+                                }
+                                for name, path in self.build_inputs.items()
+                            ]
+                        },
+                    },
+                    "satco": {
+                        "sboms": [
+                            {
+                                "name": name,
+                                "digest": {
+                                    "sha256": M.digest(path).removeprefix("sha256:")
+                                },
+                            }
+                            for name, path in self.sboms.items()
+                        ],
+                        "qualificationEvidence": [
+                            {
+                                "name": name,
+                                "digest": {
+                                    "sha256": M.digest(path).removeprefix("sha256:")
+                                },
+                            }
+                            for name, path in provenance_evidence.items()
+                        ],
+                    },
+                },
+            },
+        )
+        self.signatures = write(
+            "signature-verification.json",
+            {
+                "source_commit": REVISION,
+                "artifacts": [
+                    {
+                        "name": name,
+                        "artifact_digest": M.digest(path),
+                        "verified": True,
+                        "signer_identity": "patch058-sign-release.yml@refs/heads/patch-058",
+                        "oidc_issuer": "https://token.actions.githubusercontent.com",
+                    }
+                    for name, path in self.artifacts.items()
+                ],
+            },
+        )
+        approval_payload = {
+            "decision": "approved",
+            "release_id": RELEASE_ID,
+            "source_commit": REVISION,
+            "artifact_digests": {
+                name: M.digest(path) for name, path in self.artifacts.items()
+            },
+            "decided_at": "2026-09-27T08:30:00Z",
+            "authority": "human-release-authority",
+            "evidence_reference": "https://github.example/actions/runs/1",
+        }
+        self.signing_approval = write("signing-approval.json", approval_payload)
+        self.release_approval = write("release-approval.json", approval_payload)
+        self.dossier = {
+            "schema_version": "v1",
+            "release_id": RELEASE_ID,
+            "source_commit": REVISION,
+            "artifacts": {name: ev(path) for name, path in self.artifacts.items()},
+            "build_inputs": {
+                name: ev(path) for name, path in self.build_inputs.items()
+            },
+            "qualification_evidence": {
+                name: ev(path) for name, path in self.qualifications.items()
+            },
+            "security_evidence": {
+                name: ev(path) for name, path in self.security.items()
+            },
+            "exceptions": {"high_findings": ev(self.exceptions)},
+            "sboms": {name: ev(path) for name, path in self.sboms.items()},
+            "provenance": ev(self.provenance),
+            "signature_verification": ev(self.signatures),
+            "human_signing_authorization": {
+                "status": "approved", **ev(self.signing_approval)
+            },
+            "human_release_approval": {
+                "status": "approved", **ev(self.release_approval)
+            },
+            "created_at": "2026-09-27T08:00:00Z",
+        }
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def blocked(self, dossier, require_approvals=True):
+        with self.assertRaises(ValueError):
+            M.validate(dossier, NOW, require_approvals=require_approvals)
+
+    def refresh(self, section, name, path):
+        self.dossier[section][name] = ev(path)
+
+    def test_valid_candidate(self):
+        self.assertTrue(M.validate(self.dossier, NOW))
+
+    def test_missing_mandatory_evidence_blocks(self):
+        dossier = copy.deepcopy(self.dossier)
+        del dossier["sboms"]
+        self.blocked(dossier)
+
+    def test_all_designated_artifacts_are_mandatory(self):
+        dossier = copy.deepcopy(self.dossier)
+        del dossier["artifacts"]["migrations"]
+        self.blocked(dossier)
+
+    def test_substituted_evidence_blocks(self):
+        self.sboms["backend"].write_text("tampered")
+        self.blocked(self.dossier)
+
+    def test_gate_artifact_mismatch_blocks(self):
+        self.gate.write_text(json.dumps({
+            "result": "PASS", "blockingFindings": [],
+            "artifactDigest": "sha256:" + "0" * 64,
+        }))
+        self.refresh("security_evidence", "vulnerability_gate", self.gate)
+        self.blocked(self.dossier)
+
+    def test_blocking_finding_blocks(self):
+        self.gate.write_text(json.dumps({
+            "result": "FAIL", "blockingFindings": ["CVE-X"],
+            "artifactDigest": M.digest(self.artifacts["backend"]),
+        }))
+        self.refresh("security_evidence", "vulnerability_gate", self.gate)
+        self.blocked(self.dossier)
+
+    def test_expired_exception_blocks(self):
+        self.exceptions.write_text(json.dumps([{
+            "status": "active",
+            "artifact_digest": M.digest(self.artifacts["backend"]),
+            "expires_at": "2026-09-26T00:00:00Z",
+        }]))
+        self.refresh("exceptions", "high_findings", self.exceptions)
+        self.blocked(self.dossier)
+
+    def test_exception_for_other_artifact_blocks(self):
+        self.exceptions.write_text(json.dumps([{
+            "status": "active", "artifact_digest": "sha256:" + "1" * 64,
+            "expires_at": "2026-10-27T00:00:00Z",
+        }]))
+        self.refresh("exceptions", "high_findings", self.exceptions)
+        self.blocked(self.dossier)
+
+    def test_provenance_source_mismatch_blocks(self):
+        data = json.loads(self.provenance.read_text())
+        data["predicate"]["buildDefinition"]["externalParameters"]["revision"] = "b" * 40
+        self.provenance.write_text(json.dumps(data))
+        self.dossier["provenance"] = ev(self.provenance)
+        self.blocked(self.dossier)
+
+    def test_sbom_source_mismatch_blocks(self):
+        data = json.loads(self.sboms["frontend"].read_text())
+        data["metadata"]["properties"][0]["value"] = "b" * 40
+        self.sboms["frontend"].write_text(json.dumps(data))
+        self.refresh("sboms", "frontend", self.sboms["frontend"])
+        self.blocked(self.dossier)
+
+    def test_unsigned_designated_artifact_blocks(self):
+        data = json.loads(self.signatures.read_text())
+        data["artifacts"] = data["artifacts"][:-1]
+        self.signatures.write_text(json.dumps(data))
+        self.dossier["signature_verification"] = ev(self.signatures)
+        self.blocked(self.dossier)
+
+    def test_pending_approval_only_passes_draft_validation(self):
+        dossier = copy.deepcopy(self.dossier)
+        dossier["human_release_approval"] = {
+            "status": "pending", "reference": "human-release-authority"
+        }
+        self.blocked(dossier)
+        self.assertTrue(M.validate(dossier, NOW, require_approvals=False))
+
+    def test_rejected_approval_always_blocks(self):
+        dossier = copy.deepcopy(self.dossier)
+        dossier["human_release_approval"] = {
+            "status": "rejected", "reference": "human-release-authority"
+        }
+        self.blocked(dossier, require_approvals=False)
+
+    def test_approved_human_evidence_must_bind_candidate(self):
+        payload = json.loads(self.release_approval.read_text())
+        payload["source_commit"] = "b" * 40
+        self.release_approval.write_text(json.dumps(payload))
+        self.dossier["human_release_approval"] = {
+            "status": "approved", **ev(self.release_approval)
+        }
+        self.blocked(self.dossier)
+
+    def test_release_manifest_example_tracks_required_schema_and_digest_references(self):
+        schema = json.loads((ROOT / "ops/release-manifest.v1.schema.json").read_text())
+        example = json.loads((ROOT / "ops/release-manifest.example.v1.json").read_text())
+        self.assertEqual(set(example), set(schema["required"]))
+        self.assertRegex(example["git_commit"], r"^[0-9a-f]{40}$")
+        self.assertEqual(example["expected_alembic_head"], "e05800000001")
+        for name in (
+            "sbom_reference",
+            "scan_evidence_reference",
+            "signing_approver_evidence_reference",
+            "release_approval_evidence_reference",
+            "provenance_reference",
+            "signature_verification_evidence_reference",
+            "release_dossier_reference",
+        ):
+            self.assertRegex(example[name], r"^sha256:[0-9a-f]{64}$")
+
+
+if __name__ == "__main__":
+    unittest.main()

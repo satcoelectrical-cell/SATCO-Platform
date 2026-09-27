@@ -8,12 +8,12 @@
     "schema_version": {"const": "v1"},
     "release_id": {"type": "string", "minLength": 1},
     "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-    "artifacts": {"$ref": "#/$defs/evidenceMap"},
-    "build_inputs": {"$ref": "#/$defs/evidenceMap"},
-    "qualification_evidence": {"$ref": "#/$defs/evidenceMap"},
-    "security_evidence": {"$ref": "#/$defs/evidenceMap"},
+    "artifacts": {"$ref": "#/$defs/artifactMap"},
+    "build_inputs": {"$ref": "#/$defs/buildInputMap"},
+    "qualification_evidence": {"$ref": "#/$defs/qualificationMap"},
+    "security_evidence": {"$ref": "#/$defs/securityMap"},
     "exceptions": {"$ref": "#/$defs/evidenceMap"},
-    "sboms": {"$ref": "#/$defs/evidenceMap"},
+    "sboms": {"$ref": "#/$defs/sbomMap"},
     "provenance": {"$ref": "#/$defs/evidence"},
     "signature_verification": {"$ref": "#/$defs/evidence"},
     "human_signing_authorization": {"$ref": "#/$defs/approval"},
@@ -29,6 +29,54 @@
     "evidenceMap": {
       "type": "object", "minProperties": 1,
       "additionalProperties": {"$ref": "#/$defs/evidence"}
+    },
+    "artifactMap": {
+      "type": "object", "additionalProperties": false,
+      "required": ["backend", "frontend", "migrations"],
+      "properties": {
+        "backend": {"$ref": "#/$defs/evidence"},
+        "frontend": {"$ref": "#/$defs/evidence"},
+        "migrations": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "sbomMap": {
+      "type": "object", "additionalProperties": false,
+      "required": ["backend", "frontend"],
+      "properties": {
+        "backend": {"$ref": "#/$defs/evidence"},
+        "frontend": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "buildInputMap": {
+      "type": "object", "additionalProperties": false,
+      "required": ["backend-production-lock", "backend-uv-lock", "frontend-package-lock", "migration-set"],
+      "properties": {
+        "backend-production-lock": {"$ref": "#/$defs/evidence"},
+        "backend-uv-lock": {"$ref": "#/$defs/evidence"},
+        "frontend-package-lock": {"$ref": "#/$defs/evidence"},
+        "migration-set": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "qualificationMap": {
+      "type": "object", "additionalProperties": false,
+      "required": ["backend", "frontend", "migration"],
+      "properties": {
+        "backend": {"$ref": "#/$defs/evidence"},
+        "frontend": {"$ref": "#/$defs/evidence"},
+        "migration": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "securityMap": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pip-audit", "npm-audit", "semgrep", "gitleaks", "trivy", "vulnerability_gate"],
+      "properties": {
+        "pip-audit": {"$ref": "#/$defs/evidence"},
+        "npm-audit": {"$ref": "#/$defs/evidence"},
+        "semgrep": {"$ref": "#/$defs/evidence"},
+        "gitleaks": {"$ref": "#/$defs/evidence"},
+        "trivy": {"$ref": "#/$defs/evidence"},
+        "vulnerability_gate": {"$ref": "#/$defs/evidence"}
+      }
     },
     "approval": {
       "type": "object", "additionalProperties": false,

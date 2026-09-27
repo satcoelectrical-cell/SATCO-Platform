@@ -6,13 +6,13 @@
 |---|---|
 | Registration authority | HUMAN PATCH-058 DISCOVERY ACCEPTANCE AND REGISTRATION AUTHORITY: GRANTED |
 | Registration date | 2026-09-23 |
-| Status | **REGISTERED / OPEN — DISCOVERY ACCEPTED** |
+| Status | **OPEN — CHECKPOINT D HUMAN ACCEPTED / CHECKPOINT E IN PROGRESS** |
 | Registered after | PATCH-057 DONE / CLOSED |
 | Controlling boundary | Human-accepted Post-PATCH-057 Capability Discovery |
-| Architecture / ADR | NEXT AUTHORIZED GOVERNANCE STAGE / NOT YET HUMAN ACCEPTED |
-| EDS / IDS / Implementation Plan | NOT STARTED / NOT AUTHORIZED |
-| Implementation | NOT STARTED / NOT AUTHORIZED |
-| Migration | NOT CREATED / NOT AUTHORIZED |
+| Architecture / ADR | HUMAN ACCEPTED |
+| EDS / IDS / Implementation Plan | HUMAN ACCEPTED |
+| Implementation | CHECKPOINTS A-D HUMAN ACCEPTED / CHECKPOINT E IN PROGRESS |
+| Migration | CREATED AND QUALIFIED IN DISPOSABLE POSTGRESQL ONLY |
 | Alembic source head at registration | sole `e05600000008` |
 | PATCH-059 / PATCH-060 | NOT STARTED / NOT AUTHORIZED |
 
@@ -28,6 +28,23 @@ as the next governance stage only.
 It does not accept an Architecture or ADR and does not authorize EDS, IDS,
 Implementation Plan, implementation, migration, deployment, PATCH-059 or
 PATCH-060.
+
+This section records the historical registration decision. The current
+governance state is controlled by the accepted Architecture, ADR, EDS, IDS,
+Implementation Plan and checkpoint records summarized below.
+
+## Current checkpoint state
+
+- Checkpoints A, B, C and D: **HUMAN ACCEPTED / COMPLETE**.
+- Checkpoint E: **IN PROGRESS / NOT YET HUMAN ACCEPTED**.
+- Human-approved High-finding exception: bounded to the exact previously
+  qualified backend artifact and its 30-day validity window; it does not
+  transfer to any rebuilt artifact.
+- Privileged signing authorization: **NOT GRANTED / NOT EXECUTED**.
+- Human release approval: **NOT GRANTED**.
+- Integrated final qualification and independent final review: **NOT
+  COMPLETE**.
+- PATCH-058 closure: **NOT GRANTED**.
 
 ## Purpose
 
@@ -76,20 +93,25 @@ AI remains optional, advisory and non-authoritative.
 
 ## Persistence boundary
 
-The accepted Discovery indicates that persistence/migration is likely required,
-but no schema or migration is authorized by registration.
+The Human-accepted design and implementation checkpoints authorized and
+delivered the bounded PATCH-058 security persistence migration. Qualification
+uses disposable PostgreSQL only; production/customer database mutation remains
+unauthorized.
 
-The sole Alembic head remains `e05600000008`.
+The sole Alembic repository head is `e05800000001`.
 
 ## Next governed stage
 
-Architecture-058 and the next repository-consistent ADR may now be prepared
-and independently reviewed.
+Complete Checkpoint E release-manifest/dossier reconciliation, exact-source
+artifact and evidence qualification, integrated security regression,
+penetration-oriented negative qualification and independent checkpoint review.
 
-They require explicit Human acceptance before EDS/IDS work.
+Checkpoint E then requires explicit Human acceptance. Privileged signing,
+Human release approval, integrated final qualification, independent final
+review and the Human PATCH-058 closure decision remain separate later gates.
 
-**PATCH-058: REGISTERED / OPEN — DISCOVERY ACCEPTED.**
+**PATCH-058: OPEN — CHECKPOINT E IN PROGRESS.**
 
-**PATCH-058 IMPLEMENTATION: NOT STARTED / NOT AUTHORIZED.**
+**PATCH-058 CLOSURE: NOT GRANTED.**
 
 **PATCH-059 / PATCH-060: NOT STARTED / NOT AUTHORIZED.**

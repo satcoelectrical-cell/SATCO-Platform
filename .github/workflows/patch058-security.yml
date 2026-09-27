@@ -154,9 +154,13 @@ jobs:
       - name: Validate Human-governed High exceptions
         run: |
           . artifact-digests.env
+          set +e
           SATCO_HIGH_EXCEPTION_FILE=ops/security/patch058-high-exceptions.json \
           SATCO_ARTIFACT_DIGEST="$BACKEND_ARTIFACT_DIGEST" \
             sh ops/scripts/validate-high-exceptions.sh
+          code=$?
+          set -e
+          printf '%s\n' "$code" > high-exception-validation.exit
 
       - name: Evaluate fail-closed vulnerability gate
         run: |
@@ -231,6 +235,7 @@ jobs:
             backend-sbom.cdx.json
             frontend-sbom.cdx.json
             vulnerability-gate.json
+            high-exception-validation.exit
             ops/security/patch058-high-exceptions.json
             provenance.intoto.json
             evidence-digests.sha256
@@ -239,4 +244,5 @@ jobs:
         run: |
           test "$(cat semgrep.exit)" = "0"
           test "$(cat gitleaks.exit)" = "0"
+          test "$(cat high-exception-validation.exit)" = "0"
           test "$(cat vulnerability-gate.exit)" = "0"

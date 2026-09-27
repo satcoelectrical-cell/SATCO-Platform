@@ -136,6 +136,8 @@ class SupplyChainTests(unittest.TestCase):
         exception_path = "ops/security/patch058-high-exceptions.json"
         self.assertIn(f"--exceptions {exception_path}", security)
         self.assertIn(f"--evidence high-exceptions={exception_path}", security)
+        self.assertIn("high-exception-validation.exit", security)
+        self.assertIn('test "$(cat high-exception-validation.exit)" = "0"', security)
         self.assertIn("SATCO_HIGH_EXCEPTION_FILE=evidence/ops/security/patch058-high-exceptions.json", signing)
         self.assertIn("--evidence high-exceptions=evidence/ops/security/patch058-high-exceptions.json", signing)
 
@@ -255,6 +257,8 @@ class SupplyChainTests(unittest.TestCase):
     def test_signing_workflow_is_human_protected_and_identity_constrained(self):
         text = (ROOT / ".github/workflows/patch058-sign-release.yml").read_text()
         self.assertIn("environment: patch058-protected-release", text)
+        self.assertIn('rule.get("type") == "required_reviewers"', text)
+        self.assertIn('prevent_self_review") is True', text)
         self.assertIn("workflow_dispatch:", text)
         self.assertNotIn("pull_request:", text)
         self.assertNotIn("\n  push:", text)
@@ -276,6 +280,17 @@ class SupplyChainTests(unittest.TestCase):
         self.assertIn('test "$actual_digest" = "$EXPECTED_BACKEND_DIGEST"', text)
         self.assertIn('--certificate-github-workflow-sha "$GITHUB_SHA"', text)
         self.assertIn('--certificate-identity-regexp "$identity"', text)
+        # Every artifact named by provenance and the dossier contract is signed,
+        # attested and verified under the same protected trust boundary.
+        for artifact in (
+            "backend-image.oci.tar",
+            "frontend-dist.tar",
+            "migration-set.tar",
+        ):
+            self.assertIn(artifact, text)
+        self.assertIn("signature-verification-summary.json", text)
+        self.assertIn("human-signing-authorization.json", text)
+        self.assertIn("GitHub protected Environment: patch058-protected-release", text)
 
 
 if __name__ == "__main__":
