@@ -254,6 +254,28 @@ class SupplyChainTests(unittest.TestCase):
         self.assertIn("patch058-provenance.py generate", text)
         self.assertIn("patch058-provenance.py verify", text)
 
+    def test_security_workflow_provisions_pinned_oci_capable_builder(self):
+        text = (ROOT / ".github/workflows/patch058-security.yml").read_text()
+        self.assertIn(
+            "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
+            text,
+        )
+        self.assertIn('version: "v0.35.0"', text)
+        self.assertIn("driver: docker-container", text)
+        self.assertIn(
+            "image=moby/buildkit@sha256:"
+            "6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3",
+            text,
+        )
+        self.assertIn("BUILDX_DRIVER: ${{ steps.buildx.outputs.driver }}", text)
+        self.assertIn('test "$BUILDX_DRIVER" = "docker-container"', text)
+        self.assertIn("docker buildx inspect --bootstrap", text)
+        self.assertIn("--output type=oci,dest=backend-image.oci.tar backend", text)
+        self.assertLess(
+            text.index("Set up pinned OCI-capable Buildx builder"),
+            text.index("Build exact backend and frontend artifacts"),
+        )
+
     def test_signing_workflow_is_human_protected_and_identity_constrained(self):
         text = (ROOT / ".github/workflows/patch058-sign-release.yml").read_text()
         self.assertIn("environment: patch058-protected-release", text)

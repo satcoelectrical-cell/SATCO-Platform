@@ -29,6 +29,14 @@ jobs:
           node-version: "22.23.1"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Set up pinned OCI-capable Buildx builder
+        id: buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: "v0.35.0"
+          driver: docker-container
+          driver-opts: |
+            image=moby/buildkit@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
 
       - name: Verify and record clean source identity
         run: |
@@ -95,7 +103,11 @@ jobs:
           test -e gitleaks.json
 
       - name: Build exact backend and frontend artifacts
+        env:
+          BUILDX_DRIVER: ${{ steps.buildx.outputs.driver }}
         run: |
+          test "$BUILDX_DRIVER" = "docker-container"
+          docker buildx inspect --bootstrap
           source_epoch="$(git show -s --format=%ct "$GITHUB_SHA")"
           docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
             --file backend/Dockerfile.production \
