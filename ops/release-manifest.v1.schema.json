@@ -3,7 +3,7 @@
   "title": "SATCO release manifest v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["release_id", "git_commit", "backend_image_digest", "frontend_asset_digest", "expected_alembic_head", "configuration_schema_version", "migration_artifact_digest", "dependency_lock_digest", "package_lock_digest", "sbom_reference", "scan_evidence_reference", "signing_approver_evidence_reference", "created_at"],
+  "required": ["release_id", "git_commit", "backend_image_digest", "frontend_asset_digest", "expected_alembic_head", "configuration_schema_version", "migration_artifact_digest", "dependency_lock_digest", "package_lock_digest", "sbom_reference", "scan_evidence_reference", "signing_approver_evidence_reference", "provenance_reference", "signature_verification_evidence_reference", "release_dossier_reference", "created_at"],
   "properties": {
     "release_id": {"type": "string", "minLength": 1},
     "git_commit": {"type": "string", "minLength": 7},
@@ -17,6 +17,9 @@
     "sbom_reference": {"type": "string", "minLength": 1},
     "scan_evidence_reference": {"type": "string", "minLength": 1},
     "signing_approver_evidence_reference": {"type": "string", "minLength": 1},
+    "provenance_reference": {"type": "string", "minLength": 1},
+    "signature_verification_evidence_reference": {"type": "string", "minLength": 1},
+    "release_dossier_reference": {"type": "string", "minLength": 1},
     "created_at": {"type": "string", "format": "date-time"}
   }
 }

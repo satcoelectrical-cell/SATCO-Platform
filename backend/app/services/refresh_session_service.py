@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.models.auth_security import AuthRefreshFamily, AuthRefreshSession, AuthSecurityEvent
 from app.models.organization import Organization, UserOrganizationMembership
 from app.models.user import User
+from app.services.mfa_service import MfaService
 
 
 class RefreshRejected(Exception):
@@ -137,15 +138,40 @@ class RefreshSessionService:
             expires_at=expires_at,
         )
 
-    def create(self, user: User) -> IssuedRefreshCredential:
+    def create(
+        self,
+        user: User,
+        *,
+        commit: bool = True,
+    ) -> IssuedRefreshCredential:
         if not user.is_active or user.activation_pending or self._active_membership(user.id) is None:
             raise RefreshRejected()
         family = AuthRefreshFamily(id=uuid4(), user_id=user.id)
         self.db.add(family)
         self.db.flush()
         issued = self._new_session(family_id=family.id, user=user)
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return issued
+
+    def has_mfa_assurance(self, session: AuthRefreshSession) -> bool:
+        family_session_ids = (
+            self.db.query(AuthRefreshSession.id)
+            .filter(AuthRefreshSession.family_id == session.family_id)
+        )
+        return (
+            self.db.query(AuthSecurityEvent.id)
+            .filter(
+                AuthSecurityEvent.session_id.in_(family_session_ids),
+                # A generic step-up can be password-only when MFA is optional,
+                # so it must never pre-qualify a refresh family if Organization
+                # policy later changes to require MFA.
+                AuthSecurityEvent.event_type == "mfa_login_challenge_consumed",
+                AuthSecurityEvent.outcome == "success",
+            )
+            .first()
+            is not None
+        )
 
     def rotate(self, credential: str) -> tuple[User, IssuedRefreshCredential]:
         selector, secret = self._split(credential)
@@ -210,13 +236,18 @@ class RefreshSessionService:
             .with_for_update()
             .one_or_none()
         )
+        membership = self._active_membership(session.user_id)
         if (
             user is None
             or not user.is_active
             or user.activation_pending
             or user.auth_version != session.auth_version
-            or self._active_membership(session.user_id) is None
+            or membership is None
         ):
+            self.db.rollback()
+            raise RefreshRejected()
+        mfa_status = MfaService(self.db).status(user, membership.organization_id)
+        if mfa_status.required and not self.has_mfa_assurance(session):
             self.db.rollback()
             raise RefreshRejected()
 

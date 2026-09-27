@@ -225,7 +225,7 @@ if actual_database_name != TEST_DATABASE_NAME:
     )
 
 
-from app.core.security import hash_password  # noqa: E402
+from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 from app.api.v1.routers.engineering_workspaces import (  # noqa: E402
     get_workspace_package_uow_factory,
@@ -258,6 +258,7 @@ from app.models.organization import (  # noqa: E402
     Organization,
     UserOrganizationMembership,
 )
+from app.models.auth_security import AuthSecurityEvent  # noqa: E402
 from app.permissions.roles import Role  # noqa: E402
 from app.dependencies.auth import (  # noqa: E402
     AuthenticatedOrganizationContext,
@@ -267,6 +268,7 @@ from app.dependencies.auth import (  # noqa: E402
 from app.services.engineering_context_relationship_service import (  # noqa: E402
     EngineeringContextRelationshipService,
 )
+from app.services.refresh_session_service import RefreshSessionService  # noqa: E402
 
 
 @pytest.fixture
@@ -446,8 +448,30 @@ def engineer_headers(client, engineer_user):
 
 
 @pytest.fixture
-def admin_headers(client, admin_user):
-    return login_headers(client, admin_user.username)
+def admin_headers(db_session, admin_user):
+    """Issue a bound test session without bypassing production MFA login routes."""
+
+    issued = RefreshSessionService(db_session).create(admin_user)
+    db_session.add(
+        AuthSecurityEvent(
+            event_type="mfa_login_challenge_consumed",
+            user_id=admin_user.id,
+            actor_user_id=admin_user.id,
+            organization_id=UUID("02810000-0000-4000-8000-000000000001"),
+            session_id=issued.session_id,
+            outcome="success",
+            reason_code="test_harness_assurance",
+        )
+    )
+    db_session.commit()
+    return {
+        "Authorization": "Bearer " + create_access_token(
+            admin_user.id,
+            admin_user.auth_version,
+            session_id=issued.session_id,
+        ),
+        "X-Correlation-ID": str(uuid4()),
+    }
 
 
 @pytest.fixture

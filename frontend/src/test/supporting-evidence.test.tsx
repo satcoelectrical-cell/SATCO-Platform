@@ -6,7 +6,10 @@ const { apiMock } = vi.hoisted(() => ({ apiMock: {
   supportingFiles: vi.fn(), evidence: vi.fn(), uploadSupportingFile: vi.fn(),
   linkSupportingFiles: vi.fn(), downloadSupportingFile: vi.fn(),
 } }));
-vi.mock("../api/client", () => ({ api: apiMock }));
+vi.mock("../api/client", () => ({
+  api: apiMock,
+  authSession: { get: vi.fn(() => null) },
+}));
 
 const asset = {
   id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",

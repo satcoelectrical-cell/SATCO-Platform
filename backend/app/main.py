@@ -90,7 +90,7 @@ if settings.SATCO_ENVIRONMENT == "production":
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=[
             "Authorization", "Content-Type", "Idempotency-Key",
-            "X-Correlation-ID",
+            "X-Correlation-ID", "X-CSRF-Token",
         ],
     )
 

@@ -8,6 +8,36 @@ class MfaStatusResponse(BaseModel):
     active: bool
 
 
+class MfaLoginChallengeResponse(BaseModel):
+    outcome: str = "mfa_required"
+    challenge: str
+    enrollment_required: bool
+
+
+class MfaLoginVerifyRequest(BaseModel):
+    challenge: str = Field(min_length=40, max_length=4096)
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class MfaLoginEnrollmentStartRequest(BaseModel):
+    challenge: str = Field(min_length=40, max_length=4096)
+
+
+class MfaLoginEnrollmentStartResponse(BaseModel):
+    outcome: str = "mfa_enrollment_required"
+    challenge: str
+    secret: str
+    provisioning_uri: str
+
+
+class MfaLoginEnrollmentVerifyResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    recovery_codes: list[str]
+
+
+
+
 class TotpEnrollmentStartResponse(BaseModel):
     secret: str
     provisioning_uri: str

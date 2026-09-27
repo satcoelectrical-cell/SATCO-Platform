@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from datetime import datetime, timezone
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import ValidationError
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -6,8 +9,13 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import create_access_token, verify_password
 
-from app.schemas.token import RefreshRequest, TokenResponse
+from app.schemas.token import TokenResponse
 from app.schemas.mfa import (
+    MfaLoginChallengeResponse,
+    MfaLoginEnrollmentStartRequest,
+    MfaLoginEnrollmentStartResponse,
+    MfaLoginEnrollmentVerifyResponse,
+    MfaLoginVerifyRequest,
     MfaStatusResponse,
     TotpEnrollmentStartResponse,
     TotpEnrollmentVerifyRequest,
@@ -22,6 +30,7 @@ from app.schemas.mfa import (
 )
 from app.schemas.onboarding import ClosedOutcome, PasswordChangeRequest
 from app.models.organization import Organization, UserOrganizationMembership
+from app.models.user import User
 
 from app.services.user_service import UserService
 from app.dependencies.auth import (
@@ -33,7 +42,13 @@ from app.dependencies.auth import (
 )
 from app.services.onboarding_service import OnboardingService, ProtectedOnboarding
 from app.services.refresh_session_service import RefreshRejected, RefreshSessionService
+from app.services.browser_auth_security_service import BrowserAuthSecurityService
 from app.services.mfa_service import MfaRejected, MfaService
+from app.services.mfa_login_challenge_service import (
+    MfaLoginChallenge,
+    MfaLoginChallengeRejected,
+    MfaLoginChallengeService,
+)
 from app.services.auth_throttle_service import AuthThrottleService, ThrottleConfigurationError
 from app.services.recovery_service import RecoveryRejected, RecoveryService
 
@@ -47,6 +62,115 @@ router = APIRouter(
 service = UserService()
 
 
+def _refresh_max_age(expires_at: datetime) -> int:
+    now = datetime.now(timezone.utc)
+    return max(0, int((expires_at - now).total_seconds()))
+
+
+def _selected_membership(
+    db: Session,
+    user_id: int,
+    *,
+    lock: bool = False,
+) -> UserOrganizationMembership | None:
+    query = (
+        db.query(UserOrganizationMembership)
+        .join(
+            Organization,
+            Organization.id == UserOrganizationMembership.organization_id,
+        )
+        .filter(
+            UserOrganizationMembership.user_id == user_id,
+            UserOrganizationMembership.is_selected.is_(True),
+            UserOrganizationMembership.is_enabled.is_(True),
+            Organization.is_active.is_(True),
+        )
+    )
+    if lock:
+        query = query.with_for_update()
+    memberships = query.limit(2).all()
+    return memberships[0] if len(memberships) == 1 else None
+
+
+def _challenge_context(
+    db: Session,
+    token: str,
+    *,
+    expected_stage: str,
+) -> tuple[MfaLoginChallenge, User]:
+    challenge = MfaLoginChallengeService.verify(
+        token,
+        expected_stage=expected_stage,
+    )
+    user = (
+        db.query(User)
+        .filter(User.id == challenge.user_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if (
+        user is None
+        or not user.is_active
+        or user.activation_pending
+        or user.auth_version != challenge.auth_version
+    ):
+        raise MfaLoginChallengeRejected()
+    membership = _selected_membership(db, user.id, lock=True)
+    if (
+        membership is None
+        or membership.organization_id != challenge.organization_id
+    ):
+        raise MfaLoginChallengeRejected()
+    return challenge, user
+
+
+def _issue_browser_session(
+    response: Response,
+    db: Session,
+    user: User,
+    challenge: MfaLoginChallenge,
+) -> TokenResponse:
+    refresh = RefreshSessionService(db).create(user, commit=False)
+    MfaLoginChallengeService.mark_consumed(
+        db,
+        challenge,
+        session_id=refresh.session_id,
+    )
+    db.commit()
+    BrowserAuthSecurityService.issue(
+        response,
+        refresh.credential,
+        max_age=_refresh_max_age(refresh.expires_at),
+    )
+    return TokenResponse(
+        access_token=create_access_token(
+            user.id,
+            user.auth_version,
+            session_id=refresh.session_id,
+        )
+    )
+
+
+def _mfa_failure(
+    db: Session,
+    user: User,
+    organization_id: UUID,
+    network_context: str,
+) -> None:
+    db.rollback()
+    throttle = AuthThrottleService(db)
+    try:
+        threshold_reached = throttle.record_failure(
+            "mfa_login_verification",
+            str(user.id),
+            network_context,
+        )
+        if threshold_reached:
+            MfaService(db).record_throttle_threshold(user, organization_id)
+    except ThrottleConfigurationError:
+        db.rollback()
+
+
 @router.post("/register", status_code=404)
 def register_disabled():
     """Disconnected public registration is not a PATCH-041 onboarding path."""
@@ -55,9 +179,10 @@ def register_disabled():
 
 @router.post(
     "/login",
-    response_model=TokenResponse,
+    response_model=TokenResponse | MfaLoginChallengeResponse,
 )
 def login(
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
@@ -76,6 +201,26 @@ def login(
         )
 
 
+    membership = _selected_membership(db, user.id)
+    if membership is None or user.activation_pending:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password",
+        )
+
+    mfa_status = MfaService(db).status(user, membership.organization_id)
+    if mfa_status.required:
+        BrowserAuthSecurityService.clear(response)
+        return MfaLoginChallengeResponse(
+            challenge=MfaLoginChallengeService.issue(
+                user_id=user.id,
+                organization_id=membership.organization_id,
+                auth_version=user.auth_version,
+                stage="verify" if mfa_status.active else "enroll",
+            ),
+            enrollment_required=not mfa_status.active,
+        )
+
     try:
         refresh = RefreshSessionService(db).create(user)
     except RefreshRejected:
@@ -91,33 +236,235 @@ def login(
         session_id=refresh.session_id,
     )
 
+    BrowserAuthSecurityService.issue(
+        response,
+        refresh.credential,
+        max_age=_refresh_max_age(refresh.expires_at),
+    )
+
     return TokenResponse(
         access_token=access_token,
-        refresh_token=refresh.credential,
     )
 
 
-
-@router.post("/refresh", response_model=TokenResponse)
-def refresh_session(
-    data: RefreshRequest,
+@router.post("/login/mfa/verify", response_model=TokenResponse)
+def verify_mfa_login(
+    data: MfaLoginVerifyRequest,
+    request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
+    network_context = request.client.host if request.client else "unknown"
     try:
-        user, refresh = RefreshSessionService(db).rotate(data.refresh_token)
+        challenge, user = _challenge_context(
+            db,
+            data.challenge,
+            expected_stage="verify",
+        )
+        status = MfaService(db).status(user, challenge.organization_id)
+        if not status.required or not status.active:
+            raise MfaLoginChallengeRejected()
+        MfaLoginChallengeService.reserve_once(db, challenge)
+        throttle = AuthThrottleService(db)
+        if throttle.is_blocked(
+            "mfa_login_verification",
+            str(user.id),
+            network_context,
+        ):
+            db.rollback()
+            raise HTTPException(
+                status_code=429,
+                detail="Invalid authentication credentials",
+            )
+        MfaService(db).verify_active_totp(
+            user,
+            challenge.organization_id,
+            data.code,
+            commit=False,
+        )
+        throttle.clear(
+            "mfa_login_verification",
+            str(user.id),
+            network_context,
+            commit=False,
+        )
+        return _issue_browser_session(response, db, user, challenge)
+    except MfaRejected:
+        _mfa_failure(db, user, challenge.organization_id, network_context)
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+        )
+    except MfaLoginChallengeRejected:
+        db.rollback()
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+        )
     except RefreshRejected:
         db.rollback()
         raise HTTPException(
             status_code=401,
             detail="Invalid authentication credentials",
         )
+    except ThrottleConfigurationError:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication unavailable",
+        )
+
+
+@router.post(
+    "/login/mfa/enrollment",
+    response_model=MfaLoginEnrollmentStartResponse,
+)
+def start_mfa_login_enrollment(
+    data: MfaLoginEnrollmentStartRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        challenge, user = _challenge_context(
+            db,
+            data.challenge,
+            expected_stage="enroll",
+        )
+        status = MfaService(db).status(user, challenge.organization_id)
+        if not status.required or status.active:
+            raise MfaLoginChallengeRejected()
+        MfaLoginChallengeService.reserve_once(db, challenge)
+        enrollment = MfaService(db).start_enrollment(
+            user,
+            challenge.organization_id,
+            commit=False,
+        )
+        MfaLoginChallengeService.mark_consumed(db, challenge)
+        db.commit()
+        return MfaLoginEnrollmentStartResponse(
+            challenge=MfaLoginChallengeService.issue(
+                user_id=user.id,
+                organization_id=challenge.organization_id,
+                auth_version=user.auth_version,
+                stage="enroll_verify",
+            ),
+            secret=enrollment.secret,
+            provisioning_uri=enrollment.provisioning_uri,
+        )
+    except (MfaLoginChallengeRejected, MfaRejected):
+        db.rollback()
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+        )
+
+
+@router.post(
+    "/login/mfa/enrollment/verify",
+    response_model=MfaLoginEnrollmentVerifyResponse,
+)
+def verify_mfa_login_enrollment(
+    data: MfaLoginVerifyRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    network_context = request.client.host if request.client else "unknown"
+    try:
+        challenge, user = _challenge_context(
+            db,
+            data.challenge,
+            expected_stage="enroll_verify",
+        )
+        status = MfaService(db).status(user, challenge.organization_id)
+        if not status.required or not status.enrolled or status.active:
+            raise MfaLoginChallengeRejected()
+        MfaLoginChallengeService.reserve_once(db, challenge)
+        throttle = AuthThrottleService(db)
+        if throttle.is_blocked(
+            "mfa_login_verification",
+            str(user.id),
+            network_context,
+        ):
+            db.rollback()
+            raise HTTPException(
+                status_code=429,
+                detail="Invalid authentication credentials",
+            )
+        completed = MfaService(db).verify_enrollment(
+            user,
+            challenge.organization_id,
+            data.code,
+            commit=False,
+        )
+        throttle.clear(
+            "mfa_login_verification",
+            str(user.id),
+            network_context,
+            commit=False,
+        )
+        token = _issue_browser_session(response, db, user, challenge)
+        return MfaLoginEnrollmentVerifyResponse(
+            access_token=token.access_token,
+            recovery_codes=list(completed.recovery_codes),
+        )
+    except MfaRejected:
+        _mfa_failure(db, user, challenge.organization_id, network_context)
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+        )
+    except MfaLoginChallengeRejected:
+        db.rollback()
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+        )
+    except RefreshRejected:
+        db.rollback()
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+        )
+    except ThrottleConfigurationError:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication unavailable",
+        )
+
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_session(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    BrowserAuthSecurityService.require_csrf(request)
+
+    try:
+        credential = BrowserAuthSecurityService.refresh_credential(request)
+        user, refresh = RefreshSessionService(db).rotate(credential)
+    except RefreshRejected:
+        db.rollback()
+        BrowserAuthSecurityService.clear(response)
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+        )
+
+    BrowserAuthSecurityService.issue(
+        response,
+        refresh.credential,
+        max_age=_refresh_max_age(refresh.expires_at),
+    )
+
     return TokenResponse(
         access_token=create_access_token(
             user.id,
             user.auth_version,
             session_id=refresh.session_id,
         ),
-        refresh_token=refresh.credential,
     )
 
 
@@ -259,10 +606,14 @@ def list_sessions(
 
 @router.post("/logout", response_model=ClosedOutcome)
 def logout_current(
+    request: Request,
+    response: Response,
     auth: AuthenticatedSessionContext = Depends(get_current_session_context),
     db: Session = Depends(get_db),
 ):
+    BrowserAuthSecurityService.require_csrf(request)
     RefreshSessionService(db).revoke_current(auth.user, auth.session.id)
+    BrowserAuthSecurityService.clear(response)
     return {"outcome": "success"}
 
 

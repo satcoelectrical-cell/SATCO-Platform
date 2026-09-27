@@ -15,6 +15,8 @@ from app.models.organization import Organization
 from app.models.organization import UserOrganizationMembership
 from app.exceptions.organization_context import ActiveOrganizationContextRequired
 from app.permissions.roles import Role
+from app.services.mfa_service import MfaService
+from app.services.refresh_session_service import RefreshSessionService
 
 
 oauth2_scheme = OAuth2PasswordBearer(
@@ -115,6 +117,52 @@ def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials",
             )
+
+        # Administrator MFA is principal-wide and mandatory regardless of
+        # Organization context. Enforce it before resolving membership so a
+        # missing/ambiguous context can never weaken administrator assurance.
+        if (
+            user.role == Role.ADMIN.value
+            and not RefreshSessionService(db).has_mfa_assurance(session)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+            )
+
+        memberships = (
+            db.query(UserOrganizationMembership)
+            .join(
+                Organization,
+                Organization.id == UserOrganizationMembership.organization_id,
+            )
+            .filter(
+                UserOrganizationMembership.user_id == user.id,
+                UserOrganizationMembership.is_selected.is_(True),
+                UserOrganizationMembership.is_enabled.is_(True),
+                Organization.is_active.is_(True),
+            )
+            .limit(2)
+            .all()
+        )
+        # Organization-context dependencies retain authority over missing,
+        # disabled, or ambiguous membership and return their governed 403.
+        # When one current context exists, however, an access token must meet
+        # that Organization's current MFA policy even if the policy tightened
+        # after the refresh family was created.
+        if len(memberships) == 1:
+            mfa_status = MfaService(db).status(
+                user,
+                memberships[0].organization_id,
+            )
+            if (
+                mfa_status.required
+                and not RefreshSessionService(db).has_mfa_assurance(session)
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication credentials",
+                )
 
         return user
 

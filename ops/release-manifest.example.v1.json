@@ -11,5 +11,8 @@
   "sbom_reference": "example-only",
   "scan_evidence_reference": "example-only",
   "signing_approver_evidence_reference": "example-only",
+  "provenance_reference": "example-only",
+  "signature_verification_evidence_reference": "example-only",
+  "release_dossier_reference": "example-only",
   "created_at": "1970-01-01T00:00:00+00:00"
 }

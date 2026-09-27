@@ -15,6 +15,18 @@ def _login(client, user):
     )
 
 
+def _refresh_credential(client) -> str:
+    credential = client.cookies.get("satco_refresh")
+    assert credential
+    return credential
+
+
+def _csrf_headers(client) -> dict[str, str]:
+    csrf = client.cookies.get("satco_csrf")
+    assert csrf
+    return {"X-CSRF-Token": csrf}
+
+
 def test_access_token_contract_is_hardened(client, engineer_user):
     response = _login(client, engineer_user)
     assert response.status_code == 200
@@ -67,7 +79,8 @@ def test_missing_security_version_fails_closed(client, engineer_user, db_session
 def test_login_persists_only_refresh_verifier(client, engineer_user, db_session):
     response = _login(client, engineer_user)
     assert response.status_code == 200
-    credential = response.json()["refresh_token"]
+    assert "refresh_token" not in response.json()
+    credential = _refresh_credential(client)
     selector, secret = credential.split(".", 1)
     session = db_session.query(AuthRefreshSession).filter_by(selector=selector).one()
     assert session.user_id == engineer_user.id
@@ -78,14 +91,15 @@ def test_login_persists_only_refresh_verifier(client, engineer_user, db_session)
 
 def test_refresh_rotates_once_and_reuse_revokes_family(client, engineer_user, db_session):
     first = _login(client, engineer_user)
-    credential = first.json()["refresh_token"]
+    credential = _refresh_credential(client)
     selector = credential.split(".", 1)[0]
     predecessor = db_session.query(AuthRefreshSession).filter_by(selector=selector).one()
     family_id = predecessor.family_id
 
-    rotated = client.post("/auth/refresh", json={"refresh_token": credential})
+    rotated = client.post("/auth/refresh", headers=_csrf_headers(client))
     assert rotated.status_code == 200
-    replacement = rotated.json()["refresh_token"]
+    assert "refresh_token" not in rotated.json()
+    replacement = _refresh_credential(client)
     assert replacement != credential
     db_session.expire_all()
     predecessor = db_session.get(AuthRefreshSession, predecessor.id)
@@ -108,7 +122,12 @@ def test_refresh_rotates_once_and_reuse_revokes_family(client, engineer_user, db
     assert rotation_event.outcome == "success"
     assert rotation_event.safe_context is None
 
-    reused = client.post("/auth/refresh", json={"refresh_token": credential})
+    client.cookies.set(
+        "satco_refresh",
+        credential,
+        path="/auth",
+    )
+    reused = client.post("/auth/refresh", headers=_csrf_headers(client))
     assert reused.status_code == 401
     db_session.expire_all()
     family = db_session.get(AuthRefreshFamily, family_id)
@@ -134,7 +153,12 @@ def test_refresh_rotates_once_and_reuse_revokes_family(client, engineer_user, db
     assert family_sessions
     assert all(item.revoked_at is not None for item in family_sessions)
 
-    blocked = client.post("/auth/refresh", json={"refresh_token": replacement})
+    client.cookies.set(
+        "satco_refresh",
+        replacement,
+        path="/auth",
+    )
+    blocked = client.post("/auth/refresh", headers=_csrf_headers(client))
     assert blocked.status_code == 401
 
 
@@ -144,7 +168,7 @@ def test_refresh_rejects_stale_auth_version(client, engineer_user, db_session):
     db_session.commit()
     response = client.post(
         "/auth/refresh",
-        json={"refresh_token": first.json()["refresh_token"]},
+        headers=_csrf_headers(client),
     )
     assert response.status_code == 401
 
@@ -157,13 +181,18 @@ def test_access_token_requires_live_bound_session(client, engineer_user):
 
 def test_refresh_unknown_or_bad_secret_is_generic(client, engineer_user):
     first = _login(client, engineer_user)
-    credential = first.json()["refresh_token"]
+    credential = _refresh_credential(client)
     selector = credential.split(".", 1)[0]
     for candidate in (
         "x" * 24 + "." + "y" * 43,
         selector + "." + "z" * 43,
     ):
-        response = client.post("/auth/refresh", json={"refresh_token": candidate})
+        client.cookies.set(
+            "satco_refresh",
+            candidate,
+            path="/auth",
+        )
+        response = client.post("/auth/refresh", headers=_csrf_headers(client))
         assert response.status_code == 401
         assert response.json()["detail"] == "Invalid authentication credentials"
 
@@ -182,7 +211,7 @@ def test_refresh_rejects_disabled_membership(client, engineer_user, db_session):
     db_session.commit()
     response = client.post(
         "/auth/refresh",
-        json={"refresh_token": first.json()["refresh_token"]},
+        headers=_csrf_headers(client),
     )
     assert response.status_code == 401
 

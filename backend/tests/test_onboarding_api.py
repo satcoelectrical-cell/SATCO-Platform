@@ -3,7 +3,8 @@ from uuid import uuid4
 
 from app.core.config import settings
 from app.core.security import create_access_token
-from app.models.auth_security import AuthRefreshFamily, AuthRefreshSession
+from app.models.auth_security import AuthRefreshFamily, AuthRefreshSession, AuthSecurityEvent
+from app.models.organization import UserOrganizationMembership
 
 
 def bearer(user, db_session):
@@ -19,6 +20,23 @@ def bearer(user, db_session):
         expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
     )
     db_session.add(session)
+    if user.role == "admin":
+        organization_id = (
+            db_session.query(UserOrganizationMembership.organization_id)
+            .filter_by(user_id=user.id, is_enabled=True, is_selected=True)
+            .scalar()
+        )
+        db_session.add(
+            AuthSecurityEvent(
+                event_type="mfa_login_challenge_consumed",
+                user_id=user.id,
+                actor_user_id=user.id,
+                organization_id=organization_id,
+                session_id=session.id,
+                outcome="success",
+                reason_code="test_harness_assurance",
+            )
+        )
     db_session.commit()
     return {"Authorization": f"Bearer {create_access_token(user.id, user.auth_version, session.id)}"}
 

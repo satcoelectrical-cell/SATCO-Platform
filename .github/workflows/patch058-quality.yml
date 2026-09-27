@@ -1,0 +1,166 @@
+name: PATCH-058 deterministic qualification
+
+on:
+  pull_request:
+  push:
+    branches: [patch-058]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: patch058-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.8.22"
+  NODE_VERSION: "22.23.1"
+  EXPECTED_ALEMBIC_HEAD: e05800000001
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+        env:
+          POSTGRES_USER: satco
+          POSTGRES_PASSWORD: satco_ci_only
+          POSTGRES_DB: satco_platform_patch02022_test
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U satco -d satco_platform_patch02022_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://satco:satco_ci_only@127.0.0.1:55432/satco_platform_patch02022_test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify clean source identity
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: Install exact backend lock
+        working-directory: backend
+        run: uv sync --frozen
+      - name: Python syntax qualification
+        working-directory: backend
+        run: uv run python -m compileall -q app migrations tests
+      - name: Backend regression
+        working-directory: backend
+        run: uv run pytest -q
+      - name: Verify sole expected Alembic head
+        working-directory: backend
+        env:
+          ALEMBIC_DATABASE_URL: postgresql://satco:satco_ci_only@127.0.0.1:55432/satco_platform_patch02022_test
+          RUNTIME_DATABASE_ROLE: satco_runtime
+        run: |
+          heads="$(uv run alembic heads | awk '{print $1}')"
+          test "$(printf '%s\n' "$heads" | sed '/^$/d' | wc -l | tr -d ' ')" = "1"
+          test "$heads" = "$EXPECTED_ALEMBIC_HEAD"
+
+  migration-upgrade:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+        env:
+          POSTGRES_USER: satco
+          POSTGRES_PASSWORD: satco_ci_only
+          POSTGRES_DB: satco_patch058_migration_test
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U satco -d satco_patch058_migration_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ALEMBIC_DATABASE_URL: postgresql://satco:satco_ci_only@127.0.0.1:55432/satco_patch058_migration_test
+      RUNTIME_DATABASE_ROLE: satco_runtime
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: "55432"
+      DATABASE_USER: satco_runtime
+      DATABASE_PASSWORD: satco_runtime_ci_only
+      DATABASE_NAME: satco_patch058_migration_test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - working-directory: backend
+        run: uv sync --frozen
+      - name: Prepare governed legacy migration prerequisites
+        working-directory: backend
+        run: |
+          uv run python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          from sqlalchemy import create_engine, text
+
+          database_url = os.environ["ALEMBIC_DATABASE_URL"]
+          engine = create_engine(database_url)
+          with engine.begin() as connection:
+              for role in ("satco_runtime", "satco_registry_installer"):
+                  exists = connection.execute(
+                      text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:role)"),
+                      {"role": role},
+                  ).scalar_one()
+                  if not exists:
+                      connection.exec_driver_sql(
+                          f"CREATE ROLE {role} LOGIN NOSUPERUSER NOCREATEDB "
+                          "NOCREATEROLE NOINHERIT NOBYPASSRLS"
+                      )
+
+          payload = {
+              "schema_version": 1,
+              "overall": "PASS",
+              "test_only": True,
+              "alembic_head": "e05100000002",
+              "workspace_disciplines": {},
+              "workspace_total_count": 0,
+              "workspace_checksum": "",
+              "workspace_null_count": 0,
+              "duplicate_canonical_candidates": 0,
+              "workspace_project_orphans": 0,
+              "historical_registry_source_available": True,
+          }
+          path = Path("/tmp/patch051-test-preflight.json")
+          path.write_text(
+              json.dumps(payload, sort_keys=True, separators=(",", ":")),
+              encoding="utf-8",
+          )
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as env_file:
+              env_file.write(f"PATCH051_REQUIRE_PREFLIGHT={path}\n")
+              env_file.write(f"PATCH051_REQUIRE_DIGEST={digest}\n")
+          PY
+      - name: Upgrade fresh disposable database to the sole head
+        working-directory: backend
+        run: |
+          uv run alembic upgrade head
+          test "$(uv run alembic current | awk '{print $1}')" = "$EXPECTED_ALEMBIC_HEAD"
+
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install exact frontend lock
+        working-directory: frontend
+        run: npm ci
+      - name: Frontend qualification
+        working-directory: frontend
+        run: |
+          npm run typecheck
+          npm run test:run
+          npm run build

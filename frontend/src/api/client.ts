@@ -2,29 +2,102 @@ import type { AdviceResponse, ApiResult, Capture, ChangeImpactMutation, ContextN
 import type { EffectiveDisciplinePackages, OrganizationPackageConfiguration, PackageObjectCreateResult, PackageRuleResult, ProjectPackageConfiguration, SupportedPackages, WorkspacePackageApplicability, StandardApplicability, StandardAssertion, StandardCandidate, StandardIdentityView, StandardRightsView, StandardSourceSnapshot, StandardsIntelligenceRun, StandardsPage, StandardsRightsPage, TechnicalReportStandardCandidate, TechnicalReportStandardsBasisRevision } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
-const TOKEN_KEY = "satco.auth.access.v1";
+let accessToken: string | null = null;
 
 export const authSession = {
-  get: () => sessionStorage.getItem(TOKEN_KEY),
-  set: (token: string) => sessionStorage.setItem(TOKEN_KEY, token),
-  clear: () => sessionStorage.removeItem(TOKEN_KEY),
+  get: () => accessToken,
+  set: (token: string) => { accessToken = token; },
+  clear: () => { accessToken = null; },
 };
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
+function csrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const prefix = "satco_csrf=";
+  const entry = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix));
+  return entry ? decodeURIComponent(entry.slice(prefix.length)) : null;
+}
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    const csrf = csrfToken();
+    if (!csrf) {
+      authSession.clear();
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "X-CSRF-Token": csrf },
+      });
+
+      if (!response.ok) {
+        authSession.clear();
+        return false;
+      }
+
+      const payload = await response.json() as { access_token?: unknown };
+      if (typeof payload.access_token !== "string" || !payload.access_token) {
+        authSession.clear();
+        return false;
+      }
+
+      authSession.set(payload.access_token);
+      return true;
+    } catch {
+      authSession.clear();
+      return false;
+    }
+  })();
+
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
+  }
+}
+
+function isSafeRefreshRetry(init: RequestInit): boolean {
+  const method = (init.method ?? "GET").toUpperCase();
+  return method === "GET" || method === "HEAD" || method === "OPTIONS";
+}
+
+async function request<T>(path: string, init: RequestInit = {}, allowRefresh = true): Promise<ApiResult<T>> {
   const token = authSession.get();
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   if (init.body && !(init.body instanceof URLSearchParams) && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
+
   try {
     const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
-    if (response.status === 401) { authSession.clear(); return { state: "protected" }; }
+
+    if (response.status === 401) {
+      if (allowRefresh && path !== "/auth/refresh" && isSafeRefreshRetry(init)) {
+        if (await refreshAccessToken()) {
+          return request<T>(path, init, false);
+        }
+      }
+      authSession.clear();
+      return { state: "protected" };
+    }
+
     if (response.status === 403 || response.status === 404) return { state: "protected" };
     if (response.status === 400 || response.status === 422) return { state: "invalid" };
     if (response.status === 409) return { state: "conflict" };
     if (response.status === 503) return { state: "unavailable" };
     if (!response.ok) return { state: "error" };
     return { state: "success", data: await response.json() as T };
-  } catch { return { state: "unavailable" }; }
+  } catch {
+    return { state: "unavailable" };
+  }
 }
 
 async function downloadRequest(path: string): Promise<ApiResult<Blob>> {
@@ -60,12 +133,150 @@ async function closedStatusResult<T extends { status: string }>(path:string):Pro
   return result;
 }
 
-export async function login(username: string, password: string): Promise<ApiResult<true>> {
+export type LoginOutcome =
+  | { outcome: "authenticated" }
+  | { outcome: "mfa_required"; challenge: string; enrollmentRequired: boolean };
+
+export type MfaEnrollment = {
+  challenge: string;
+  secret: string;
+  provisioningUri: string;
+};
+
+export async function login(username: string, password: string): Promise<ApiResult<LoginOutcome>> {
   const body = new URLSearchParams({ username, password });
-  const result = await request<{ access_token: string }>("/auth/login", { method: "POST", body });
+  const result = await request<{
+    access_token?: unknown;
+    outcome?: unknown;
+    challenge?: unknown;
+    enrollment_required?: unknown;
+  }>("/auth/login", { method: "POST", body, credentials: "include" }, false);
   if (result.state !== "success") return result;
+  if (typeof result.data.access_token === "string" && result.data.access_token) {
+    authSession.set(result.data.access_token);
+    return { state: "success", data: { outcome: "authenticated" } };
+  }
+  if (
+    result.data.outcome === "mfa_required"
+    && typeof result.data.challenge === "string"
+    && result.data.challenge
+    && typeof result.data.enrollment_required === "boolean"
+  ) {
+    authSession.clear();
+    return {
+      state: "success",
+      data: {
+        outcome: "mfa_required",
+        challenge: result.data.challenge,
+        enrollmentRequired: result.data.enrollment_required,
+      },
+    };
+  }
+  authSession.clear();
+  return { state: "error" };
+}
+
+export async function startMfaEnrollment(challenge: string): Promise<ApiResult<MfaEnrollment>> {
+  const result = await request<{
+    challenge?: unknown;
+    secret?: unknown;
+    provisioning_uri?: unknown;
+  }>("/auth/login/mfa/enrollment", {
+    method: "POST",
+    credentials: "include",
+    body: JSON.stringify({ challenge }),
+  }, false);
+  if (result.state !== "success") return result;
+  if (
+    typeof result.data.challenge !== "string"
+    || typeof result.data.secret !== "string"
+    || typeof result.data.provisioning_uri !== "string"
+  ) return { state: "error" };
+  return {
+    state: "success",
+    data: {
+      challenge: result.data.challenge,
+      secret: result.data.secret,
+      provisioningUri: result.data.provisioning_uri,
+    },
+  };
+}
+
+export async function verifyMfaLogin(
+  challenge: string,
+  code: string,
+): Promise<ApiResult<true>> {
+  const result = await request<{ access_token?: unknown }>("/auth/login/mfa/verify", {
+    method: "POST",
+    credentials: "include",
+    body: JSON.stringify({ challenge, code }),
+  }, false);
+  if (result.state !== "success") return result;
+  if (typeof result.data.access_token !== "string" || !result.data.access_token) {
+    authSession.clear();
+    return { state: "error" };
+  }
   authSession.set(result.data.access_token);
   return { state: "success", data: true };
+}
+
+export async function verifyMfaEnrollment(
+  challenge: string,
+  code: string,
+): Promise<ApiResult<string[]>> {
+  const result = await request<{
+    access_token?: unknown;
+    recovery_codes?: unknown;
+  }>("/auth/login/mfa/enrollment/verify", {
+    method: "POST",
+    credentials: "include",
+    body: JSON.stringify({ challenge, code }),
+  }, false);
+  if (result.state !== "success") return result;
+  if (
+    typeof result.data.access_token !== "string"
+    || !result.data.access_token
+    || !Array.isArray(result.data.recovery_codes)
+    || !result.data.recovery_codes.every((value) => typeof value === "string")
+  ) {
+    authSession.clear();
+    return { state: "error" };
+  }
+  authSession.set(result.data.access_token);
+  return { state: "success", data: result.data.recovery_codes };
+}
+
+
+function csrfCookieValue(): string | null {
+  const prefix = "satco_csrf=";
+  const item = document.cookie
+    .split(";")
+    .map((value) => value.trim())
+    .find((value) => value.startsWith(prefix));
+
+  return item ? decodeURIComponent(item.slice(prefix.length)) : null;
+}
+
+export async function logout(): Promise<void> {
+  const accessToken = authSession.get();
+  const csrfToken = csrfCookieValue();
+
+  try {
+    if (accessToken && csrfToken) {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "X-CSRF-Token": csrfToken,
+        },
+      });
+    }
+  } catch {
+    // Server authority remains controlling if logout communication fails.
+  } finally {
+    authSession.clear();
+  }
 }
 
 export const api = {
@@ -135,6 +346,15 @@ export const api = {
   activateAccount: (token: string, newPassword: string) => closedResult<{ outcome: string }>("/auth/activate", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }),
   resetAccount: (token: string, newPassword: string) => closedResult<{ outcome: string }>("/auth/reset", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }),
   changePassword: (currentPassword: string, newPassword: string) => closedResult<{ outcome: string }>("/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }),
+  mfaStatus: () => request<{ required: boolean; enrolled: boolean; active: boolean }>("/auth/mfa/status"),
+  sessions: () => request<{ sessions: { id: string; current: boolean; created_at: string; expires_at: string; device_label: string | null }[] }>("/auth/sessions"),
+  stepUp: (password: string, totpCode?: string) => closedResult<{ outcome: string }>("/auth/step-up", { method: "POST", body: JSON.stringify({ password, totp_code: totpCode || null }) }),
+  logoutAll: () => closedResult<{ outcome: string }>("/auth/logout-all", { method: "POST" }),
+  regenerateRecoveryCodes: () => request<{ outcome: string; recovery_codes: string[] }>("/auth/mfa/recovery-codes/regenerate", { method: "POST" }),
+  revokeMemberSessions: (userId: number) => closedResult<{ outcome: string }>(`/auth/admin/users/${userId}/sessions/revoke`, { method: "POST" }),
+  issueSecurityRecovery: (userId: number, purpose: "account_recovery" | "mfa_recovery") => request<{ outcome: string; recovery_credential: string; expires_at: string }>(`/auth/admin/users/${userId}/recovery`, { method: "POST", body: JSON.stringify({ purpose }) }),
+  completeAccountRecovery: (credential: string, newPassword: string) => closedResult<{ outcome: string }>("/auth/recovery/account/complete", { method: "POST", body: JSON.stringify({ recovery_credential: credential, new_password: newPassword }) }),
+  completeMfaRecovery: (credential: string) => closedResult<{ outcome: string }>("/auth/recovery/mfa/complete", { method: "POST", body: JSON.stringify({ recovery_credential: credential }) }),
   members: () => closedResult<MemberList>("/organization-admin/members"),
   provisionMember: (payload: { username: string; email: string; full_name?: string; role: "admin" | "engineer" }) => closedResult<IssuedCredential>("/organization-admin/members", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
   mutateMember: (userId: number, payload: { expected_version: number; role?: "admin" | "engineer"; membership_enabled?: boolean; account_active?: boolean }) => closedResult<IssuedCredential>(`/organization-admin/members/${userId}`, { method: "PATCH", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),

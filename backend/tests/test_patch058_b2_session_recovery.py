@@ -130,8 +130,19 @@ def test_sessions_endpoint_exposes_only_safe_current_user_metadata(client, engin
 
 
 def test_current_logout_immediately_invalidates_access_session(client, engineer_headers):
-    response = client.post("/auth/logout", headers=engineer_headers)
+    csrf = client.cookies.get("satco_csrf")
+    assert csrf
+
+    response = client.post(
+        "/auth/logout",
+        headers={
+            **engineer_headers,
+            "X-CSRF-Token": csrf,
+        },
+    )
     assert response.status_code == 200
+    assert client.cookies.get("satco_refresh") is None
+    assert client.cookies.get("satco_csrf") is None
     assert client.get("/auth/me", headers=engineer_headers).status_code == 401
 
 

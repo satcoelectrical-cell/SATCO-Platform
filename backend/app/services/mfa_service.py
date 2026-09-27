@@ -210,7 +210,13 @@ class MfaService:
         active = enrolled and authenticator.verified_at is not None
         return MfaStatus(required=required, enrolled=enrolled, active=active)
 
-    def start_enrollment(self, user: User, organization_id: UUID) -> EnrollmentStart:
+    def start_enrollment(
+        self,
+        user: User,
+        organization_id: UUID,
+        *,
+        commit: bool = True,
+    ) -> EnrollmentStart:
         authenticator = (
             self.db.query(UserTotpAuthenticator)
             .filter(UserTotpAuthenticator.user_id == user.id)
@@ -248,7 +254,10 @@ class MfaService:
             outcome="success",
             reason_code="totp_pending_verification",
         )
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
         issuer = settings.PROJECT_NAME.replace(" ", "")
         uri = pyotp.TOTP(
             secret,
@@ -263,6 +272,8 @@ class MfaService:
         user: User,
         organization_id: UUID,
         code: str,
+        *,
+        commit: bool = True,
     ) -> EnrollmentComplete:
         authenticator = (
             self.db.query(UserTotpAuthenticator)
@@ -318,7 +329,10 @@ class MfaService:
             outcome="success",
             reason_code="initial_generation",
         )
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
         return EnrollmentComplete(recovery_codes=tuple(raw_codes))
 
     def consume_recovery_code(self, user: User, organization_id: UUID, code: str) -> None:
@@ -366,7 +380,14 @@ class MfaService:
         self.db.commit()
         return tuple(raw_codes)
 
-    def verify_active_totp(self, user: User, organization_id: UUID, code: str) -> None:
+    def verify_active_totp(
+        self,
+        user: User,
+        organization_id: UUID,
+        code: str,
+        *,
+        commit: bool = True,
+    ) -> None:
         authenticator = (
             self.db.query(UserTotpAuthenticator)
             .filter(UserTotpAuthenticator.user_id == user.id)
@@ -381,4 +402,7 @@ class MfaService:
             raise MfaRejected()
         authenticator.last_accepted_counter = counter
         self._event(event_type="mfa_verification", user_id=user.id, organization_id=organization_id, outcome="success", reason_code="active_totp")
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()

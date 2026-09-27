@@ -84,7 +84,9 @@ def test_oauth2_form_login_returns_tokens(
 
     assert response.status_code == 200
     assert response.json()["access_token"]
-    assert response.json()["refresh_token"]
+    assert "refresh_token" not in response.json()
+    assert client.cookies.get("satco_refresh")
+    assert client.cookies.get("satco_csrf")
     assert response.json()["token_type"] == "bearer"
 
 
@@ -144,7 +146,9 @@ def test_refresh_credential_is_not_an_access_token(
             "password": "correct-password",
         },
     )
-    refresh_credential = login.json()["refresh_token"]
+    assert "refresh_token" not in login.json()
+    refresh_credential = client.cookies.get("satco_refresh")
+    assert refresh_credential
 
     response = client.get(
         "/customers/",
