@@ -276,6 +276,12 @@ class SupplyChainTests(unittest.TestCase):
         )
         self.assertIn('export SOURCE_DATE_EPOCH="$source_epoch"', text)
         self.assertIn('--build-arg SOURCE_DATE_EPOCH="$source_epoch"', text)
+        dockerfile = (ROOT / "backend/Dockerfile.production").read_text()
+        self.assertIn("ARG SOURCE_DATE_EPOCH", dockerfile)
+        self.assertIn(
+            '/etc /etc/passwd /etc/passwd- /etc/group /etc/group-',
+            dockerfile,
+        )
         self.assertIn("--output type=oci,dest=backend-image.oci.tar backend", text)
         self.assertLess(
             text.index("Set up pinned OCI-capable Buildx builder"),

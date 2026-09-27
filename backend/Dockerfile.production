@@ -4,7 +4,7 @@ WORKDIR /app
 ARG SOURCE_DATE_EPOCH
 RUN groupadd --system satco && useradd --system --gid satco --home-dir /nonexistent satco && \
     touch -d "@$SOURCE_DATE_EPOCH" \
-      /etc/passwd /etc/passwd- /etc/group /etc/group- \
+      /etc /etc/passwd /etc/passwd- /etc/group /etc/group- \
       /etc/shadow /etc/shadow- /etc/gshadow /etc/gshadow-
 
 COPY requirements.production.lock /app/requirements.production.lock
