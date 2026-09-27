@@ -242,12 +242,15 @@ jobs:
             pip-audit.json
             npm-audit.json
             semgrep.json
+            semgrep.exit
             gitleaks.json
+            gitleaks.exit
             trivy-backend.json
             backend-sbom.cdx.json
             frontend-sbom.cdx.json
             vulnerability-gate.json
             high-exception-validation.exit
+            vulnerability-gate.exit
             ops/security/patch058-high-exceptions.json
             provenance.intoto.json
             evidence-digests.sha256
