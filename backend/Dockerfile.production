@@ -1,7 +1,11 @@
 FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f AS runtime
 
 WORKDIR /app
-RUN groupadd --system satco && useradd --system --gid satco --home-dir /nonexistent satco
+ARG SOURCE_DATE_EPOCH
+RUN groupadd --system satco && useradd --system --gid satco --home-dir /nonexistent satco && \
+    touch -d "@$SOURCE_DATE_EPOCH" \
+      /etc/passwd /etc/passwd- /etc/group /etc/group- \
+      /etc/shadow /etc/shadow- /etc/gshadow /etc/gshadow-
 
 COPY requirements.production.lock /app/requirements.production.lock
 RUN pip install --no-cache-dir --require-hashes \

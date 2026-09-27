@@ -275,6 +275,7 @@ class SupplyChainTests(unittest.TestCase):
             text,
         )
         self.assertIn('export SOURCE_DATE_EPOCH="$source_epoch"', text)
+        self.assertIn('--build-arg SOURCE_DATE_EPOCH="$source_epoch"', text)
         self.assertIn("--output type=oci,dest=backend-image.oci.tar backend", text)
         self.assertLess(
             text.index("Set up pinned OCI-capable Buildx builder"),
