@@ -41,10 +41,11 @@ Implementation Plan and checkpoint records summarized below.
   qualified backend artifact and its 30-day validity window; it does not
   transfer to any rebuilt artifact.
 - Post-build security-decision architecture: **HUMAN GOVERNANCE APPROVED FOR
-  BOUNDED IMPLEMENTATION / NOT YET COMMITTED OR QUALIFIED**. Candidate and
-  decision revisions remain separate; ordinary push runs cannot inherit an
-  external exception, and a manual replay must identify an exact decision
-  commit reachable from `patch-058-security-decisions`.
+  BOUNDED IMPLEMENTATION / IMPLEMENTED, COMMITTED AND REMOTE-BACKED AT
+  `f89d3e52d23cb173d236f0f4646e9a9e804bf830` / NOT YET HUMAN ACCEPTED**.
+  Candidate and decision revisions remain separate; ordinary push runs cannot
+  inherit an external exception, and a manual replay must identify an exact
+  decision commit reachable from `patch-058-security-decisions`.
 - Current in-tree exception records remain historical/non-transferable and are
   not rebound by the architecture implementation.
 - Privileged signing authorization: **NOT GRANTED / NOT EXECUTED**.
