@@ -113,7 +113,7 @@ jobs:
           docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
             --build-arg SOURCE_DATE_EPOCH="$source_epoch" \
             --file backend/Dockerfile.production \
-            --output type=oci,dest=backend-image.oci.tar backend
+            --output type=oci,dest=backend-image.oci.tar,rewrite-timestamp=true backend
           npm --prefix frontend run build
           tar --sort=name --mtime="@$source_epoch" --owner=0 --group=0 --numeric-owner \
             -cf frontend-dist.tar -C frontend/dist .

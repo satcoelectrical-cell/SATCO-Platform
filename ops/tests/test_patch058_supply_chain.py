@@ -282,7 +282,19 @@ class SupplyChainTests(unittest.TestCase):
             '/etc /etc/passwd /etc/passwd- /etc/group /etc/group-',
             dockerfile,
         )
-        self.assertIn("--output type=oci,dest=backend-image.oci.tar backend", text)
+        self.assertIn(
+            "--output type=oci,dest=backend-image.oci.tar,"
+            "rewrite-timestamp=true backend",
+            text,
+        )
+        dockerignore = (ROOT / "backend/.dockerignore").read_text()
+        for pattern in (
+            "**/__pycache__/",
+            "**/*.py[cod]",
+            ".pytest_cache/",
+            ".venv/",
+        ):
+            self.assertIn(pattern, dockerignore)
         self.assertLess(
             text.index("Set up pinned OCI-capable Buildx builder"),
             text.index("Build exact backend and frontend artifacts"),
