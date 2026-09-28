@@ -609,6 +609,7 @@ PATCH-058 shall reconcile validation so an active exception is accepted only whe
 
 - exact finding identifier;
 - scanner/source;
+- exact candidate source revision;
 - exact artifact digest;
 - rationale;
 - compensating controls;
@@ -624,6 +625,30 @@ An exception for one artifact digest shall not transfer to a rebuilt or differen
 Expired, revoked, failed-retest, malformed or mismatched exceptions fail closed.
 
 No Critical vulnerability exception is introduced by PATCH-058.
+
+The implementation shall resolve the source/exception self-reference boundary
+through post-build decision evidence:
+
+1. ordinary candidate qualification constructs and scans artifacts without
+   consuming an external exception and therefore blocks unresolved High or
+   Critical findings;
+2. after Human review, the exact exception JSON is committed separately on
+   `patch-058-security-decisions`, without changing the candidate ref;
+3. a manually dispatched replay identifies the exact decision commit, verifies
+   that it is reachable from that ref, and materializes the exception JSON from
+   that commit;
+4. validation requires every record to match the candidate SHA, backend digest,
+   finding identity, active state and expiry;
+5. the replay emits decision evidence binding the candidate SHA, backend
+   digest, exception JSON digest, decision ref and decision commit;
+6. provenance, protected signing verification and the release dossier repeat
+   those bindings and fail closed on substitution.
+
+The tracked exception file in the candidate tree is not an automatically
+active decision source. Migration shall not rebind it. The first active
+post-build decision requires a new Human vulnerability assessment of the exact
+post-implementation candidate and artifact, followed by a separately
+authorized commit on the dedicated decision ref.
 
 ## 25. SBOM
 

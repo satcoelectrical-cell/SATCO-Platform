@@ -818,6 +818,7 @@ An accepted exception record shall bind at minimum:
 
 - finding identifier;
 - affected component/artifact;
+- exact candidate source revision;
 - exact artifact digest where available;
 - rationale;
 - compensating controls;
@@ -837,6 +838,23 @@ Validation shall fail closed when:
 - Human approval evidence is invalid/missing.
 
 Exceptions shall be versioned/attributable release evidence.
+
+The physical exception decision shall be post-build evidence. The immutable
+software candidate revision and the immutable security-decision revision are
+separate identities. PATCH-058 shall store an approved decision on the
+dedicated `patch-058-security-decisions` ref only after the exact candidate
+artifact and scanner evidence exist. The decision record shall name the exact
+candidate source revision and artifact digest; the consuming workflow shall
+identify the exact decision commit and prove that it is reachable from that
+dedicated ref.
+
+Ordinary push and pull-request qualification shall not read exception records
+from the candidate tree or implicitly inherit a prior decision. A replay that
+does not supply valid post-build decision evidence remains subject to the
+ordinary fail-closed High/Critical policy. Provenance, signing verification and
+the release dossier shall independently bind the candidate revision, artifact
+digest, exception-file digest and security-decision commit. Substitution of any
+one of those identities shall fail closed.
 
 ## 40. Artifact construction and digest identity
 

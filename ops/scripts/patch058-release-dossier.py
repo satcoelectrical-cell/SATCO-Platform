@@ -23,6 +23,14 @@ REQUIRED_SECURITY = {
     "pip-audit", "npm-audit", "semgrep", "gitleaks", "trivy",
     "vulnerability_gate",
 }
+REQUIRED_EXCEPTIONS = {"high_findings", "security_decision"}
+SECURITY_DECISION_REF = "refs/heads/patch-058-security-decisions"
+REQUIRED_EXCEPTION_KEYS = {
+    "finding_id", "severity", "source", "source_revision",
+    "artifact_digest", "rationale", "compensating_controls", "scope",
+    "approver_id", "approved_at", "expires_at", "retest_condition",
+    "retest_reference", "retest_result", "status",
+}
 
 
 def digest(path):
@@ -90,7 +98,8 @@ def named_digests(items):
     return {item["name"]: "sha256:" + item["digest"]["sha256"] for item in items}
 
 
-def validate_approval(name, item, dossier, require_approvals):
+def validate_approval(name, item, dossier, security_decision_commit,
+                      require_approvals):
     status = item.get("status")
     if status not in {"pending", "approved", "rejected"} or not item.get("reference"):
         raise ValueError(f"invalid {name}")
@@ -108,6 +117,8 @@ def validate_approval(name, item, dossier, require_approvals):
         raise ValueError(f"{name} release mismatch")
     if evidence.get("source_commit") != dossier["source_commit"]:
         raise ValueError(f"{name} source mismatch")
+    if evidence.get("security_decision_commit") != security_decision_commit:
+        raise ValueError(f"{name} security-decision mismatch")
     if evidence.get("artifact_digests") != {
         key: value["digest"] for key, value in dossier["artifacts"].items()
     }:
@@ -155,8 +166,8 @@ def validate(dossier, now, require_approvals=True):
         raise ValueError("backend, frontend and migration qualification is mandatory")
     if set(dossier["security_evidence"]) != REQUIRED_SECURITY:
         raise ValueError("mandatory scanner/security evidence is incomplete")
-    if "high_findings" not in dossier["exceptions"]:
-        raise ValueError("High-finding exception evidence is mandatory")
+    if set(dossier["exceptions"]) != REQUIRED_EXCEPTIONS:
+        raise ValueError("High exceptions and security-decision evidence are mandatory")
 
     provenance = load_evidence("provenance", dossier["provenance"])
     external = provenance.get("predicate", {}).get("buildDefinition", {}).get(
@@ -196,6 +207,7 @@ def validate(dossier, now, require_approvals=True):
         for key, value in dossier["security_evidence"].items()
     }
     dossier_evidence["high-exceptions"] = dossier["exceptions"]["high_findings"]["digest"]
+    dossier_evidence["security-decision"] = dossier["exceptions"]["security_decision"]["digest"]
     if provenance_evidence != dossier_evidence:
         raise ValueError("provenance security-evidence mismatch")
 
@@ -226,8 +238,33 @@ def validate(dossier, now, require_approvals=True):
     if gate.get("result") != "PASS" or gate.get("blockingFindings"):
         raise ValueError("vulnerability gate is not PASS with zero blockers")
     backend = dossier["artifacts"]["backend"]["digest"]
+    if gate.get("sourceRevision") != dossier["source_commit"]:
+        raise ValueError("vulnerability gate source mismatch")
     if gate.get("artifactDigest") != backend:
         raise ValueError("vulnerability gate artifact mismatch")
+
+    decision = load_evidence(
+        "exceptions.security_decision", dossier["exceptions"]["security_decision"]
+    )
+    required_decision = {
+        "schemaVersion", "mode", "candidateRevision", "artifactDigest",
+        "exceptionEvidenceDigest", "decisionCommit", "decisionRef",
+    }
+    if set(decision) != required_decision:
+        raise ValueError("security-decision evidence fields mismatch")
+    if (
+        decision.get("schemaVersion") != "PATCH-058-security-decision-v1"
+        or decision.get("mode") != "post-build-human-decision"
+        or decision.get("candidateRevision") != dossier["source_commit"]
+        or decision.get("artifactDigest") != backend
+        or decision.get("exceptionEvidenceDigest")
+        != dossier["exceptions"]["high_findings"]["digest"]
+        or not REV.fullmatch(decision.get("decisionCommit") or "")
+        or decision.get("decisionRef") != SECURITY_DECISION_REF
+    ):
+        raise ValueError("security-decision identity mismatch")
+    if gate.get("securityDecision") != decision:
+        raise ValueError("vulnerability gate security-decision mismatch")
 
     exceptions = load_evidence(
         "exceptions.high_findings", dossier["exceptions"]["high_findings"]
@@ -236,15 +273,35 @@ def validate(dossier, now, require_approvals=True):
         raise ValueError("High-finding exception evidence must be a list")
     for exception in exceptions:
         if (
-            exception.get("status") != "active"
+            not isinstance(exception, dict)
+            or set(exception) != REQUIRED_EXCEPTION_KEYS
+            or exception.get("status") != "active"
+            or exception.get("severity") != "HIGH"
+            or exception.get("source_revision") != dossier["source_commit"]
             or exception.get("artifact_digest") != backend
             or timestamp(exception["expires_at"]) <= now
         ):
             raise ValueError("inactive, mismatched or expired High exception")
+    accepted = {
+        (item.get("source", "").lower(), item.get("finding_id")): item
+        for item in gate.get("acceptedExceptions", [])
+        if isinstance(item, dict)
+    }
+    expected_exceptions = {
+        (item["source"].lower(), item["finding_id"]): item for item in exceptions
+    }
+    if (
+        len(accepted) != len(gate.get("acceptedExceptions", []))
+        or len(expected_exceptions) != len(exceptions)
+        or accepted != expected_exceptions
+    ):
+        raise ValueError("vulnerability gate accepted-exception mismatch")
 
     signatures = load_evidence("signature_verification", dossier["signature_verification"])
     if signatures.get("source_commit") != dossier["source_commit"]:
         raise ValueError("signature verification source mismatch")
+    if signatures.get("security_decision_commit") != decision["decisionCommit"]:
+        raise ValueError("signature verification security-decision mismatch")
     verified = {
         item.get("name"): item.get("artifact_digest")
         for item in signatures.get("artifacts", [])
@@ -259,11 +316,13 @@ def validate(dossier, now, require_approvals=True):
 
     validate_approval(
         "human_signing_authorization",
-        dossier["human_signing_authorization"], dossier, require_approvals,
+        dossier["human_signing_authorization"], dossier,
+        decision["decisionCommit"], require_approvals,
     )
     validate_approval(
         "human_release_approval",
-        dossier["human_release_approval"], dossier, require_approvals,
+        dossier["human_release_approval"], dossier,
+        decision["decisionCommit"], require_approvals,
     )
     return True
 

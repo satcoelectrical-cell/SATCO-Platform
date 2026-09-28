@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -10,7 +11,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 GATE = ROOT / "ops/scripts/patch058-vulnerability-gate.py"
 PROVENANCE = ROOT / "ops/scripts/patch058-provenance.py"
 SBOM = ROOT / "ops/scripts/patch058-sbom.py"
+EXCEPTION_VALIDATOR = ROOT / "ops/scripts/validate-high-exceptions.sh"
 ARTIFACT_DIGEST = "sha256:" + "a" * 64
+SOURCE_REVISION = "1" * 40
+DECISION_COMMIT = "2" * 40
 EVALUATED_AT = "2026-09-27T00:00:00Z"
 
 
@@ -29,6 +33,7 @@ class SupplyChainTests(unittest.TestCase):
             "finding_id": "PYSEC-TEST-1",
             "severity": "HIGH",
             "source": "pip-audit",
+            "source_revision": SOURCE_REVISION,
             "artifact_digest": ARTIFACT_DIGEST,
             "rationale": "No affected algorithm is reachable.",
             "compensating_controls": "HS256-only configuration and regression tests.",
@@ -44,25 +49,50 @@ class SupplyChainTests(unittest.TestCase):
         record.update(overrides)
         return record
 
-    def run_gate(self, trivy=None, pip=None, exceptions=None, omit=None):
+    def run_gate(self, trivy=None, pip=None, exceptions=None, omit=None,
+                 source_revision=SOURCE_REVISION,
+                 expected_decision_commit=None, decision_overrides=None):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         directory = pathlib.Path(temporary.name)
         trivy_path, pip_path, npm_path = self.write_reports(directory, trivy, pip)
         output = directory / "gate.json"
+        exception_path = directory / "exceptions.json"
+        exception_records = exceptions or []
+        exception_path.write_text(json.dumps(exception_records))
+        external_decision = bool(exception_records)
+        decision = {
+            "schemaVersion": "PATCH-058-security-decision-v1",
+            "mode": "post-build-human-decision" if external_decision else "none",
+            "candidateRevision": source_revision,
+            "artifactDigest": ARTIFACT_DIGEST,
+            "exceptionEvidenceDigest": "sha256:" + hashlib.sha256(
+                exception_path.read_bytes()
+            ).hexdigest(),
+            "decisionCommit": DECISION_COMMIT if external_decision else None,
+            "decisionRef": "refs/heads/patch-058-security-decisions",
+        }
+        decision.update(decision_overrides or {})
+        decision_path = directory / "security-decision.json"
+        decision_path.write_text(json.dumps(decision))
+        supplied_commit = (
+            DECISION_COMMIT if external_decision else ""
+        ) if expected_decision_commit is None else expected_decision_commit
         command = [
             "python3", str(GATE),
             "--trivy-json", str(directory / "missing.json" if omit == "trivy" else trivy_path),
             "--pip-audit-json", str(directory / "missing.json" if omit == "pip" else pip_path),
             "--npm-audit-json", str(directory / "missing.json" if omit == "npm" else npm_path),
+            "--source-revision", source_revision,
             "--artifact-digest", ARTIFACT_DIGEST,
+            "--exceptions", str(exception_path),
+            "--security-decision-evidence", str(
+                directory / "missing-decision.json" if omit == "decision" else decision_path
+            ),
+            "--security-decision-commit", supplied_commit,
             "--evaluated-at", EVALUATED_AT,
             "--output", str(output),
         ]
-        if exceptions is not None:
-            exception_path = directory / "exceptions.json"
-            exception_path.write_text(json.dumps(exceptions))
-            command += ["--exceptions", str(exception_path)]
         result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
         return result, json.loads(output.read_text())
 
@@ -111,8 +141,78 @@ class SupplyChainTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
 
     def test_exception_for_another_source_fails(self):
-        result, _ = self.run_gate(pip=self.pip_finding(), exceptions=[self.exception(source="trivy")])
+        result, _ = self.run_gate(
+            pip=self.pip_finding(),
+            exceptions=[self.exception(source_revision="3" * 40)],
+        )
         self.assertEqual(result.returncode, 2)
+
+    def test_exception_for_another_scanner_or_finding_fails(self):
+        for override in ({"source": "trivy"}, {"finding_id": "PYSEC-OTHER"}):
+            with self.subTest(override=override):
+                result, _ = self.run_gate(
+                    pip=self.pip_finding(), exceptions=[self.exception(**override)]
+                )
+                self.assertEqual(result.returncode, 2)
+
+    def test_exception_severity_substitution_fails(self):
+        result, _ = self.run_gate(
+            pip=self.pip_finding(),
+            exceptions=[self.exception(severity="CRITICAL")],
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_wrong_security_decision_commit_fails(self):
+        result, evidence = self.run_gate(
+            pip=self.pip_finding(), exceptions=[self.exception()],
+            expected_decision_commit="3" * 40,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("security-decision commit mismatch", evidence["error"])
+
+    def test_missing_security_decision_evidence_fails(self):
+        result, _ = self.run_gate(
+            pip=self.pip_finding(), exceptions=[self.exception()], omit="decision"
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_exception_digest_substitution_fails(self):
+        result, _ = self.run_gate(
+            pip=self.pip_finding(), exceptions=[self.exception()],
+            decision_overrides={"exceptionEvidenceDigest": "sha256:" + "0" * 64},
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_exception_schema_and_shell_policy_require_exact_source_revision(self):
+        schema = json.loads(
+            (ROOT / "ops/high-vulnerability-exceptions.v1.schema.json").read_text()
+        )
+        self.assertIn("source_revision", schema["items"]["required"])
+        self.assertEqual(
+            schema["items"]["properties"]["source_revision"]["pattern"],
+            "^[0-9a-f]{40}$",
+        )
+        record = self.exception(expires_at="2026-10-27T07:58:25Z")
+        self.assertEqual(set(record), set(schema["items"]["required"]))
+        with tempfile.TemporaryDirectory() as raw:
+            path = pathlib.Path(raw) / "exceptions.json"
+            path.write_text(json.dumps([record]))
+            environment = os.environ | {
+                "SATCO_HIGH_EXCEPTION_FILE": str(path),
+                "SATCO_ARTIFACT_DIGEST": ARTIFACT_DIGEST,
+                "SATCO_SOURCE_REVISION": SOURCE_REVISION,
+            }
+            accepted = subprocess.run(
+                ["sh", str(EXCEPTION_VALIDATOR)], env=environment,
+                text=True, capture_output=True,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            environment["SATCO_SOURCE_REVISION"] = "3" * 40
+            rejected = subprocess.run(
+                ["sh", str(EXCEPTION_VALIDATOR)], env=environment,
+                text=True, capture_output=True,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
 
     def test_expired_or_failed_retest_exception_fails(self):
         expired, _ = self.run_gate(
@@ -133,13 +233,30 @@ class SupplyChainTests(unittest.TestCase):
     def test_workflows_bind_and_revalidate_human_high_exceptions(self):
         security = (ROOT / ".github/workflows/patch058-security.yml").read_text()
         signing = (ROOT / ".github/workflows/patch058-sign-release.yml").read_text()
-        exception_path = "ops/security/patch058-high-exceptions.json"
+        exception_path = "resolved-high-exceptions.json"
         self.assertIn(f"--exceptions {exception_path}", security)
         self.assertIn(f"--evidence high-exceptions={exception_path}", security)
+        self.assertIn("--evidence security-decision=security-decision.json", security)
+        self.assertIn("source_revision", (ROOT / "ops/high-vulnerability-exceptions.v1.schema.json").read_text())
         self.assertIn("high-exception-validation.exit", security)
         self.assertIn('test "$(cat high-exception-validation.exit)" = "0"', security)
-        self.assertIn("SATCO_HIGH_EXCEPTION_FILE=evidence/ops/security/patch058-high-exceptions.json", signing)
-        self.assertIn("--evidence high-exceptions=evidence/ops/security/patch058-high-exceptions.json", signing)
+        self.assertIn("SATCO_HIGH_EXCEPTION_FILE=evidence/resolved-high-exceptions.json", signing)
+        self.assertIn("--evidence high-exceptions=evidence/resolved-high-exceptions.json", signing)
+        self.assertIn("--evidence security-decision=evidence/security-decision.json", signing)
+
+    def test_push_cannot_silently_consume_external_human_exceptions(self):
+        security = (ROOT / ".github/workflows/patch058-security.yml").read_text()
+        self.assertIn('if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]', security)
+        self.assertIn('test -z "$decision_commit"', security)
+        self.assertIn('test "$GITHUB_REF" = "refs/heads/patch-058"', security)
+        self.assertIn("printf '[]\\n' > resolved-high-exceptions.json", security)
+        self.assertNotIn(
+            "--exceptions ops/security/patch058-high-exceptions.json", security
+        )
+        self.assertIn(
+            "refs/heads/patch-058-security-decisions", security
+        )
+        self.assertIn("git merge-base --is-ancestor", security)
 
     def provenance_command(self, command, directory, statement=None):
         artifact = directory / "artifact.tar"
@@ -324,6 +441,10 @@ class SupplyChainTests(unittest.TestCase):
         # Negative identity/digest contract: exact source/artifact and signer identity are re-verified.
         self.assertIn('test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"', text)
         self.assertIn('test "$actual_digest" = "$EXPECTED_BACKEND_DIGEST"', text)
+        self.assertIn("security_decision_commit:", text)
+        self.assertIn("EXPECTED_SECURITY_DECISION_COMMIT", text)
+        self.assertIn("git merge-base --is-ancestor", text)
+        self.assertIn("evidence/security-decision.json", text)
         self.assertIn('--certificate-github-workflow-sha "$GITHUB_SHA"', text)
         self.assertIn('--certificate-identity-regexp "$identity"', text)
         # Every artifact named by provenance and the dossier contract is signed,

@@ -40,6 +40,13 @@ Implementation Plan and checkpoint records summarized below.
 - Human-approved High-finding exception: bounded to the exact previously
   qualified backend artifact and its 30-day validity window; it does not
   transfer to any rebuilt artifact.
+- Post-build security-decision architecture: **HUMAN GOVERNANCE APPROVED FOR
+  BOUNDED IMPLEMENTATION / NOT YET COMMITTED OR QUALIFIED**. Candidate and
+  decision revisions remain separate; ordinary push runs cannot inherit an
+  external exception, and a manual replay must identify an exact decision
+  commit reachable from `patch-058-security-decisions`.
+- Current in-tree exception records remain historical/non-transferable and are
+  not rebound by the architecture implementation.
 - Privileged signing authorization: **NOT GRANTED / NOT EXECUTED**.
 - Human release approval: **NOT GRANTED**.
 - Integrated final qualification and independent final review: **NOT

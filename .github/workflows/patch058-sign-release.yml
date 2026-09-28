@@ -29,6 +29,10 @@ on:
         description: Exact sha256 digest from the security evidence
         required: true
         type: string
+      security_decision_commit:
+        description: Exact post-build Human security-decision commit
+        required: true
+        type: string
 
 permissions: {}
 
@@ -93,6 +97,7 @@ jobs:
         env:
           EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
           EXPECTED_BACKEND_DIGEST: ${{ inputs.backend_artifact_digest }}
+          EXPECTED_SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
           SECURITY_RUN_ID: ${{ inputs.security_run_id }}
           SECURITY_RUN_ATTEMPT: ${{ inputs.security_run_attempt }}
           QUALITY_RUN_ID: ${{ inputs.quality_run_id }}
@@ -104,10 +109,32 @@ jobs:
           test "$BACKEND_ARTIFACT_DIGEST" = "$EXPECTED_BACKEND_DIGEST"
           actual_digest="sha256:$(sha256sum evidence/backend-image.oci.tar | awk '{print $1}')"
           test "$actual_digest" = "$EXPECTED_BACKEND_DIGEST"
-          SATCO_HIGH_EXCEPTION_FILE=evidence/ops/security/patch058-high-exceptions.json \
+          printf '%s' "$EXPECTED_SECURITY_DECISION_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+          git fetch --no-tags origin \
+            "+refs/heads/patch-058-security-decisions:refs/remotes/origin/patch-058-security-decisions"
+          test "$(git rev-parse "$EXPECTED_SECURITY_DECISION_COMMIT^{commit}")" = \
+            "$EXPECTED_SECURITY_DECISION_COMMIT"
+          git merge-base --is-ancestor "$EXPECTED_SECURITY_DECISION_COMMIT" \
+            refs/remotes/origin/patch-058-security-decisions
+          test "$(git show "$EXPECTED_SECURITY_DECISION_COMMIT:ops/security/patch058-high-exceptions.json" | sha256sum | awk '{print "sha256:"$1}')" = \
+            "$(sha256sum evidence/resolved-high-exceptions.json | awk '{print "sha256:"$1}')"
+          SATCO_HIGH_EXCEPTION_FILE=evidence/resolved-high-exceptions.json \
           SATCO_ARTIFACT_DIGEST="$EXPECTED_BACKEND_DIGEST" \
+          SATCO_SOURCE_REVISION="$EXPECTED_SOURCE_SHA" \
             sh ops/scripts/validate-high-exceptions.sh
-          python3 -c "import json; d=json.load(open('evidence/vulnerability-gate.json')); assert d['result']=='PASS' and d['artifactDigest']=='$EXPECTED_BACKEND_DIGEST'"
+          python3 - <<'PY'
+          import json, os
+          decision = json.load(open("evidence/security-decision.json"))
+          gate = json.load(open("evidence/vulnerability-gate.json"))
+          assert decision["candidateRevision"] == os.environ["EXPECTED_SOURCE_SHA"]
+          assert decision["artifactDigest"] == os.environ["EXPECTED_BACKEND_DIGEST"]
+          assert decision["decisionCommit"] == os.environ["EXPECTED_SECURITY_DECISION_COMMIT"]
+          assert decision["mode"] == "post-build-human-decision"
+          assert gate["result"] == "PASS" and not gate["blockingFindings"]
+          assert gate["sourceRevision"] == os.environ["EXPECTED_SOURCE_SHA"]
+          assert gate["artifactDigest"] == os.environ["EXPECTED_BACKEND_DIGEST"]
+          assert gate["securityDecision"] == decision
+          PY
           python3 ops/scripts/patch058-sbom.py verify \
             --sbom evidence/backend-sbom.cdx.json \
             --artifact evidence/backend-image.oci.tar \
@@ -138,7 +165,8 @@ jobs:
             --evidence gitleaks=evidence/gitleaks.json \
             --evidence trivy=evidence/trivy-backend.json \
             --evidence vulnerability-gate=evidence/vulnerability-gate.json \
-            --evidence high-exceptions=evidence/ops/security/patch058-high-exceptions.json \
+            --evidence high-exceptions=evidence/resolved-high-exceptions.json \
+            --evidence security-decision=evidence/security-decision.json \
             --statement evidence/provenance.intoto.json
           python3 - <<'PY'
           import json, os
@@ -208,6 +236,7 @@ jobs:
           EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
           SECURITY_RUN_ID: ${{ inputs.security_run_id }}
           SECURITY_RUN_ATTEMPT: ${{ inputs.security_run_attempt }}
+          EXPECTED_SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
         run: |
           . artifact-digests.env
           export BACKEND_ARTIFACT_DIGEST FRONTEND_ARTIFACT_DIGEST MIGRATION_ARTIFACT_DIGEST
@@ -226,9 +255,11 @@ jobs:
           common = {
               "source_commit": os.environ["EXPECTED_SOURCE_SHA"],
               "artifact_digests": digests,
+              "security_decision_commit": os.environ["EXPECTED_SECURITY_DECISION_COMMIT"],
           }
           verification = {
               "source_commit": common["source_commit"],
+              "security_decision_commit": common["security_decision_commit"],
               "artifacts": [
                   {
                       "name": name,
@@ -284,7 +315,8 @@ jobs:
             --security-evidence gitleaks=evidence/gitleaks.json \
             --security-evidence trivy=evidence/trivy-backend.json \
             --security-evidence vulnerability_gate=evidence/vulnerability-gate.json \
-            --exception high_findings=evidence/ops/security/patch058-high-exceptions.json \
+            --exception high_findings=evidence/resolved-high-exceptions.json \
+            --exception security_decision=evidence/security-decision.json \
             --sbom backend=evidence/backend-sbom.cdx.json \
             --sbom frontend=evidence/frontend-sbom.cdx.json \
             --provenance evidence/provenance.intoto.json \

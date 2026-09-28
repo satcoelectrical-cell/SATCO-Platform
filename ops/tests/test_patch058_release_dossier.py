@@ -14,6 +14,7 @@ M = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(M)
 NOW = dt.datetime(2026, 9, 27, 9, 0, tzinfo=dt.timezone.utc)
 REVISION = "a" * 40
+DECISION_COMMIT = "b" * 40
 RELEASE_ID = "p058-test"
 
 
@@ -71,18 +72,45 @@ class DossierTests(unittest.TestCase):
             "exceptions.json",
             [
                 {
+                    "finding_id": "CVE-TEST-1",
+                    "severity": "HIGH",
+                    "source": "trivy",
+                    "source_revision": REVISION,
                     "status": "active",
                     "artifact_digest": M.digest(self.artifacts["backend"]),
+                    "rationale": "Bounded test rationale.",
+                    "compensating_controls": "Bounded test controls.",
+                    "scope": "Exact test candidate only.",
+                    "approver_id": "human-security-authority",
+                    "approved_at": "2026-09-27T07:58:25Z",
                     "expires_at": "2026-10-27T07:58:25Z",
+                    "retest_condition": "Re-evaluate on any bound identity change.",
+                    "retest_reference": "PATCH-058-test-decision",
+                    "retest_result": "pass",
                 }
             ],
+        )
+        self.decision = write(
+            "security-decision.json",
+            {
+                "schemaVersion": "PATCH-058-security-decision-v1",
+                "mode": "post-build-human-decision",
+                "candidateRevision": REVISION,
+                "artifactDigest": M.digest(self.artifacts["backend"]),
+                "exceptionEvidenceDigest": M.digest(self.exceptions),
+                "decisionCommit": DECISION_COMMIT,
+                "decisionRef": "refs/heads/patch-058-security-decisions",
+            },
         )
         self.gate = write(
             "gate.json",
             {
                 "result": "PASS",
                 "blockingFindings": [],
+                "sourceRevision": REVISION,
                 "artifactDigest": M.digest(self.artifacts["backend"]),
+                "acceptedExceptions": json.loads(self.exceptions.read_text()),
+                "securityDecision": json.loads(self.decision.read_text()),
             },
         )
         self.security = {
@@ -96,6 +124,7 @@ class DossierTests(unittest.TestCase):
             name.replace("_", "-"): path for name, path in self.security.items()
         }
         provenance_evidence["high-exceptions"] = self.exceptions
+        provenance_evidence["security-decision"] = self.decision
         self.provenance = write(
             "provenance.json",
             {
@@ -152,6 +181,7 @@ class DossierTests(unittest.TestCase):
             "signature-verification.json",
             {
                 "source_commit": REVISION,
+                "security_decision_commit": DECISION_COMMIT,
                 "artifacts": [
                     {
                         "name": name,
@@ -168,6 +198,7 @@ class DossierTests(unittest.TestCase):
             "decision": "approved",
             "release_id": RELEASE_ID,
             "source_commit": REVISION,
+            "security_decision_commit": DECISION_COMMIT,
             "artifact_digests": {
                 name: M.digest(path) for name, path in self.artifacts.items()
             },
@@ -191,7 +222,10 @@ class DossierTests(unittest.TestCase):
             "security_evidence": {
                 name: ev(path) for name, path in self.security.items()
             },
-            "exceptions": {"high_findings": ev(self.exceptions)},
+            "exceptions": {
+                "high_findings": ev(self.exceptions),
+                "security_decision": ev(self.decision),
+            },
             "sboms": {name: ev(path) for name, path in self.sboms.items()},
             "provenance": ev(self.provenance),
             "signature_verification": ev(self.signatures),
@@ -234,7 +268,10 @@ class DossierTests(unittest.TestCase):
     def test_gate_artifact_mismatch_blocks(self):
         self.gate.write_text(json.dumps({
             "result": "PASS", "blockingFindings": [],
+            "sourceRevision": REVISION,
             "artifactDigest": "sha256:" + "0" * 64,
+            "acceptedExceptions": json.loads(self.exceptions.read_text()),
+            "securityDecision": json.loads(self.decision.read_text()),
         }))
         self.refresh("security_evidence", "vulnerability_gate", self.gate)
         self.blocked(self.dossier)
@@ -242,7 +279,10 @@ class DossierTests(unittest.TestCase):
     def test_blocking_finding_blocks(self):
         self.gate.write_text(json.dumps({
             "result": "FAIL", "blockingFindings": ["CVE-X"],
+            "sourceRevision": REVISION,
             "artifactDigest": M.digest(self.artifacts["backend"]),
+            "acceptedExceptions": json.loads(self.exceptions.read_text()),
+            "securityDecision": json.loads(self.decision.read_text()),
         }))
         self.refresh("security_evidence", "vulnerability_gate", self.gate)
         self.blocked(self.dossier)
@@ -262,6 +302,46 @@ class DossierTests(unittest.TestCase):
             "expires_at": "2026-10-27T00:00:00Z",
         }]))
         self.refresh("exceptions", "high_findings", self.exceptions)
+        self.blocked(self.dossier)
+
+    def test_exception_for_other_source_revision_blocks(self):
+        records = json.loads(self.exceptions.read_text())
+        records[0]["source_revision"] = "c" * 40
+        self.exceptions.write_text(json.dumps(records))
+        self.refresh("exceptions", "high_findings", self.exceptions)
+        self.blocked(self.dossier)
+
+    def test_security_decision_commit_substitution_blocks(self):
+        decision = json.loads(self.decision.read_text())
+        decision["decisionCommit"] = "c" * 40
+        self.decision.write_text(json.dumps(decision))
+        self.refresh("exceptions", "security_decision", self.decision)
+        self.blocked(self.dossier)
+
+    def test_security_decision_exception_digest_substitution_blocks(self):
+        decision = json.loads(self.decision.read_text())
+        decision["exceptionEvidenceDigest"] = "sha256:" + "0" * 64
+        self.decision.write_text(json.dumps(decision))
+        self.refresh("exceptions", "security_decision", self.decision)
+        self.blocked(self.dossier)
+
+    def test_missing_security_decision_blocks(self):
+        dossier = copy.deepcopy(self.dossier)
+        del dossier["exceptions"]["security_decision"]
+        self.blocked(dossier)
+
+    def test_gate_security_decision_substitution_blocks(self):
+        gate = json.loads(self.gate.read_text())
+        gate["securityDecision"]["decisionCommit"] = "c" * 40
+        self.gate.write_text(json.dumps(gate))
+        self.refresh("security_evidence", "vulnerability_gate", self.gate)
+        self.blocked(self.dossier)
+
+    def test_signing_security_decision_substitution_blocks(self):
+        signatures = json.loads(self.signatures.read_text())
+        signatures["security_decision_commit"] = "c" * 40
+        self.signatures.write_text(json.dumps(signatures))
+        self.dossier["signature_verification"] = ev(self.signatures)
         self.blocked(self.dossier)
 
     def test_provenance_source_mismatch_blocks(self):
@@ -303,6 +383,15 @@ class DossierTests(unittest.TestCase):
     def test_approved_human_evidence_must_bind_candidate(self):
         payload = json.loads(self.release_approval.read_text())
         payload["source_commit"] = "b" * 40
+        self.release_approval.write_text(json.dumps(payload))
+        self.dossier["human_release_approval"] = {
+            "status": "approved", **ev(self.release_approval)
+        }
+        self.blocked(self.dossier)
+
+    def test_approved_human_evidence_must_bind_security_decision(self):
+        payload = json.loads(self.release_approval.read_text())
+        payload["security_decision_commit"] = "c" * 40
         self.release_approval.write_text(json.dumps(payload))
         self.dossier["human_release_approval"] = {
             "status": "approved", **ev(self.release_approval)

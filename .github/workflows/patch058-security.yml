@@ -5,6 +5,11 @@ on:
   push:
     branches: [patch-058]
   workflow_dispatch:
+    inputs:
+      security_decision_commit:
+        description: Exact commit on patch-058-security-decisions for a post-build Human decision replay
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -123,6 +128,52 @@ jobs:
           printf 'FRONTEND_ARTIFACT_DIGEST=sha256:%s\n' "$(sha256sum frontend-dist.tar | awk '{print $1}')" >> artifact-digests.env
           printf 'MIGRATION_ARTIFACT_DIGEST=sha256:%s\n' "$(sha256sum migration-set.tar | awk '{print $1}')" >> artifact-digests.env
 
+      - name: Resolve exact post-build Human security decision
+        env:
+          SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit || '' }}
+        run: |
+          decision_ref="refs/heads/patch-058-security-decisions"
+          decision_commit="$SECURITY_DECISION_COMMIT"
+          if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]; then
+            test -z "$decision_commit"
+          fi
+          if [ -n "$decision_commit" ]; then
+            test "$GITHUB_REF" = "refs/heads/patch-058"
+            printf '%s' "$decision_commit" | grep -Eq '^[0-9a-f]{40}$'
+            git fetch --no-tags origin \
+              "+$decision_ref:refs/remotes/origin/patch-058-security-decisions"
+            test "$(git rev-parse "$decision_commit^{commit}")" = "$decision_commit"
+            git merge-base --is-ancestor \
+              "$decision_commit" refs/remotes/origin/patch-058-security-decisions
+            git show \
+              "$decision_commit:ops/security/patch058-high-exceptions.json" \
+              > resolved-high-exceptions.json
+            decision_mode="post-build-human-decision"
+          else
+            printf '[]\n' > resolved-high-exceptions.json
+            decision_mode="none"
+          fi
+          . artifact-digests.env
+          export decision_ref decision_commit decision_mode
+          export BACKEND_ARTIFACT_DIGEST
+          python3 - <<'PY'
+          import hashlib, json, os
+          path = "resolved-high-exceptions.json"
+          exception_digest = "sha256:" + hashlib.sha256(open(path, "rb").read()).hexdigest()
+          decision = {
+              "schemaVersion": "PATCH-058-security-decision-v1",
+              "mode": os.environ["decision_mode"],
+              "candidateRevision": os.environ["GITHUB_SHA"],
+              "artifactDigest": os.environ["BACKEND_ARTIFACT_DIGEST"],
+              "exceptionEvidenceDigest": exception_digest,
+              "decisionCommit": os.environ["decision_commit"] or None,
+              "decisionRef": os.environ["decision_ref"],
+          }
+          with open("security-decision.json", "w") as output:
+              json.dump(decision, output, indent=2, sort_keys=True)
+              output.write("\n")
+          PY
+
       - name: Trivy exact backend artifact scan
         run: |
           . ops/security/toolchain.env
@@ -169,8 +220,9 @@ jobs:
         run: |
           . artifact-digests.env
           set +e
-          SATCO_HIGH_EXCEPTION_FILE=ops/security/patch058-high-exceptions.json \
+          SATCO_HIGH_EXCEPTION_FILE=resolved-high-exceptions.json \
           SATCO_ARTIFACT_DIGEST="$BACKEND_ARTIFACT_DIGEST" \
+          SATCO_SOURCE_REVISION="$GITHUB_SHA" \
             sh ops/scripts/validate-high-exceptions.sh
           code=$?
           set -e
@@ -185,8 +237,11 @@ jobs:
             --trivy-json trivy-backend.json \
             --pip-audit-json pip-audit.json \
             --npm-audit-json npm-audit.json \
+            --source-revision "$GITHUB_SHA" \
             --artifact-digest "$BACKEND_ARTIFACT_DIGEST" \
-            --exceptions ops/security/patch058-high-exceptions.json \
+            --exceptions resolved-high-exceptions.json \
+            --security-decision-evidence security-decision.json \
+            --security-decision-commit "${{ inputs.security_decision_commit || '' }}" \
             --evaluated-at "$evaluated_at" \
             --output vulnerability-gate.json
           code=$?
@@ -217,7 +272,8 @@ jobs:
             --evidence gitleaks=gitleaks.json
             --evidence trivy=trivy-backend.json
             --evidence vulnerability-gate=vulnerability-gate.json
-            --evidence high-exceptions=ops/security/patch058-high-exceptions.json
+            --evidence high-exceptions=resolved-high-exceptions.json
+            --evidence security-decision=security-decision.json
           )
           python3 ops/scripts/patch058-provenance.py generate \
             "${common_args[@]}" --generated-at "$generated_at" \
@@ -253,7 +309,8 @@ jobs:
             vulnerability-gate.json
             high-exception-validation.exit
             vulnerability-gate.exit
-            ops/security/patch058-high-exceptions.json
+            resolved-high-exceptions.json
+            security-decision.json
             provenance.intoto.json
             evidence-digests.sha256
 
