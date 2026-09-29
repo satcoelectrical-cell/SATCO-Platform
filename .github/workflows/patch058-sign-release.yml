@@ -52,10 +52,12 @@ jobs:
         env:
           EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
         run: |
-          test "$GITHUB_REF" = "refs/heads/patch-058"
+          test "$GITHUB_REF" = "refs/heads/main"
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
           test -z "$(git status --porcelain --untracked-files=all)"
           printf '%s' "$EXPECTED_SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          git fetch --no-tags origin "+refs/heads/patch-058:refs/remotes/origin/patch-058"
+          test "$(git rev-parse refs/remotes/origin/patch-058)" = "$EXPECTED_SOURCE_SHA"
 
       - name: Fail closed unless the signing Environment requires Human review
         env:
@@ -204,7 +206,7 @@ jobs:
       - name: Verify every digest, signer, repository, workflow and OIDC trust
         working-directory: evidence
         run: |
-          identity="^https://github\\.com/${GITHUB_REPOSITORY}/\\.github/workflows/patch058-sign-release\\.yml@refs/heads/patch-058$"
+          identity="^https://github\\.com/${GITHUB_REPOSITORY}/\\.github/workflows/patch058-sign-release\\.yml@refs/heads/main$"
           issuer="https://token.actions.githubusercontent.com"
           for entry in \
             backend=backend-image.oci.tar \
@@ -240,7 +242,7 @@ jobs:
         run: |
           . artifact-digests.env
           export BACKEND_ARTIFACT_DIGEST FRONTEND_ARTIFACT_DIGEST MIGRATION_ARTIFACT_DIGEST
-          export SIGNER_IDENTITY="https://github.com/$GITHUB_REPOSITORY/.github/workflows/patch058-sign-release.yml@refs/heads/patch-058"
+          export SIGNER_IDENTITY="https://github.com/$GITHUB_REPOSITORY/.github/workflows/patch058-sign-release.yml@refs/heads/main"
           export OIDC_ISSUER="https://token.actions.githubusercontent.com"
           export RELEASE_ID="patch058-$SECURITY_RUN_ID-$SECURITY_RUN_ATTEMPT"
           export EVIDENCE_REFERENCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
