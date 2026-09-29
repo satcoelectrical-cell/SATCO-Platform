@@ -1,0 +1,322 @@
+name: PATCH-058 security evidence
+
+on:
+  pull_request:
+  push:
+    branches: [patch-058]
+  workflow_dispatch:
+    inputs:
+      security_decision_commit:
+        description: Exact commit on patch-058-security-decisions for a post-build Human decision replay
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: patch058-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-evidence:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: "0.8.22"
+          enable-cache: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.23.1"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Set up pinned OCI-capable Buildx builder
+        id: buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: "v0.35.0"
+          driver: docker-container
+          driver-opts: |
+            image=moby/buildkit@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
+
+      - name: Verify and record clean source identity
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          printf '%s\n' "$GITHUB_SHA" > source-revision.txt
+          sha256sum backend/requirements.production.lock backend/uv.lock frontend/package-lock.json > governed-locks.sha256
+          find backend/migrations/versions -type f -name '*.py' -print0 | sort -z | xargs -0 sha256sum > migration-set.sha256
+
+      - name: Install frontend dependency lock
+        working-directory: frontend
+        run: npm ci
+
+      - name: Python dependency audit of production image lock
+        run: |
+          . ops/security/toolchain.env
+          set +e
+          uvx --from "pip-audit==$PIP_AUDIT_VERSION" pip-audit \
+            --no-deps --disable-pip --requirement backend/requirements.production.lock \
+            --format json --output pip-audit.json
+          code=$?
+          set -e
+          test "$code" -le 1
+          test -s pip-audit.json
+
+      - name: JavaScript dependency audit
+        run: |
+          set +e
+          cd frontend
+          npm audit --audit-level=high --json > ../npm-audit.json
+          code=$?
+          cd ..
+          set -e
+          test "$code" -le 1
+          python3 -c "import json; d=json.load(open('npm-audit.json')); assert isinstance(d.get('vulnerabilities'), dict)"
+
+      - name: Semgrep repository-controlled SAST
+        run: |
+          . ops/security/toolchain.env
+          set +e
+          docker run --rm -v "$PWD:/src" -w /src "$SEMGREP_IMAGE" semgrep scan \
+            --config ops/security/semgrep.yml --no-git-ignore \
+            --json --json-output /src/semgrep.json --error \
+            backend/app frontend/src
+          code=$?
+          set -e
+          printf '%s\n' "$code" > semgrep.exit
+          test -s semgrep.json
+          python3 -c "import json; d=json.load(open('semgrep.json')); assert not d.get('errors') and d.get('paths', {}).get('scanned')"
+
+      - name: Gitleaks full-history secret scan
+        run: |
+          . ops/security/toolchain.env
+          test "$(git rev-list --count HEAD)" -gt 0
+          set +e
+          docker run --rm -v "$PWD:/repo" "$GITLEAKS_IMAGE" detect \
+            --source=/repo --no-banner --redact \
+            --gitleaks-ignore-path=/repo/.gitleaksignore \
+            --report-format=json \
+            --report-path=/repo/gitleaks.json
+          code=$?
+          set -e
+          printf '%s\n' "$code" > gitleaks.exit
+          test -e gitleaks.json
+
+      - name: Build exact backend and frontend artifacts
+        env:
+          BUILDX_DRIVER: ${{ steps.buildx.outputs.driver }}
+        run: |
+          test "$BUILDX_DRIVER" = "docker-container"
+          docker buildx inspect --bootstrap
+          source_epoch="$(git show -s --format=%ct "$GITHUB_SHA")"
+          export SOURCE_DATE_EPOCH="$source_epoch"
+          docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+            --build-arg SOURCE_DATE_EPOCH="$source_epoch" \
+            --file backend/Dockerfile.production \
+            --output type=oci,dest=backend-image.oci.tar,rewrite-timestamp=true backend
+          npm --prefix frontend run build
+          tar --sort=name --mtime="@$source_epoch" --owner=0 --group=0 --numeric-owner \
+            -cf frontend-dist.tar -C frontend/dist .
+          tar --sort=name --mtime="@$source_epoch" --owner=0 --group=0 --numeric-owner \
+            -cf migration-set.tar backend/migrations
+          printf 'BACKEND_ARTIFACT_DIGEST=sha256:%s\n' "$(sha256sum backend-image.oci.tar | awk '{print $1}')" > artifact-digests.env
+          printf 'FRONTEND_ARTIFACT_DIGEST=sha256:%s\n' "$(sha256sum frontend-dist.tar | awk '{print $1}')" >> artifact-digests.env
+          printf 'MIGRATION_ARTIFACT_DIGEST=sha256:%s\n' "$(sha256sum migration-set.tar | awk '{print $1}')" >> artifact-digests.env
+
+      - name: Resolve exact post-build Human security decision
+        env:
+          SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit || '' }}
+        run: |
+          decision_ref="refs/heads/patch-058-security-decisions"
+          decision_commit="$SECURITY_DECISION_COMMIT"
+          if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]; then
+            test -z "$decision_commit"
+          fi
+          if [ -n "$decision_commit" ]; then
+            test "$GITHUB_REF" = "refs/heads/patch-058"
+            printf '%s' "$decision_commit" | grep -Eq '^[0-9a-f]{40}$'
+            git fetch --no-tags origin \
+              "+$decision_ref:refs/remotes/origin/patch-058-security-decisions"
+            test "$(git rev-parse "$decision_commit^{commit}")" = "$decision_commit"
+            git merge-base --is-ancestor \
+              "$decision_commit" refs/remotes/origin/patch-058-security-decisions
+            git show \
+              "$decision_commit:ops/security/patch058-high-exceptions.json" \
+              > resolved-high-exceptions.json
+            decision_mode="post-build-human-decision"
+          else
+            printf '[]\n' > resolved-high-exceptions.json
+            decision_mode="none"
+          fi
+          . artifact-digests.env
+          export decision_ref decision_commit decision_mode
+          export BACKEND_ARTIFACT_DIGEST
+          python3 - <<'PY'
+          import hashlib, json, os
+          path = "resolved-high-exceptions.json"
+          exception_digest = "sha256:" + hashlib.sha256(open(path, "rb").read()).hexdigest()
+          decision = {
+              "schemaVersion": "PATCH-058-security-decision-v1",
+              "mode": os.environ["decision_mode"],
+              "candidateRevision": os.environ["GITHUB_SHA"],
+              "artifactDigest": os.environ["BACKEND_ARTIFACT_DIGEST"],
+              "exceptionEvidenceDigest": exception_digest,
+              "decisionCommit": os.environ["decision_commit"] or None,
+              "decisionRef": os.environ["decision_ref"],
+          }
+          with open("security-decision.json", "w") as output:
+              json.dump(decision, output, indent=2, sort_keys=True)
+              output.write("\n")
+          PY
+
+      - name: Trivy exact backend artifact scan
+        run: |
+          . ops/security/toolchain.env
+          rm -rf trivy-backend-oci
+          mkdir -p trivy-backend-oci
+          tar -xf backend-image.oci.tar -C trivy-backend-oci
+          docker run --rm \
+            -v "$PWD/trivy-backend-oci:/oci:ro" \
+            -v "$PWD:/work" \
+            "$TRIVY_IMAGE" image \
+            --input /oci --scanners vuln \
+            --db-repository ghcr.io/aquasecurity/trivy-db:2 \
+            --db-repository public.ecr.aws/aquasecurity/trivy-db:2 \
+            --format json --output /work/trivy-backend.json
+          test -s trivy-backend.json
+
+      - name: Syft CycloneDX SBOMs and exact-artifact binding
+        run: |
+          . ops/security/toolchain.env
+          docker run --rm -v "$PWD:/work" "$SYFT_IMAGE" \
+            oci-archive:/work/backend-image.oci.tar \
+            -o cyclonedx-json=/work/backend-sbom.raw.cdx.json
+          docker run --rm -v "$PWD:/work" "$SYFT_IMAGE" \
+            dir:/work/frontend \
+            -o cyclonedx-json=/work/frontend-sbom.raw.cdx.json
+          python3 ops/scripts/patch058-sbom.py bind \
+            --input backend-sbom.raw.cdx.json --output backend-sbom.cdx.json \
+            --artifact backend-image.oci.tar --artifact-name backend-image \
+            --revision "$GITHUB_SHA" --syft-version "$SYFT_VERSION"
+          python3 ops/scripts/patch058-sbom.py bind \
+            --input frontend-sbom.raw.cdx.json --output frontend-sbom.cdx.json \
+            --artifact frontend-dist.tar --artifact-name frontend-dist \
+            --revision "$GITHUB_SHA" --syft-version "$SYFT_VERSION"
+          python3 ops/scripts/patch058-sbom.py verify \
+            --sbom backend-sbom.cdx.json --artifact backend-image.oci.tar \
+            --artifact-name backend-image --revision "$GITHUB_SHA" \
+            --syft-version "$SYFT_VERSION"
+          python3 ops/scripts/patch058-sbom.py verify \
+            --sbom frontend-sbom.cdx.json --artifact frontend-dist.tar \
+            --artifact-name frontend-dist --revision "$GITHUB_SHA" \
+            --syft-version "$SYFT_VERSION"
+
+      - name: Validate Human-governed High exceptions
+        run: |
+          . artifact-digests.env
+          set +e
+          SATCO_HIGH_EXCEPTION_FILE=resolved-high-exceptions.json \
+          SATCO_ARTIFACT_DIGEST="$BACKEND_ARTIFACT_DIGEST" \
+          SATCO_SOURCE_REVISION="$GITHUB_SHA" \
+            sh ops/scripts/validate-high-exceptions.sh
+          code=$?
+          set -e
+          printf '%s\n' "$code" > high-exception-validation.exit
+
+      - name: Evaluate fail-closed vulnerability gate
+        run: |
+          . artifact-digests.env
+          evaluated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          set +e
+          python3 ops/scripts/patch058-vulnerability-gate.py \
+            --trivy-json trivy-backend.json \
+            --pip-audit-json pip-audit.json \
+            --npm-audit-json npm-audit.json \
+            --source-revision "$GITHUB_SHA" \
+            --artifact-digest "$BACKEND_ARTIFACT_DIGEST" \
+            --exceptions resolved-high-exceptions.json \
+            --security-decision-evidence security-decision.json \
+            --security-decision-commit "${{ inputs.security_decision_commit || '' }}" \
+            --evaluated-at "$evaluated_at" \
+            --output vulnerability-gate.json
+          code=$?
+          set -e
+          printf '%s\n' "$code" > vulnerability-gate.exit
+          test -s vulnerability-gate.json
+
+      - name: Generate and independently verify provenance
+        run: |
+          generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          workflow_identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/patch058-security.yml@$GITHUB_REF"
+          release_id="patch058-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          common_args=(
+            --repository "$GITHUB_REPOSITORY" --revision "$GITHUB_SHA"
+            --workflow "$workflow_identity" --release-id "$release_id"
+            --artifact backend=backend-image.oci.tar
+            --artifact frontend=frontend-dist.tar
+            --artifact migrations=migration-set.tar
+            --sbom backend=backend-sbom.cdx.json
+            --sbom frontend=frontend-sbom.cdx.json
+            --input backend-production-lock=backend/requirements.production.lock
+            --input backend-uv-lock=backend/uv.lock
+            --input frontend-package-lock=frontend/package-lock.json
+            --input migration-set=migration-set.sha256
+            --evidence pip-audit=pip-audit.json
+            --evidence npm-audit=npm-audit.json
+            --evidence semgrep=semgrep.json
+            --evidence gitleaks=gitleaks.json
+            --evidence trivy=trivy-backend.json
+            --evidence vulnerability-gate=vulnerability-gate.json
+            --evidence high-exceptions=resolved-high-exceptions.json
+            --evidence security-decision=security-decision.json
+          )
+          python3 ops/scripts/patch058-provenance.py generate \
+            "${common_args[@]}" --generated-at "$generated_at" \
+            --output provenance.intoto.json
+          python3 ops/scripts/patch058-provenance.py verify \
+            "${common_args[@]}" --statement provenance.intoto.json
+          sha256sum backend-sbom.cdx.json frontend-sbom.cdx.json provenance.intoto.json > evidence-digests.sha256
+
+      - name: Upload exact candidate security evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: patch058-security-evidence-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            source-revision.txt
+            governed-locks.sha256
+            migration-set.sha256
+            artifact-digests.env
+            backend-image.oci.tar
+            frontend-dist.tar
+            migration-set.tar
+            pip-audit.json
+            npm-audit.json
+            semgrep.json
+            semgrep.exit
+            gitleaks.json
+            gitleaks.exit
+            trivy-backend.json
+            backend-sbom.cdx.json
+            frontend-sbom.cdx.json
+            vulnerability-gate.json
+            high-exception-validation.exit
+            vulnerability-gate.exit
+            resolved-high-exceptions.json
+            security-decision.json
+            provenance.intoto.json
+            evidence-digests.sha256
+
+      - name: Enforce mandatory security gates
+        run: |
+          test "$(cat semgrep.exit)" = "0"
+          test "$(cat gitleaks.exit)" = "0"
+          test "$(cat high-exception-validation.exit)" = "0"
+          test "$(cat vulnerability-gate.exit)" = "0"
