@@ -290,8 +290,11 @@ jobs:
           PY
 
       - name: Load protected release-dossier validator
+        env:
+          HARNESS_SHA: ${{ github.sha }}
         run: |
-          cp .github/scripts/patch058-release-dossier.py /tmp/patch058-release-dossier.py
+          git fetch --no-tags origin "$HARNESS_SHA"
+          git show "$HARNESS_SHA:.github/scripts/patch058-release-dossier.py" > /tmp/patch058-release-dossier.py
           python3 -m py_compile /tmp/patch058-release-dossier.py
 
       - name: Assemble and validate draft dossier without inventing release approval
