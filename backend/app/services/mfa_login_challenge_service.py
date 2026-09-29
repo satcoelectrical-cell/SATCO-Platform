@@ -25,6 +25,8 @@ class MfaLoginChallenge:
     organization_id: UUID
     auth_version: int
     stage: str
+    primary_credential_key: str
+    primary_network_key: str
     jti: UUID
 
 
@@ -41,8 +43,16 @@ class MfaLoginChallengeService:
         organization_id: UUID,
         auth_version: int,
         stage: str,
+        primary_credential_key: str,
+        primary_network_key: str,
     ) -> str:
-        if user_id < 1 or auth_version < 1 or stage not in cls.STAGES:
+        if (
+            user_id < 1
+            or auth_version < 1
+            or stage not in cls.STAGES
+            or not cls._valid_throttle_key(primary_credential_key)
+            or not cls._valid_throttle_key(primary_network_key)
+        ):
             raise MfaLoginChallengeRejected()
         now = datetime.now(timezone.utc)
         payload = {
@@ -51,6 +61,8 @@ class MfaLoginChallengeService:
             "type": cls.PURPOSE,
             "stage": stage,
             "av": auth_version,
+            "pck": primary_credential_key,
+            "pnk": primary_network_key,
             "iat": now,
             "exp": now + timedelta(seconds=cls.TTL_SECONDS),
             "jti": str(uuid4()),
@@ -84,6 +96,8 @@ class MfaLoginChallengeService:
             organization_id = UUID(payload["org"])
             auth_version = payload["av"]
             stage = payload["stage"]
+            primary_credential_key = payload["pck"]
+            primary_network_key = payload["pnk"]
             jti = UUID(payload["jti"])
             issued_at = int(payload["iat"])
             expires_at = int(payload["exp"])
@@ -100,6 +114,8 @@ class MfaLoginChallengeService:
             or not isinstance(auth_version, int)
             or auth_version < 1
             or stage != expected_stage
+            or not cls._valid_throttle_key(primary_credential_key)
+            or not cls._valid_throttle_key(primary_network_key)
             or expires_at <= issued_at
             or expires_at - issued_at > cls.TTL_SECONDS
             or issued_at > now + 30
@@ -111,7 +127,17 @@ class MfaLoginChallengeService:
             organization_id=organization_id,
             auth_version=auth_version,
             stage=stage,
+            primary_credential_key=primary_credential_key,
+            primary_network_key=primary_network_key,
             jti=jti,
+        )
+
+    @staticmethod
+    def _valid_throttle_key(value: object) -> bool:
+        return (
+            isinstance(value, str)
+            and len(value) == 64
+            and all(character in "0123456789abcdef" for character in value)
         )
 
     @staticmethod

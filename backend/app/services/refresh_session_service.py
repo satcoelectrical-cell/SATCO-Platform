@@ -378,9 +378,18 @@ class RefreshSessionService:
             latest_step_up = latest_step_up.replace(tzinfo=timezone.utc)
         return latest_step_up >= self._now() - timedelta(minutes=minutes)
 
-    def record_step_up(self, user: User, session: AuthRefreshSession) -> None:
+    def record_step_up(
+        self,
+        user: User,
+        session: AuthRefreshSession,
+        *,
+        commit: bool = True,
+    ) -> None:
         self.db.add(AuthSecurityEvent(
             event_type="step_up_success", user_id=user.id, actor_user_id=user.id,
             session_id=session.id, outcome="success", reason_code="recent_authentication",
         ))
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()

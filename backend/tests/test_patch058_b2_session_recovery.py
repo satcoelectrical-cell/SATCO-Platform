@@ -6,7 +6,7 @@ import pyotp
 import pytest
 
 from app.core.config import settings
-from app.models.auth_security import AuthRefreshFamily, AuthRefreshSession, AuthSecurityEvent, MfaRecoveryCode
+from app.models.auth_security import AuthRefreshFamily, AuthRefreshSession, AuthSecurityEvent, AuthThrottleState, MfaRecoveryCode
 from app.services.mfa_service import MfaRejected, MfaService
 from app.services.refresh_session_service import RefreshRejected, RefreshSessionService
 from tests.test_patch058_mfa_foundation import ORG_ID
@@ -118,6 +118,139 @@ def test_step_up_endpoint_for_optional_mfa_member(client, engineer_user, enginee
     assert response.json() == {"outcome": "success"}
     event = db_session.query(AuthSecurityEvent).filter_by(user_id=engineer_user.id, event_type="step_up_success").one()
     assert event.outcome == "success"
+
+
+def test_step_up_verifier_blocks_sixth_request_before_password_check(
+    client, engineer_headers, db_session
+):
+    rejected = [
+        client.post(
+            "/auth/step-up",
+            headers=engineer_headers,
+            json={"password": "wrong-password"},
+        )
+        for _ in range(settings.AUTH_THROTTLE_FAILURE_THRESHOLD)
+    ]
+    blocked = client.post(
+        "/auth/step-up",
+        headers=engineer_headers,
+        json={"password": "correct-password"},
+    )
+
+    assert [response.status_code for response in rejected] == [401] * 5
+    assert blocked.status_code == 429
+    assert blocked.json() == rejected[-1].json()
+    state = db_session.query(AuthThrottleState).one()
+    assert state.failure_count == settings.AUTH_THROTTLE_FAILURE_THRESHOLD
+
+
+def test_successful_step_up_clears_only_step_up_failure_state(
+    client, engineer_headers, db_session
+):
+    assert client.post(
+        "/auth/step-up",
+        headers=engineer_headers,
+        json={"password": "wrong-password"},
+    ).status_code == 401
+    assert db_session.query(AuthThrottleState).count() == 1
+
+    accepted = client.post(
+        "/auth/step-up",
+        headers=engineer_headers,
+        json={"password": "correct-password"},
+    )
+
+    assert accepted.status_code == 200
+    assert db_session.query(AuthThrottleState).count() == 0
+
+
+def test_required_mfa_step_up_records_one_failure_for_one_request(
+    client, admin_user, admin_headers, db_session, mfa_keys
+):
+    mfa = MfaService(db_session)
+    enrollment = mfa.start_enrollment(admin_user, ORG_ID)
+    mfa.verify_enrollment(
+        admin_user,
+        ORG_ID,
+        pyotp.TOTP(enrollment.secret).now(),
+    )
+
+    response = client.post(
+        "/auth/step-up",
+        headers=admin_headers,
+        json={"password": "correct-password", "totp_code": "000000"},
+    )
+
+    assert response.status_code == 401
+    state = db_session.query(AuthThrottleState).one()
+    assert state.failure_count == 1
+
+
+def test_recovery_code_verifier_blocks_sixth_request_without_consuming_code(
+    client, admin_user, admin_headers, db_session, mfa_keys
+):
+    mfa = MfaService(db_session)
+    enrollment = mfa.start_enrollment(admin_user, ORG_ID)
+    completed = mfa.verify_enrollment(
+        admin_user,
+        ORG_ID,
+        pyotp.TOTP(enrollment.secret).now(),
+    )
+    valid_code = completed.recovery_codes[0]
+
+    rejected = [
+        client.post(
+            "/auth/mfa/recovery-code/use",
+            headers=admin_headers,
+            json={"code": "invalid-recovery-code"},
+        )
+        for _ in range(settings.AUTH_THROTTLE_FAILURE_THRESHOLD)
+    ]
+    blocked = client.post(
+        "/auth/mfa/recovery-code/use",
+        headers=admin_headers,
+        json={"code": valid_code},
+    )
+
+    assert [response.status_code for response in rejected] == [400] * 5
+    assert blocked.status_code == 429
+    recovery = db_session.query(MfaRecoveryCode).filter_by(
+        user_id=admin_user.id,
+        ordinal=1,
+    ).one()
+    assert recovery.used_at is None
+
+
+def test_successful_recovery_code_use_atomically_clears_failures(
+    client, admin_user, admin_headers, db_session, mfa_keys
+):
+    mfa = MfaService(db_session)
+    enrollment = mfa.start_enrollment(admin_user, ORG_ID)
+    completed = mfa.verify_enrollment(
+        admin_user,
+        ORG_ID,
+        pyotp.TOTP(enrollment.secret).now(),
+    )
+    valid_code = completed.recovery_codes[0]
+    assert client.post(
+        "/auth/mfa/recovery-code/use",
+        headers=admin_headers,
+        json={"code": "invalid-recovery-code"},
+    ).status_code == 400
+
+    accepted = client.post(
+        "/auth/mfa/recovery-code/use",
+        headers=admin_headers,
+        json={"code": valid_code},
+    )
+
+    assert accepted.status_code == 200
+    assert db_session.query(AuthThrottleState).count() == 0
+    recovery = db_session.query(MfaRecoveryCode).filter_by(
+        user_id=admin_user.id,
+        ordinal=1,
+    ).one()
+    assert recovery.used_at is not None
 
 
 def test_sessions_endpoint_exposes_only_safe_current_user_metadata(client, engineer_headers):

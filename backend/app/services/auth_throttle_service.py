@@ -19,6 +19,14 @@ class ThrottleConfigurationError(Exception):
 
 
 class AuthThrottleService:
+    PRIMARY_AUTHENTICATION = "primary_authentication"
+    MFA_LOGIN_VERIFICATION = "mfa_login_verification"
+    MFA_VERIFICATION = "mfa_verification"
+    RECOVERY_VERIFICATION = "recovery_verification"
+    STEP_UP_VERIFICATION = "step_up_verification"
+    PASSWORD_CHANGE_VERIFICATION = "password_change_verification"
+    MFA_RECOVERY_CODE_VERIFICATION = "mfa_recovery_code_verification"
+
     def __init__(self, db: Session):
         self.db = db
 
@@ -44,7 +52,14 @@ class AuthThrottleService:
             hashlib.sha256,
         ).hexdigest()
 
-    def _keys(self, operation: str, credential_identity: str, network_context: str) -> tuple[str, str]:
+    def scope_keys(
+        self,
+        operation: str,
+        credential_identity: str,
+        network_context: str,
+    ) -> tuple[str, str]:
+        """Return only non-reversible keys suitable for a signed continuation."""
+
         normalized = credential_identity.strip().casefold()
         network = network_context.strip() or "unknown"
         return (
@@ -82,23 +97,24 @@ class AuthThrottleService:
 
     def is_blocked(self, operation: str, credential_identity: str, network_context: str) -> bool:
         now = self._now()
-        credential_key, network_key = self._keys(
+        credential_key, network_key = self.scope_keys(
             operation, credential_identity, network_context
         )
-        state = (
-            self.db.query(AuthThrottleState)
-            .filter(
-                AuthThrottleState.credential_key == credential_key,
-                AuthThrottleState.network_key == network_key,
-            )
-            .with_for_update()
-            .one_or_none()
-        )
-        return bool(state and state.blocked_until and state.blocked_until > now)
+        # Upserting before locking closes the first-attempt race: concurrent
+        # requests cannot all observe an absent row and bypass the limit.
+        state = self._locked_state(credential_key, network_key, now)
+        return bool(state.blocked_until and state.blocked_until > now)
 
-    def record_failure(self, operation: str, credential_identity: str, network_context: str) -> bool:
+    def record_failure(
+        self,
+        operation: str,
+        credential_identity: str,
+        network_context: str,
+        *,
+        commit: bool = True,
+    ) -> bool:
         now = self._now()
-        credential_key, network_key = self._keys(
+        credential_key, network_key = self.scope_keys(
             operation, credential_identity, network_context
         )
         state = self._locked_state(credential_key, network_key, now)
@@ -117,20 +133,26 @@ class AuthThrottleService:
                 settings.AUTH_THROTTLE_MAX_BACKOFF_SECONDS,
             )
             state.blocked_until = now + timedelta(seconds=delay)
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
         return threshold_reached
 
-    def clear(
+    def clear_keys(
         self,
-        operation: str,
-        credential_identity: str,
-        network_context: str,
+        credential_key: str,
+        network_key: str,
         *,
         commit: bool = True,
     ) -> None:
-        credential_key, network_key = self._keys(
-            operation, credential_identity, network_context
-        )
+        if (
+            len(credential_key) != 64
+            or len(network_key) != 64
+            or any(character not in "0123456789abcdef" for character in credential_key)
+            or any(character not in "0123456789abcdef" for character in network_key)
+        ):
+            raise ThrottleConfigurationError()
         (
             self.db.query(AuthThrottleState)
             .filter(
@@ -141,3 +163,22 @@ class AuthThrottleService:
         )
         if commit:
             self.db.commit()
+        else:
+            self.db.flush()
+
+    def clear(
+        self,
+        operation: str,
+        credential_identity: str,
+        network_context: str,
+        *,
+        commit: bool = True,
+    ) -> None:
+        credential_key, network_key = self.scope_keys(
+            operation, credential_identity, network_context
+        )
+        self.clear_keys(
+            credential_key,
+            network_key,
+            commit=commit,
+        )

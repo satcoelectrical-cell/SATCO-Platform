@@ -1,8 +1,13 @@
 import base64
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+import time
 from uuid import UUID
+from uuid import uuid4
 
 import pyotp
 import pytest
+from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.models.auth_security import (
@@ -13,6 +18,8 @@ from app.models.auth_security import (
     UserTotpAuthenticator,
 )
 from app.services.mfa_service import MfaRejected, MfaService
+from app.services.auth_throttle_service import AuthThrottleService
+from conftest import owner_engine
 
 
 ORG_ID = UUID("02810000-0000-4000-8000-000000000001")
@@ -315,3 +322,72 @@ def test_successful_mfa_verification_clears_failure_state(
     )
     assert verified.status_code == 200
     assert db_session.query(AuthThrottleState).count() == 0
+
+
+def test_first_attempt_upsert_lock_serializes_threshold_transition(mfa_keys):
+    identity = f"concurrency-{uuid4()}"
+    network = "198.51.100.77"
+    operation = AuthThrottleService.PRIMARY_AUTHENTICATION
+    factory = sessionmaker(bind=owner_engine, expire_on_commit=False)
+
+    first_locked = Event()
+    release_first = Event()
+    second_started = Event()
+
+    def fifth_failure():
+        session = factory()
+        try:
+            throttle = AuthThrottleService(session)
+            assert throttle.is_blocked(operation, identity, network) is False
+            first_locked.set()
+            assert release_first.wait(timeout=5)
+            threshold_reached = False
+            for _ in range(settings.AUTH_THROTTLE_FAILURE_THRESHOLD):
+                threshold_reached = throttle.record_failure(
+                    operation,
+                    identity,
+                    network,
+                    commit=False,
+                )
+            session.commit()
+            return threshold_reached
+        finally:
+            session.close()
+
+    def sixth_precheck():
+        session = factory()
+        try:
+            throttle = AuthThrottleService(session)
+            second_started.set()
+            blocked = throttle.is_blocked(operation, identity, network)
+            session.rollback()
+            return blocked
+        finally:
+            session.close()
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            fifth = pool.submit(fifth_failure)
+            assert first_locked.wait(timeout=5)
+            sixth = pool.submit(sixth_precheck)
+            assert second_started.wait(timeout=5)
+            time.sleep(0.1)
+            assert sixth.done() is False
+            release_first.set()
+            assert fifth.result(timeout=5) is True
+            assert sixth.result(timeout=5) is True
+    finally:
+        cleanup = factory()
+        try:
+            credential_key, network_key = AuthThrottleService(cleanup).scope_keys(
+                operation,
+                identity,
+                network,
+            )
+            cleanup.query(AuthThrottleState).filter_by(
+                credential_key=credential_key,
+                network_key=network_key,
+            ).delete(synchronize_session=False)
+            cleanup.commit()
+        finally:
+            cleanup.close()

@@ -22,6 +22,16 @@ TEST_DATABASE_NAME = "satco_platform_patch02022_test"
 test_database_url = os.getenv("TEST_DATABASE_URL", "")
 parsed_database_url = urlparse(test_database_url)
 
+_auth_throttle_key_file = tempfile.NamedTemporaryFile(
+    mode="w",
+    suffix=".key",
+    delete=False,
+    encoding="utf-8",
+)
+_auth_throttle_key_file.write("test-auth-throttle-key-material-000000000000")
+_auth_throttle_key_file.close()
+os.environ["AUTH_THROTTLE_KEY_FILE"] = _auth_throttle_key_file.name
+
 if parsed_database_url.path.lstrip("/") != TEST_DATABASE_NAME:
     raise RuntimeError(
         "PATCH-020.2.2 tests require TEST_DATABASE_URL to target "

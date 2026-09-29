@@ -29,6 +29,7 @@ from app.schemas.mfa import (
     MfaRecoveryCompleteRequest,
 )
 from app.schemas.onboarding import ClosedOutcome, PasswordChangeRequest
+from app.models.auth_security import AuthSecurityEvent
 from app.models.organization import Organization, UserOrganizationMembership
 from app.models.user import User
 
@@ -65,6 +66,48 @@ service = UserService()
 def _refresh_max_age(expires_at: datetime) -> int:
     now = datetime.now(timezone.utc)
     return max(0, int((expires_at - now).total_seconds()))
+
+
+def _network_context(request: Request) -> str:
+    """Use only the directly connected peer; forwarding headers are untrusted."""
+
+    return request.client.host if request.client else "unknown"
+
+
+def _record_throttle_failure(
+    db: Session,
+    *,
+    operation: str,
+    identity: str,
+    network_context: str,
+    reason_code: str,
+    user: User | None = None,
+    organization_id: UUID | None = None,
+) -> None:
+    throttle = AuthThrottleService(db)
+    threshold_reached = throttle.record_failure(
+        operation,
+        identity,
+        network_context,
+        commit=False,
+    )
+    if threshold_reached:
+        if user is not None and organization_id is not None:
+            MfaService(db).record_throttle_threshold(
+                user,
+                organization_id,
+                reason_code=reason_code,
+                commit=False,
+            )
+        else:
+            db.add(
+                AuthSecurityEvent(
+                    event_type="auth_throttle_threshold",
+                    outcome="blocked",
+                    reason_code=reason_code,
+                )
+            )
+    db.commit()
 
 
 def _selected_membership(
@@ -131,6 +174,11 @@ def _issue_browser_session(
     challenge: MfaLoginChallenge,
 ) -> TokenResponse:
     refresh = RefreshSessionService(db).create(user, commit=False)
+    AuthThrottleService(db).clear_keys(
+        challenge.primary_credential_key,
+        challenge.primary_network_key,
+        commit=False,
+    )
     MfaLoginChallengeService.mark_consumed(
         db,
         challenge,
@@ -157,16 +205,16 @@ def _mfa_failure(
     organization_id: UUID,
     network_context: str,
 ) -> None:
-    db.rollback()
-    throttle = AuthThrottleService(db)
     try:
-        threshold_reached = throttle.record_failure(
-            "mfa_login_verification",
-            str(user.id),
-            network_context,
+        _record_throttle_failure(
+            db,
+            operation=AuthThrottleService.MFA_LOGIN_VERIFICATION,
+            identity=str(user.id),
+            network_context=network_context,
+            reason_code="mfa_login_verification_threshold",
+            user=user,
+            organization_id=organization_id,
         )
-        if threshold_reached:
-            MfaService(db).record_throttle_threshold(user, organization_id)
     except ThrottleConfigurationError:
         db.rollback()
 
@@ -182,52 +230,102 @@ def register_disabled():
     response_model=TokenResponse | MfaLoginChallengeResponse,
 )
 def login(
+    request: Request,
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-
-    user = service.authenticate(
-        db,
-        form_data.username,
-        form_data.password,
-    )
-
-
-    if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid username or password",
-        )
-
-
-    membership = _selected_membership(db, user.id)
-    if membership is None or user.activation_pending:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid username or password",
-        )
-
-    mfa_status = MfaService(db).status(user, membership.organization_id)
-    if mfa_status.required:
-        BrowserAuthSecurityService.clear(response)
-        return MfaLoginChallengeResponse(
-            challenge=MfaLoginChallengeService.issue(
-                user_id=user.id,
-                organization_id=membership.organization_id,
-                auth_version=user.auth_version,
-                stage="verify" if mfa_status.active else "enroll",
-            ),
-            enrollment_required=not mfa_status.active,
-        )
-
+    network_context = _network_context(request)
+    throttle = AuthThrottleService(db)
+    operation = AuthThrottleService.PRIMARY_AUTHENTICATION
+    identity = form_data.username
     try:
-        refresh = RefreshSessionService(db).create(user)
+        if throttle.is_blocked(operation, identity, network_context):
+            db.rollback()
+            raise HTTPException(
+                status_code=429,
+                detail="Invalid username or password",
+            )
+
+        user = service.authenticate(
+            db,
+            form_data.username,
+            form_data.password,
+        )
+        if not user:
+            _record_throttle_failure(
+                db,
+                operation=operation,
+                identity=identity,
+                network_context=network_context,
+                reason_code="primary_authentication_threshold",
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid username or password",
+            )
+
+        membership = _selected_membership(db, user.id)
+        if membership is None or user.activation_pending:
+            _record_throttle_failure(
+                db,
+                operation=operation,
+                identity=identity,
+                network_context=network_context,
+                reason_code="primary_authentication_threshold",
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid username or password",
+            )
+
+        primary_credential_key, primary_network_key = throttle.scope_keys(
+            operation,
+            identity,
+            network_context,
+        )
+        mfa_status = MfaService(db).status(user, membership.organization_id)
+        if mfa_status.required:
+            # Password qualification is not completed authentication. Preserve
+            # prior failures and release the lock without clearing them.
+            db.rollback()
+            BrowserAuthSecurityService.clear(response)
+            return MfaLoginChallengeResponse(
+                challenge=MfaLoginChallengeService.issue(
+                    user_id=user.id,
+                    organization_id=membership.organization_id,
+                    auth_version=user.auth_version,
+                    stage="verify" if mfa_status.active else "enroll",
+                    primary_credential_key=primary_credential_key,
+                    primary_network_key=primary_network_key,
+                ),
+                enrollment_required=not mfa_status.active,
+            )
+
+        refresh = RefreshSessionService(db).create(user, commit=False)
+        throttle.clear_keys(
+            primary_credential_key,
+            primary_network_key,
+            commit=False,
+        )
+        db.commit()
     except RefreshRejected:
+        _record_throttle_failure(
+            db,
+            operation=operation,
+            identity=identity,
+            network_context=network_context,
+            reason_code="primary_authentication_threshold",
+        )
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password",
+        )
+    except ThrottleConfigurationError:
         db.rollback()
         raise HTTPException(
-            status_code=401,
-            detail="Invalid username or password",
+            status_code=503,
+            detail="Authentication unavailable",
         )
 
     access_token = create_access_token(
@@ -254,7 +352,7 @@ def verify_mfa_login(
     response: Response,
     db: Session = Depends(get_db),
 ):
-    network_context = request.client.host if request.client else "unknown"
+    network_context = _network_context(request)
     try:
         challenge, user = _challenge_context(
             db,
@@ -267,7 +365,7 @@ def verify_mfa_login(
         MfaLoginChallengeService.reserve_once(db, challenge)
         throttle = AuthThrottleService(db)
         if throttle.is_blocked(
-            "mfa_login_verification",
+            AuthThrottleService.MFA_LOGIN_VERIFICATION,
             str(user.id),
             network_context,
         ):
@@ -283,7 +381,7 @@ def verify_mfa_login(
             commit=False,
         )
         throttle.clear(
-            "mfa_login_verification",
+            AuthThrottleService.MFA_LOGIN_VERIFICATION,
             str(user.id),
             network_context,
             commit=False,
@@ -346,6 +444,8 @@ def start_mfa_login_enrollment(
                 organization_id=challenge.organization_id,
                 auth_version=user.auth_version,
                 stage="enroll_verify",
+                primary_credential_key=challenge.primary_credential_key,
+                primary_network_key=challenge.primary_network_key,
             ),
             secret=enrollment.secret,
             provisioning_uri=enrollment.provisioning_uri,
@@ -368,7 +468,7 @@ def verify_mfa_login_enrollment(
     response: Response,
     db: Session = Depends(get_db),
 ):
-    network_context = request.client.host if request.client else "unknown"
+    network_context = _network_context(request)
     try:
         challenge, user = _challenge_context(
             db,
@@ -381,7 +481,7 @@ def verify_mfa_login_enrollment(
         MfaLoginChallengeService.reserve_once(db, challenge)
         throttle = AuthThrottleService(db)
         if throttle.is_blocked(
-            "mfa_login_verification",
+            AuthThrottleService.MFA_LOGIN_VERIFICATION,
             str(user.id),
             network_context,
         ):
@@ -397,7 +497,7 @@ def verify_mfa_login_enrollment(
             commit=False,
         )
         throttle.clear(
-            "mfa_login_verification",
+            AuthThrottleService.MFA_LOGIN_VERIFICATION,
             str(user.id),
             network_context,
             commit=False,
@@ -499,13 +599,47 @@ async def change_password(
 ):
     try:
         data = PasswordChangeRequest.model_validate(await request.json())
-        OnboardingService(db).change_password(
-            current_user, data.current_password, data.new_password
-        )
-        return {"outcome": "success"}
-    except (ProtectedOnboarding, ValidationError, ValueError, TypeError):
+    except (ValidationError, ValueError, TypeError):
         db.rollback()
         return {"outcome": "invalid_request"}
+
+    network_context = _network_context(request)
+    operation = AuthThrottleService.PASSWORD_CHANGE_VERIFICATION
+    identity = str(current_user.id)
+    throttle = AuthThrottleService(db)
+    try:
+        if throttle.is_blocked(operation, identity, network_context):
+            db.rollback()
+            return {"outcome": "invalid_request"}
+        OnboardingService(db).change_password(
+            current_user,
+            data.current_password,
+            data.new_password,
+            commit=False,
+        )
+        throttle.clear(
+            operation,
+            identity,
+            network_context,
+            commit=False,
+        )
+        db.commit()
+        return {"outcome": "success"}
+    except ProtectedOnboarding:
+        membership = _selected_membership(db, current_user.id)
+        _record_throttle_failure(
+            db,
+            operation=operation,
+            identity=identity,
+            network_context=network_context,
+            reason_code="password_change_verification_threshold",
+            user=current_user,
+            organization_id=membership.organization_id if membership else None,
+        )
+        return {"outcome": "invalid_request"}
+    except ThrottleConfigurationError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Password change unavailable")
 
 
 @router.get("/mfa/status", response_model=MfaStatusResponse)
@@ -555,26 +689,45 @@ def verify_totp_enrollment(
     ),
     db: Session = Depends(get_db),
 ):
-    network_context = request.client.host if request.client else "unknown"
+    network_context = _network_context(request)
     throttle = AuthThrottleService(db)
     identity = str(context.user.id)
     try:
-        if throttle.is_blocked("mfa_verification", identity, network_context):
+        if throttle.is_blocked(
+            AuthThrottleService.MFA_VERIFICATION,
+            identity,
+            network_context,
+        ):
+            db.rollback()
             raise HTTPException(status_code=429, detail="Invalid MFA verification")
         completed = MfaService(db).verify_enrollment(
-            context.user, context.organization_id, data.code
+            context.user,
+            context.organization_id,
+            data.code,
+            commit=False,
         )
-        throttle.clear("mfa_verification", identity, network_context)
+        throttle.clear(
+            AuthThrottleService.MFA_VERIFICATION,
+            identity,
+            network_context,
+            commit=False,
+        )
+        db.commit()
     except MfaRejected:
-        db.rollback()
         try:
             threshold_reached = throttle.record_failure(
-                "mfa_verification", identity, network_context
+                AuthThrottleService.MFA_VERIFICATION,
+                identity,
+                network_context,
+                commit=False,
             )
             if threshold_reached:
                 MfaService(db).record_throttle_threshold(
-                    context.user, context.organization_id
+                    context.user,
+                    context.organization_id,
+                    commit=False,
                 )
+            db.commit()
         except ThrottleConfigurationError:
             db.rollback()
         raise HTTPException(status_code=400, detail="Invalid MFA verification")
@@ -619,25 +772,73 @@ def logout_current(
 
 @router.post("/step-up", response_model=ClosedOutcome)
 def step_up(
+    request: Request,
     data: StepUpRequest,
     context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
     auth: AuthenticatedSessionContext = Depends(get_current_session_context),
     db: Session = Depends(get_db),
 ):
-    if context.user.id != auth.user.id or not verify_password(data.password, auth.user.hashed_password):
+    if context.user.id != auth.user.id:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-    mfa = MfaService(db)
-    status = mfa.status(auth.user, context.organization_id)
-    if status.required or status.active:
-        if not data.totp_code:
-            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-        try:
-            mfa.verify_active_totp(auth.user, context.organization_id, data.totp_code)
-        except MfaRejected:
+    network_context = _network_context(request)
+    operation = AuthThrottleService.STEP_UP_VERIFICATION
+    identity = str(auth.user.id)
+    throttle = AuthThrottleService(db)
+
+    def rejected() -> None:
+        _record_throttle_failure(
+            db,
+            operation=operation,
+            identity=identity,
+            network_context=network_context,
+            reason_code="step_up_verification_threshold",
+            user=auth.user,
+            organization_id=context.organization_id,
+        )
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+        )
+
+    try:
+        if throttle.is_blocked(operation, identity, network_context):
             db.rollback()
-            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-    RefreshSessionService(db).record_step_up(auth.user, auth.session)
-    return {"outcome": "success"}
+            raise HTTPException(
+                status_code=429,
+                detail="Invalid authentication credentials",
+            )
+        if not verify_password(data.password, auth.user.hashed_password):
+            rejected()
+        mfa = MfaService(db)
+        status = mfa.status(auth.user, context.organization_id)
+        if status.required or status.active:
+            if not data.totp_code:
+                rejected()
+            try:
+                mfa.verify_active_totp(
+                    auth.user,
+                    context.organization_id,
+                    data.totp_code,
+                    commit=False,
+                )
+            except MfaRejected:
+                rejected()
+        RefreshSessionService(db).record_step_up(
+            auth.user,
+            auth.session,
+            commit=False,
+        )
+        throttle.clear(
+            operation,
+            identity,
+            network_context,
+            commit=False,
+        )
+        db.commit()
+        return {"outcome": "success"}
+    except ThrottleConfigurationError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Authentication unavailable")
 
 
 @router.post("/logout-all", response_model=ClosedOutcome)
@@ -654,15 +855,49 @@ def logout_all(
 
 @router.post("/mfa/recovery-code/use", response_model=ClosedOutcome)
 def use_recovery_code(
+    request: Request,
     data: RecoveryCodeRequest,
     context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
     db: Session = Depends(get_db),
 ):
+    network_context = _network_context(request)
+    operation = AuthThrottleService.MFA_RECOVERY_CODE_VERIFICATION
+    identity = str(context.user.id)
+    throttle = AuthThrottleService(db)
     try:
-        MfaService(db).consume_recovery_code(context.user, context.organization_id, data.code)
+        if throttle.is_blocked(operation, identity, network_context):
+            db.rollback()
+            raise HTTPException(
+                status_code=429,
+                detail="Invalid recovery credential",
+            )
+        MfaService(db).consume_recovery_code(
+            context.user,
+            context.organization_id,
+            data.code,
+            commit=False,
+        )
+        throttle.clear(
+            operation,
+            identity,
+            network_context,
+            commit=False,
+        )
+        db.commit()
     except MfaRejected:
-        db.rollback()
+        _record_throttle_failure(
+            db,
+            operation=operation,
+            identity=identity,
+            network_context=network_context,
+            reason_code="mfa_recovery_code_verification_threshold",
+            user=context.user,
+            organization_id=context.organization_id,
+        )
         raise HTTPException(status_code=400, detail="Invalid recovery credential")
+    except ThrottleConfigurationError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="MFA recovery unavailable")
     return {"outcome": "success"}
 
 

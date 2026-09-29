@@ -7,9 +7,11 @@ from uuid import uuid4
 from jose import jwt
 import pyotp
 import pytest
+from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.core.security import create_access_token
+from app.main import app
 from app.models.auth_security import (
     AuthRefreshSession,
     AuthSecurityEvent,
@@ -139,6 +141,102 @@ def test_active_totp_creates_authority_only_after_verification(
     )
     assert event.session_id is not None
     assert challenge not in (event.safe_context or "")
+
+
+def test_primary_failures_survive_mfa_challenge_and_clear_only_on_mfa_success(
+    client, admin_user, db_session, mfa_login_keys
+):
+    secret = _activate_totp(db_session, admin_user)
+    for _ in range(2):
+        rejected = client.post(
+            "/auth/login",
+            data={"username": admin_user.username, "password": "wrong-password"},
+        )
+        assert rejected.status_code == 401
+
+    login = _login(client, admin_user)
+    assert login.status_code == 200
+    primary_state = db_session.query(AuthThrottleState).one()
+    assert primary_state.failure_count == 2
+
+    challenge = login.json()["challenge"]
+    claims = jwt.get_unverified_claims(challenge)
+    assert len(claims["pck"]) == 64
+    assert len(claims["pnk"]) == 64
+    assert admin_user.username not in str(claims)
+    assert "testclient" not in str(claims)
+
+    verified = client.post(
+        "/auth/login/mfa/verify",
+        json={"challenge": challenge, "code": pyotp.TOTP(secret).now()},
+    )
+
+    assert verified.status_code == 200
+    assert db_session.query(AuthThrottleState).count() == 0
+
+
+def test_primary_scope_clears_after_mfa_from_a_changed_direct_peer(
+    client, admin_user, db_session, mfa_login_keys
+):
+    secret = _activate_totp(db_session, admin_user)
+    assert client.post(
+        "/auth/login",
+        data={"username": admin_user.username, "password": "wrong-password"},
+    ).status_code == 401
+    challenge = _login(client, admin_user).json()["challenge"]
+    assert db_session.query(AuthThrottleState).count() == 1
+
+    with TestClient(app, client=("198.51.100.25", 50000)) as changed_peer:
+        verified = changed_peer.post(
+            "/auth/login/mfa/verify",
+            json={"challenge": challenge, "code": pyotp.TOTP(secret).now()},
+        )
+
+    assert verified.status_code == 200
+    assert db_session.query(AuthThrottleState).count() == 0
+
+
+def test_primary_and_mfa_login_failures_use_distinct_counters(
+    client, admin_user, db_session, mfa_login_keys
+):
+    secret = _activate_totp(db_session, admin_user)
+    for _ in range(2):
+        assert client.post(
+            "/auth/login",
+            data={"username": admin_user.username, "password": "wrong-password"},
+        ).status_code == 401
+    challenge = _login(client, admin_user).json()["challenge"]
+    rejected = client.post(
+        "/auth/login/mfa/verify",
+        json={"challenge": challenge, "code": _invalid_totp(secret)},
+    )
+
+    assert rejected.status_code == 401
+    states = db_session.query(AuthThrottleState).all()
+    assert sorted(state.failure_count for state in states) == [1, 2]
+    assert len({state.credential_key for state in states}) == 2
+
+
+def test_mfa_challenge_rejects_malformed_signed_primary_scope(
+    client, admin_user, db_session, mfa_login_keys
+):
+    secret = _activate_totp(db_session, admin_user)
+    challenge = _login(client, admin_user).json()["challenge"]
+    claims = jwt.get_unverified_claims(challenge)
+    claims["pck"] = admin_user.username
+    malformed = jwt.encode(
+        claims,
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+    )
+
+    response = client.post(
+        "/auth/login/mfa/verify",
+        json={"challenge": malformed, "code": pyotp.TOTP(secret).now()},
+    )
+
+    assert response.status_code == 401
+    assert _session_count(db_session, admin_user) == 0
 
 
 @pytest.mark.parametrize("candidate", ["invalid-challenge", "wrong-purpose"])
@@ -357,6 +455,10 @@ def test_first_time_mandatory_enrollment_cannot_bypass_mfa(
     assert started.status_code == 200
     assert started.json()["secret"]
     assert started.json()["challenge"] != initial_challenge
+    initial_claims = jwt.get_unverified_claims(initial_challenge)
+    continuation_claims = jwt.get_unverified_claims(started.json()["challenge"])
+    assert continuation_claims["pck"] == initial_claims["pck"]
+    assert continuation_claims["pnk"] == initial_claims["pnk"]
     assert "access_token" not in started.json()
     assert client.cookies.get("satco_refresh") is None
     assert _session_count(db_session, admin_user) == 0
@@ -525,3 +627,63 @@ def test_password_only_step_up_cannot_prequalify_later_mfa_policy(
     access = client.get("/auth/me", headers=engineer_headers)
 
     assert access.status_code == 401
+
+
+def test_password_change_verifier_is_throttled_before_sixth_verification(
+    client, engineer_user, engineer_headers, db_session
+):
+    responses = [
+        client.post(
+            "/auth/change-password",
+            headers=engineer_headers,
+            json={
+                "current_password": "wrong-password",
+                "new_password": "replacement-password",
+            },
+        )
+        for _ in range(settings.AUTH_THROTTLE_FAILURE_THRESHOLD)
+    ]
+    blocked = client.post(
+        "/auth/change-password",
+        headers=engineer_headers,
+        json={
+            "current_password": "correct-password",
+            "new_password": "replacement-password",
+        },
+    )
+
+    assert [response.json() for response in responses] == [
+        {"outcome": "invalid_request"}
+    ] * 5
+    assert blocked.status_code == 200
+    assert blocked.json() == {"outcome": "invalid_request"}
+    db_session.refresh(engineer_user)
+    assert engineer_user.auth_version == 1
+    state = db_session.query(AuthThrottleState).one()
+    assert state.failure_count == settings.AUTH_THROTTLE_FAILURE_THRESHOLD
+
+
+def test_successful_password_change_atomically_clears_verifier_failures(
+    client, engineer_headers, db_session
+):
+    rejected = client.post(
+        "/auth/change-password",
+        headers=engineer_headers,
+        json={
+            "current_password": "wrong-password",
+            "new_password": "replacement-password",
+        },
+    )
+    changed = client.post(
+        "/auth/change-password",
+        headers=engineer_headers,
+        json={
+            "current_password": "correct-password",
+            "new_password": "replacement-password",
+        },
+    )
+
+    assert rejected.json() == {"outcome": "invalid_request"}
+    assert changed.status_code == 200
+    assert changed.json() == {"outcome": "success"}
+    assert db_session.query(AuthThrottleState).count() == 0

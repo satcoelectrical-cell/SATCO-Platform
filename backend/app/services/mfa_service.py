@@ -186,15 +186,25 @@ class MfaService:
             )
         )
 
-    def record_throttle_threshold(self, user: User, organization_id: UUID) -> None:
+    def record_throttle_threshold(
+        self,
+        user: User,
+        organization_id: UUID,
+        *,
+        reason_code: str = "mfa_verification_threshold",
+        commit: bool = True,
+    ) -> None:
         self._event(
             event_type="auth_throttle_threshold",
             user_id=user.id,
             organization_id=organization_id,
             outcome="blocked",
-            reason_code="mfa_verification_threshold",
+            reason_code=reason_code,
         )
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
 
     def status(self, user: User, organization_id: UUID) -> MfaStatus:
         policy = self.db.get(OrganizationMfaPolicy, organization_id)
@@ -335,7 +345,14 @@ class MfaService:
             self.db.flush()
         return EnrollmentComplete(recovery_codes=tuple(raw_codes))
 
-    def consume_recovery_code(self, user: User, organization_id: UUID, code: str) -> None:
+    def consume_recovery_code(
+        self,
+        user: User,
+        organization_id: UUID,
+        code: str,
+        *,
+        commit: bool = True,
+    ) -> None:
         verifier = self._recovery_verifier(code)
         recovery = (
             self.db.query(MfaRecoveryCode)
@@ -354,7 +371,10 @@ class MfaService:
             raise MfaRejected()
         recovery.used_at = self._now()
         self._event(event_type="mfa_recovery_code_used", user_id=user.id, organization_id=organization_id, outcome="success", reason_code="single_use_consumed")
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
 
     def regenerate_recovery_codes(self, user: User, organization_id: UUID) -> tuple[str, ...]:
         authenticator = (
