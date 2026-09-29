@@ -289,6 +289,11 @@ jobs:
               output.write("\n")
           PY
 
+      - name: Load protected release-dossier validator
+        run: |
+          cp .github/scripts/patch058-release-dossier.py /tmp/patch058-release-dossier.py
+          python3 -m py_compile /tmp/patch058-release-dossier.py
+
       - name: Assemble and validate draft dossier without inventing release approval
         env:
           EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
@@ -297,7 +302,7 @@ jobs:
         run: |
           created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           release_id="patch058-$SECURITY_RUN_ID-$SECURITY_RUN_ATTEMPT"
-          python3 ops/scripts/patch058-release-dossier.py generate \
+          python3 /tmp/patch058-release-dossier.py generate \
             --release-id "$release_id" \
             --source-commit "$EXPECTED_SOURCE_SHA" \
             --created-at "$created_at" \
@@ -326,7 +331,7 @@ jobs:
             --human-signing-authorization approved=evidence/human-signing-authorization.json \
             --human-release-approval pending=patch058-release-approval \
             --output evidence/release-dossier.pending.v1.json
-          python3 ops/scripts/patch058-release-dossier.py verify \
+          python3 /tmp/patch058-release-dossier.py verify \
             --dossier evidence/release-dossier.pending.v1.json \
             --now "$created_at" --allow-pending-approvals
 
