@@ -44,7 +44,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
           test -z "$(git status --porcelain --untracked-files=all)"
           test "$(git rev-parse origin/patch-058)" = "$EXPECTED_SOURCE"
-          ! git show "$EXPECTED_SOURCE:docs/patches/PATCH-058.md" | grep -Eq 'PATCH-059.*(STARTED|OPEN)|PATCH-060.*(STARTED|OPEN)'
+          git show "$EXPECTED_SOURCE:docs/patches/PATCH-058.md" | grep -Fq 'PATCH-059 / PATCH-060: NOT STARTED / NOT AUTHORIZED'
 
       - name: Download exact deterministic qualification evidence
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
