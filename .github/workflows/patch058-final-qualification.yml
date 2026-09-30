@@ -125,7 +125,7 @@ jobs:
         run: |
           set -euo pipefail
           test -s evidence/vulnerability-gate.json
-          test -s evidence/provenance.json
+          test -s evidence/provenance.intoto.json
           test -s evidence/backend-sbom.cdx.json
           test -s evidence/frontend-sbom.cdx.json
           test -s evidence/security-decision.json
