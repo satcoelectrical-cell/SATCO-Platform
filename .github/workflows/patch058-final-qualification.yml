@@ -1,0 +1,175 @@
+name: PATCH-058 integrated final qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      quality_run_id:
+        description: Exact successful deterministic qualification run
+        required: true
+      security_run_id:
+        description: Exact successful security evidence run
+        required: true
+      signing_run_id:
+        description: Exact successful protected signing run
+        required: true
+      finalization_run_id:
+        description: Exact successful final dossier reconciliation run
+        required: true
+      expected_source_sha:
+        description: Immutable PATCH-058 candidate SHA
+        required: true
+      release_id:
+        description: Exact PATCH-058 release identity
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  integrated-final-qualification:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.expected_source_sha }}
+          fetch-depth: 0
+
+      - name: Enforce immutable candidate and unopened successors
+        env:
+          EXPECTED_SOURCE: ${{ inputs.expected_source_sha }}
+        run: |
+          set -euo pipefail
+          test "$EXPECTED_SOURCE" = "8c37dcfa8235490408fb5d9c2c2d4e24857d149a"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          test "$(git rev-parse origin/patch-058)" = "$EXPECTED_SOURCE"
+          ! git show "$EXPECTED_SOURCE:docs/patches/PATCH-058.md" | grep -Eq 'PATCH-059.*(STARTED|OPEN)|PATCH-060.*(STARTED|OPEN)'
+
+      - name: Download exact deterministic qualification evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: patch058-quality-evidence-${{ inputs.expected_source_sha }}
+          path: evidence/quality
+          run-id: ${{ inputs.quality_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Download exact security evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: patch058-security-evidence-${{ inputs.expected_source_sha }}
+          path: evidence/security
+          run-id: ${{ inputs.security_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Download exact protected signing evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: patch058-signed-evidence-${{ inputs.expected_source_sha }}
+          path: evidence/signing
+          run-id: ${{ inputs.signing_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Download exact final approved dossier
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: patch058-final-release-dossier-${{ inputs.expected_source_sha }}
+          path: evidence/final
+          run-id: ${{ inputs.finalization_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Load candidate validator
+        run: git show "${{ inputs.expected_source_sha }}:ops/scripts/patch058-release-dossier.py" > /tmp/patch058-release-dossier.py
+
+      - name: Verify exact-source qualification and final dossier
+        env:
+          EXPECTED_SOURCE: ${{ inputs.expected_source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          QUALITY_RUN_ID: ${{ inputs.quality_run_id }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib
+          root=pathlib.Path("evidence")
+          expected=os.environ["EXPECTED_SOURCE"]
+          qrun=str(os.environ["QUALITY_RUN_ID"])
+          for gate in ("backend","frontend","migration"):
+              p=root/"quality"/f"{gate}-qualification.json"
+              d=json.loads(p.read_text())
+              assert d["result"]=="PASS"
+              assert d["source_commit"]==expected
+              assert str(d["run_id"])==qrun
+              assert d["gate"]==gate
+          final=json.loads((root/"final"/"release-dossier.final.v1.json").read_text())
+          assert final["source_commit"]==expected
+          assert final["release_id"]==os.environ["RELEASE_ID"]
+          assert final["human_release_approval"]["status"]=="approved"
+          assert final["human_signing_authorization"]["status"]=="approved"
+          PY
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          python3 /tmp/patch058-release-dossier.py verify --dossier evidence/final/release-dossier.final.v1.json --now "$now"
+
+      - name: Verify Section 45 evidence coverage
+        env:
+          EXPECTED_SOURCE: ${{ inputs.expected_source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          QUALITY_RUN_ID: ${{ inputs.quality_run_id }}
+          SECURITY_RUN_ID: ${{ inputs.security_run_id }}
+          SIGNING_RUN_ID: ${{ inputs.signing_run_id }}
+          FINALIZATION_RUN_ID: ${{ inputs.finalization_run_id }}
+        run: |
+          set -euo pipefail
+          test -s evidence/security/vulnerability-gate.json
+          test -s evidence/security/provenance.json
+          test -s evidence/security/backend-sbom.cdx.json
+          test -s evidence/security/frontend-sbom.cdx.json
+          test -s evidence/security/security-decision.json
+          test -s evidence/signing/release-dossier.pending.v1.json
+          test -s evidence/final/human-release-approval.json
+          python3 - <<'PY'
+          import json, os, pathlib
+          root=pathlib.Path("evidence")
+          vg=json.loads((root/"security"/"vulnerability-gate.json").read_text())
+          assert vg.get("result")=="PASS"
+          coverage={
+            "schema_version":1,
+            "result":"PASS",
+            "source_commit":os.environ["EXPECTED_SOURCE"],
+            "release_id":os.environ["RELEASE_ID"],
+            "evidence_runs":{
+              "quality":os.environ["QUALITY_RUN_ID"],
+              "security":os.environ["SECURITY_RUN_ID"],
+              "signing":os.environ["SIGNING_RUN_ID"],
+              "finalization":os.environ["FINALIZATION_RUN_ID"],
+            },
+            "section_45":{
+              "authentication_onboarding":"backend exact-source regression",
+              "administrator_and_member_mfa":"backend exact-source regression",
+              "refresh_concurrency_revocation":"backend exact-source regression",
+              "stale_authority_invalidation":"backend exact-source regression",
+              "tenant_isolation":"backend exact-source regression",
+              "browser_durable_credentials":"frontend exact-source regression/build",
+              "csrf_origin":"backend exact-source regression",
+              "bootstrap":"backend exact-source regression",
+              "security_events":"backend exact-source regression",
+              "backend_frontend_regression":"quality evidence PASS",
+              "migration_singular":"migration qualification PASS",
+              "mandatory_scans":"security evidence PASS",
+              "vulnerabilities":"vulnerability gate PASS with governed decision",
+              "sbom_provenance_signatures":"security/signing evidence exact-source",
+              "release_dossier":"final approved dossier verified",
+              "human_authority":"security decision + signing authorization + release approval",
+              "ai_authority":"candidate governance remains advisory/non-authoritative",
+              "successor_patches":"PATCH-059/PATCH-060 unopened by candidate"
+            }
+          }
+          pathlib.Path("patch058-final-qualification.json").write_text(json.dumps(coverage,indent=2,sort_keys=True)+"\n")
+          PY
+
+      - name: Retain integrated final qualification evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: patch058-integrated-final-qualification-${{ inputs.expected_source_sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: patch058-final-qualification.json
