@@ -1,0 +1,171 @@
+name: PATCH-058 final release approval reconciliation
+
+on:
+  workflow_dispatch:
+    inputs:
+      signing_run_id:
+        description: Successful PATCH-058 protected-signing workflow run ID
+        required: true
+        type: string
+      security_run_id:
+        description: Exact successful PATCH-058 security-evidence workflow run ID
+        required: true
+        type: string
+      quality_run_id:
+        description: Exact successful PATCH-058 deterministic qualification workflow run ID
+        required: true
+        type: string
+      expected_source_sha:
+        description: Exact immutable PATCH-058 candidate revision
+        required: true
+        type: string
+      security_decision_commit:
+        description: Exact Human security-decision commit
+        required: true
+        type: string
+      release_id:
+        description: Exact release identity already bound by protected signing
+        required: true
+        type: string
+      approval_authority:
+        description: Human authority that explicitly granted final release approval
+        required: true
+        type: string
+      approval_evidence_reference:
+        description: Attributable reference for the explicit Human release approval
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected_source_sha }}
+
+      - name: Enforce immutable candidate identity
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main"
+          printf '%s' "$EXPECTED_SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          git fetch --no-tags origin "+refs/heads/patch-058:refs/remotes/origin/patch-058"
+          test "$(git rev-parse refs/remotes/origin/patch-058)" = "$EXPECTED_SOURCE_SHA"
+
+      - name: Download exact security evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: patch058-security-evidence-${{ inputs.expected_source_sha }}
+          path: evidence
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.security_run_id }}
+
+      - name: Download exact deterministic qualification evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: patch058-quality-evidence-${{ inputs.expected_source_sha }}
+          path: evidence
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.quality_run_id }}
+
+      - name: Download exact retained protected-signing evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: patch058-signed-evidence-${{ inputs.expected_source_sha }}
+          path: evidence
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.signing_run_id }}
+
+      - name: Load protected dossier validator
+        env:
+          HARNESS_SHA: ${{ github.sha }}
+        run: |
+          git fetch --no-tags origin "$HARNESS_SHA"
+          git show "$HARNESS_SHA:.github/scripts/patch058-release-dossier.py" > /tmp/patch058-release-dossier.py
+          python3 -m py_compile /tmp/patch058-release-dossier.py
+
+      - name: Reconcile exact signed evidence and record explicit Human release approval
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          EXPECTED_SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
+          EXPECTED_RELEASE_ID: ${{ inputs.release_id }}
+          APPROVAL_AUTHORITY: ${{ inputs.approval_authority }}
+          APPROVAL_EVIDENCE_REFERENCE: ${{ inputs.approval_evidence_reference }}
+          SIGNING_RUN_ID: ${{ inputs.signing_run_id }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+
+          root = pathlib.Path("evidence")
+          pending_path = root / "release-dossier.pending.v1.json"
+          signing_path = root / "human-signing-authorization.json"
+          pending = json.loads(pending_path.read_text())
+          signing = json.loads(signing_path.read_text())
+
+          assert pending["release_id"] == os.environ["EXPECTED_RELEASE_ID"]
+          assert pending["source_commit"] == os.environ["EXPECTED_SOURCE_SHA"]
+          assert signing["release_id"] == os.environ["EXPECTED_RELEASE_ID"]
+          assert signing["source_commit"] == os.environ["EXPECTED_SOURCE_SHA"]
+          assert signing["security_decision_commit"] == os.environ["EXPECTED_SECURITY_DECISION_COMMIT"]
+          assert signing["decision"] == "approved"
+          assert pending["human_signing_authorization"]["status"] == "approved"
+          assert pending["human_release_approval"]["status"] == "pending"
+
+          artifact_digests = {
+              name: item["digest"] for name, item in pending["artifacts"].items()
+          }
+          assert signing["artifact_digests"] == artifact_digests
+
+          approval = {
+              "decision": "approved",
+              "release_id": pending["release_id"],
+              "source_commit": pending["source_commit"],
+              "artifact_digests": artifact_digests,
+              "security_decision_commit": os.environ["EXPECTED_SECURITY_DECISION_COMMIT"],
+              "decided_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+              "authority": os.environ["APPROVAL_AUTHORITY"],
+              "evidence_reference": os.environ["APPROVAL_EVIDENCE_REFERENCE"],
+          }
+          approval_path = root / "human-release-approval.json"
+          approval_path.write_text(json.dumps(approval, indent=2, sort_keys=True) + "\n")
+
+          def digest(path):
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          final = dict(pending)
+          final["human_release_approval"] = {
+              "status": "approved",
+              "reference": str(approval_path),
+              "digest": {"sha256": digest(approval_path)},
+          }
+          final_path = root / "release-dossier.final.v1.json"
+          final_path.write_text(json.dumps(final, indent=2, sort_keys=True) + "\n")
+          print("release-id:", final["release_id"])
+          print("source-commit:", final["source_commit"])
+          print("final-dossier-sha256:", digest(final_path))
+          PY
+
+      - name: Verify final approved dossier
+        run: |
+          python3 /tmp/patch058-release-dossier.py verify \
+            --dossier evidence/release-dossier.final.v1.json
+
+      - name: Retain final release approval and verified dossier
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: patch058-final-release-dossier-${{ inputs.expected_source_sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            evidence/human-release-approval.json
+            evidence/human-signing-authorization.json
+            evidence/release-dossier.pending.v1.json
+            evidence/release-dossier.final.v1.json
