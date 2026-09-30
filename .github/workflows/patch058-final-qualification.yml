@@ -50,7 +50,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: patch058-quality-evidence-${{ inputs.expected_source_sha }}
-          path: evidence/quality
+          path: evidence
           run-id: ${{ inputs.quality_run_id }}
           github-token: ${{ github.token }}
 
@@ -58,7 +58,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: patch058-security-evidence-${{ inputs.expected_source_sha }}
-          path: evidence/security
+          path: evidence
           run-id: ${{ inputs.security_run_id }}
           github-token: ${{ github.token }}
 
@@ -66,7 +66,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: patch058-signed-evidence-${{ inputs.expected_source_sha }}
-          path: evidence/signing
+          path: evidence
           run-id: ${{ inputs.signing_run_id }}
           github-token: ${{ github.token }}
 
@@ -74,7 +74,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: patch058-final-release-dossier-${{ inputs.expected_source_sha }}
-          path: evidence/final
+          path: evidence
           run-id: ${{ inputs.finalization_run_id }}
           github-token: ${{ github.token }}
 
@@ -94,20 +94,20 @@ jobs:
           expected=os.environ["EXPECTED_SOURCE"]
           qrun=str(os.environ["QUALITY_RUN_ID"])
           for gate in ("backend","frontend","migration"):
-              p=root/"quality"/f"{gate}-qualification.json"
+              p=root/f"{gate}-qualification.json"
               d=json.loads(p.read_text())
               assert d["result"]=="PASS"
               assert d["source_commit"]==expected
               assert str(d["run_id"])==qrun
               assert d["gate"]==gate
-          final=json.loads((root/"final"/"release-dossier.final.v1.json").read_text())
+          final=json.loads((root/"release-dossier.final.v1.json").read_text())
           assert final["source_commit"]==expected
           assert final["release_id"]==os.environ["RELEASE_ID"]
           assert final["human_release_approval"]["status"]=="approved"
           assert final["human_signing_authorization"]["status"]=="approved"
           PY
           now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          python3 /tmp/patch058-release-dossier.py verify --dossier evidence/final/release-dossier.final.v1.json --now "$now"
+          python3 /tmp/patch058-release-dossier.py verify --dossier evidence/release-dossier.final.v1.json --now "$now"
 
       - name: Verify Section 45 evidence coverage
         env:
@@ -119,17 +119,17 @@ jobs:
           FINALIZATION_RUN_ID: ${{ inputs.finalization_run_id }}
         run: |
           set -euo pipefail
-          test -s evidence/security/vulnerability-gate.json
-          test -s evidence/security/provenance.json
-          test -s evidence/security/backend-sbom.cdx.json
-          test -s evidence/security/frontend-sbom.cdx.json
-          test -s evidence/security/security-decision.json
-          test -s evidence/signing/release-dossier.pending.v1.json
-          test -s evidence/final/human-release-approval.json
+          test -s evidence/vulnerability-gate.json
+          test -s evidence/provenance.json
+          test -s evidence/backend-sbom.cdx.json
+          test -s evidence/frontend-sbom.cdx.json
+          test -s evidence/security-decision.json
+          test -s evidence/release-dossier.pending.v1.json
+          test -s evidence/human-release-approval.json
           python3 - <<'PY'
           import json, os, pathlib
           root=pathlib.Path("evidence")
-          vg=json.loads((root/"security"/"vulnerability-gate.json").read_text())
+          vg=json.loads((root/"vulnerability-gate.json").read_text())
           assert vg.get("result")=="PASS"
           coverage={
             "schema_version":1,
