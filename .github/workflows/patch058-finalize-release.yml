@@ -144,7 +144,7 @@ jobs:
           final["human_release_approval"] = {
               "status": "approved",
               "reference": str(approval_path),
-              "digest": {"sha256": digest(approval_path)},
+              "digest": digest(approval_path),
           }
           final_path = root / "release-dossier.final.v1.json"
           final_path.write_text(json.dumps(final, indent=2, sort_keys=True) + "\n")
