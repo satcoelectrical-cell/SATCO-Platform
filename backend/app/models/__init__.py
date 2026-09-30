@@ -91,5 +91,6 @@ from .auth_security import (
 from .commercial_entitlement import (
     CommercialEntitlementActivation,
     CommercialEntitlementState,
+    CommercialPackageConfigurationProof,
     CommercialSeatAssignment,
 )

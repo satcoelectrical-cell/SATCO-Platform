@@ -8,6 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal, get_db
+from app.core.config import settings
+from app.adapters.runtime_entitlement import runtime_entitlement_adapter
 from app.dependencies.auth import AuthenticatedOrganizationContext, get_current_user_organization_context
 from app.schemas.discipline_package_operations import (
     PackageObjectCreateRequest,
@@ -57,13 +59,44 @@ CorrelationId = Annotated[UUID, Header(alias="X-Correlation-ID")]
 IdempotencyKey = Annotated[UUID, Header(alias="Idempotency-Key")]
 
 
-def _service(declaration_id: str) -> ElectricalPackageService:
+
+
+
+def _entitlement_port_for_user(user_id: int):
+    return runtime_entitlement_adapter(
+        configured_settings=settings,
+        session_factory=SessionLocal,
+        user_id=user_id,
+    )
+
+
+def _package_key_from_declaration(declaration_id: str) -> str:
     if declaration_id.startswith("electrical."):
-        return ElectricalPackageService(SessionLocal)
+        return "electrical"
     if declaration_id.startswith("instrumentation."):
-        return InstrumentationPackageService(SessionLocal)
+        return "instrumentation"
     if declaration_id.startswith("control_automation."):
-        return ControlAutomationPackageService(SessionLocal)
+        return "control_automation"
+    raise PackageDeclarationMismatch()
+
+
+def _service(declaration_id: str, *, context) -> ElectricalPackageService:
+    entitlement_port = _entitlement_port_for_user(context.user.id)
+    if declaration_id.startswith("electrical."):
+        return ElectricalPackageService(
+            SessionLocal,
+            entitlement_port=entitlement_port,
+        )
+    if declaration_id.startswith("instrumentation."):
+        return InstrumentationPackageService(
+            SessionLocal,
+            entitlement_port=entitlement_port,
+        )
+    if declaration_id.startswith("control_automation."):
+        return ControlAutomationPackageService(
+            SessionLocal,
+            entitlement_port=entitlement_port,
+        )
     raise PackageDeclarationMismatch()
 
 
@@ -82,7 +115,11 @@ def _workspace_binding_service(*, project_id, workspace_id, context):
         raise PackageProtectedNotFound() from exc
     if package_key not in {"electrical", "instrumentation", "control_automation"}:
         raise PackageUnavailable()
-    return PackageDeclarationBindingService(SessionLocal, package_key=package_key)
+    return PackageDeclarationBindingService(
+        SessionLocal,
+        package_key=package_key,
+        entitlement_port=_entitlement_port_for_user(context.user.id),
+    )
 
 
 def _translate(call):
@@ -110,7 +147,7 @@ def create_package_object(
     idempotency_key: IdempotencyKey,
     context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
 ):
-    obj, identifier = _translate(lambda: _service(data.declaration_id).create_object(
+    obj, identifier = _translate(lambda: _service(data.declaration_id, context=context).create_object(
         actor_id=context.user.id, organization_id=context.organization_id,
         auth_version=context.user.auth_version,
         project_id=project_id, workspace_id=workspace_id, data=data,
@@ -132,7 +169,7 @@ def create_package_relationship(
     idempotency_key: IdempotencyKey,
     context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
 ):
-    return _translate(lambda: _service(data.declaration_id).create_relationship(
+    return _translate(lambda: _service(data.declaration_id, context=context).create_relationship(
         actor_id=context.user.id, organization_id=context.organization_id,
         auth_version=context.user.auth_version,
         project_id=project_id, workspace_id=workspace_id, data=data,
@@ -153,7 +190,7 @@ def create_package_capture(
     idempotency_key: IdempotencyKey,
     context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
 ):
-    return _translate(lambda: _service(data.declaration_id).create_capture(
+    return _translate(lambda: _service(data.declaration_id, context=context).create_capture(
         actor_id=context.user.id, organization_id=context.organization_id,
         auth_version=context.user.auth_version,
         project_id=project_id, workspace_id=workspace_id, data=data,
@@ -207,7 +244,7 @@ def evaluate_package_rule(
     correlation_id: CorrelationId,
     context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
 ):
-    return _translate(lambda: _service(data.hook_id).evaluate_rule(
+    return _translate(lambda: _service(data.hook_id, context=context).evaluate_rule(
         actor_id=context.user.id, organization_id=context.organization_id,
         auth_version=context.user.auth_version,
         project_id=project_id, workspace_id=workspace_id, data=data,

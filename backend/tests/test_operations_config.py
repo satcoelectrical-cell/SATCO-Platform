@@ -26,6 +26,8 @@ def production_settings(manifest_path: str, **overrides) -> Settings:
     parent.joinpath("throttle-key").write_text("h" * 40, encoding="utf-8")
     values = {
         "SATCO_ENVIRONMENT": "production",
+        "SATCO_DEPLOYMENT_ID": "test-production-deployment",
+        "SATCO_COMMERCIAL_ENTITLEMENT_ENABLED": True,
         "SECRET_KEY": "a" * 40,
         "REFRESH_VERIFIER_KEY": "r" * 40,
         "TOTP_ENCRYPTION_KEY_FILE": totp_key,

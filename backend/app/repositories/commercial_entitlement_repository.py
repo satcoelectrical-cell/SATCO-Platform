@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.models.commercial_entitlement import (
     CommercialEntitlementActivation,
     CommercialEntitlementState,
+    CommercialPackageConfigurationProof,
     CommercialSeatAssignment,
 )
 from app.models.organization import UserOrganizationMembership
@@ -140,6 +141,19 @@ class CommercialEntitlementRepository:
         self.session.add(activation)
         self.session.flush()
         return activation
+
+    def get_configuration_proof(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        deployment_id: str,
+        package_key: str,
+    ) -> CommercialPackageConfigurationProof | None:
+        """Return the durable proof for the current Organization-package enablement epoch."""
+        return self.session.get(
+            CommercialPackageConfigurationProof,
+            (organization_id, deployment_id, package_key),
+        )
 
     def get_seat(
         self,

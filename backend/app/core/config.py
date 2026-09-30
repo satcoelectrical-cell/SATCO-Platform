@@ -79,6 +79,8 @@ class Settings(BaseSettings):
         return ",".join(values)
 
     SATCO_ENVIRONMENT: str = "development"
+    SATCO_DEPLOYMENT_ID: str = ""
+    SATCO_COMMERCIAL_ENTITLEMENT_ENABLED: bool = False
     SATCO_RELEASE_MANIFEST_PATH: str = ""
     SATCO_PUBLIC_URL: str = ""
     SATCO_TRUSTED_HOSTS: str = ""
@@ -187,6 +189,10 @@ class Settings(BaseSettings):
         if self.SATCO_ENVIRONMENT != "production":
             return []
         errors: list[str] = []
+        if not self.SATCO_DEPLOYMENT_ID.strip():
+            errors.append("deployment_id")
+        if not self.SATCO_COMMERCIAL_ENTITLEMENT_ENABLED:
+            errors.append("commercial_entitlement")
         secret_key = self.resolved_secret_key()
         if len(secret_key) < 32 or secret_key == "CHANGE_THIS_SECRET_KEY":
             errors.append("signing_secret")

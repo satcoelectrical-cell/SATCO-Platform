@@ -71,7 +71,10 @@ def test_production_readiness_requires_database_and_non_content_health(tmp_path,
         },
     )
     settings = Settings(
-        SATCO_ENVIRONMENT="production", SECRET_KEY="a" * 40,
+        SATCO_ENVIRONMENT="production",
+        SATCO_DEPLOYMENT_ID="test-production-deployment",
+        SATCO_COMMERCIAL_ENTITLEMENT_ENABLED=True,
+        SECRET_KEY="a" * 40,
         SATCO_RELEASE_MANIFEST_PATH=str(manifest), SATCO_PUBLIC_URL="https://satco.example",
         SATCO_TRUSTED_HOSTS="satco.example", SATCO_ALLOWED_ORIGINS="https://satco.example",
         SATCO_EXPECTED_ALEMBIC_HEAD="e04600000001", SATCO_PERSISTENCE_GUARD_VERSION="v1",

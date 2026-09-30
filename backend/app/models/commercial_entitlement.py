@@ -72,3 +72,34 @@ class CommercialSeatAssignment(Base):
     assigned_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     updated_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class CommercialPackageConfigurationProof(Base):
+    """Durable current enablement-epoch proof used only for GRACE execution continuity."""
+
+    __tablename__ = "commercial_package_configuration_proofs"
+    __table_args__ = (
+        CheckConstraint(
+            "configured_before <= recorded_at",
+            name="ck_commercial_package_configuration_proof_time_order",
+        ),
+        Index(
+            "ix_commercial_package_configuration_proof_org_deployment",
+            "organization_id",
+            "deployment_id",
+        ),
+    )
+
+    organization_id = Column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    deployment_id = Column(String(200), primary_key=True)
+    package_key = Column(String(64), primary_key=True)
+    configured_before = Column(DateTime(timezone=True), nullable=False)
+    recorded_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )

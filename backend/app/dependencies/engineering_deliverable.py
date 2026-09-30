@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.adapters.engineering_deliverable import SqlAlchemyDeliverableAuthorization, SupportingFileApplicationAdapter
 from app.core.database import SessionLocal, get_db
+from app.core.config import settings
+from app.adapters.runtime_entitlement import runtime_entitlement_adapter
 from app.dependencies.auth import AuthenticatedOrganizationContext, get_current_user_organization_context
 from app.dependencies.supporting_file import get_supporting_file_application
 from app.repositories.engineering_deliverable_unit_of_work import SqlAlchemyEngineeringDeliverableUnitOfWork
@@ -21,4 +23,9 @@ class EngineeringDeliverableApplication:
 
 def get_engineering_deliverable_application(db: Session=Depends(get_db), context: AuthenticatedOrganizationContext=Depends(get_current_user_organization_context), supporting_file_application=Depends(get_supporting_file_application)):
     actor=DeliverableActor(actor_id=context.user.id,organization_id=context.organization_id,auth_version=getattr(context.user,"auth_version",1))
-    return EngineeringDeliverableApplication(service=EngineeringDeliverableService(uow_factory=lambda:SqlAlchemyEngineeringDeliverableUnitOfWork(db),authorization=SqlAlchemyDeliverableAuthorization(db),supporting_files=SupportingFileApplicationAdapter(supporting_file_application),package_uow_factory=lambda:Patch052OperationUnitOfWork(SessionLocal)),actor=actor)
+    entitlement_port = runtime_entitlement_adapter(
+        configured_settings=settings,
+        session_factory=SessionLocal,
+        user_id=context.user.id,
+    )
+    return EngineeringDeliverableApplication(service=EngineeringDeliverableService(uow_factory=lambda:SqlAlchemyEngineeringDeliverableUnitOfWork(db),authorization=SqlAlchemyDeliverableAuthorization(db),supporting_files=SupportingFileApplicationAdapter(supporting_file_application),package_uow_factory=lambda:Patch052OperationUnitOfWork(SessionLocal),entitlement_port=entitlement_port),actor=actor)

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from app.core.config import settings
+from app.enums.discipline_package import EntitlementDecision, EntitlementOperation
+from app.ports.discipline_package import EntitlementRequest
+
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -69,12 +73,42 @@ def _digest(value) -> str:
 class PackageDeclarationBindingService:
     """Shared owner-side binding service; package facts remain descriptor-owned."""
 
-    def __init__(self, session_factory, *, package_key: str):
+    def __init__(
+        self,
+        session_factory,
+        *,
+        package_key: str,
+        entitlement_port=None,
+    ):
         if package_key not in {"electrical", "instrumentation", "control_automation"}:
             raise ValueError("unsupported operational package")
         self._session_factory = session_factory
         self.package_key = package_key
-        self.descriptor = next(d for d in DESCRIPTORS_V1 if d.package_key == package_key)
+        self._entitlement_port = entitlement_port
+        self.descriptor = next(
+            d for d in DESCRIPTORS_V1 if d.package_key == package_key
+        )
+
+    def _require_execute_entitlement(self, *, organization_id) -> None:
+        if self._entitlement_port is None:
+            return
+        decision = self._entitlement_port.evaluate(
+            EntitlementRequest(
+                trusted_organization_id=organization_id,
+                trusted_deployment_id=settings.SATCO_DEPLOYMENT_ID,
+                package_key=self.package_key,
+                entitlement_key=self.package_key,
+                operation=EntitlementOperation.EXECUTE,
+            )
+        )
+        if decision in {
+            EntitlementDecision.PERMITTED,
+            EntitlementDecision.NOT_REQUIRED,
+        }:
+            return
+        if decision is EntitlementDecision.UNAVAILABLE:
+            raise PackageUnavailable()
+        raise PackageProtectedNotFound()
 
     def _locked_context(self, uow, **scope):
         try:
@@ -224,6 +258,9 @@ class PackageDeclarationBindingService:
                 uow, actor_id=actor_id, organization_id=organization_id,
                 auth_version=auth_version, project_id=project_id, workspace_id=workspace_id,
             )
+            self._require_execute_entitlement(
+                organization_id=organization_id,
+            )
             if data.expected_configuration_revision != locked.selection.configuration_revision:
                 raise PackageConflict()
             operation = f"{self.package_key}_ctx_binding"
@@ -352,6 +389,9 @@ class PackageDeclarationBindingService:
             locked = self._locked_context(
                 uow, actor_id=actor_id, organization_id=organization_id,
                 auth_version=auth_version, project_id=project_id, workspace_id=workspace_id,
+            )
+            self._require_execute_entitlement(
+                organization_id=organization_id,
             )
             if data.expected_configuration_revision != locked.selection.configuration_revision:
                 raise PackageConflict()
@@ -765,6 +805,9 @@ class PackageDeclarationBindingService:
             locked = self._locked_context(
                 uow, actor_id=actor_id, organization_id=organization_id,
                 auth_version=auth_version, project_id=project_id, workspace_id=workspace_id,
+            )
+            self._require_execute_entitlement(
+                organization_id=organization_id,
             )
             if data.expected_configuration_revision != locked.selection.configuration_revision:
                 raise PackageConflict()
