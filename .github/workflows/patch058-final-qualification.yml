@@ -78,8 +78,13 @@ jobs:
           run-id: ${{ inputs.finalization_run_id }}
           github-token: ${{ github.token }}
 
-      - name: Load candidate validator
-        run: git show "${{ inputs.expected_source_sha }}:ops/scripts/patch058-release-dossier.py" > /tmp/patch058-release-dossier.py
+      - name: Load exact successful finalization validator
+        env:
+          FINALIZATION_HARNESS_SHA: b2d9e35db6155893451f7fb0c0f5f247bad22e36
+        run: |
+          git fetch --no-tags origin "$FINALIZATION_HARNESS_SHA"
+          git show "$FINALIZATION_HARNESS_SHA:.github/scripts/patch058-release-dossier.py" > /tmp/patch058-release-dossier.py
+          python3 -m py_compile /tmp/patch058-release-dossier.py
 
       - name: Verify exact-source qualification and final dossier
         env:
