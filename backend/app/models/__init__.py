@@ -87,3 +87,9 @@ from .auth_security import (
     OrganizationMfaPolicy,
     UserTotpAuthenticator,
 )
+
+from .commercial_entitlement import (
+    CommercialEntitlementActivation,
+    CommercialEntitlementState,
+    CommercialSeatAssignment,
+)
