@@ -155,8 +155,10 @@ jobs:
 
       - name: Verify final approved dossier
         run: |
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           python3 /tmp/patch058-release-dossier.py verify \
-            --dossier evidence/release-dossier.final.v1.json
+            --dossier evidence/release-dossier.final.v1.json \
+            --now "$now"
 
       - name: Retain final release approval and verified dossier
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
