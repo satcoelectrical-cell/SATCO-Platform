@@ -15,6 +15,7 @@ from app.models.commercial_entitlement import (
     CommercialSeatAssignment,
 )
 from app.models.organization import UserOrganizationMembership
+from app.models.user import User
 
 
 # Domain-separated, versioned namespace. This string is part of the
@@ -219,6 +220,29 @@ class CommercialEntitlementRepository:
         if lock:
             statement = statement.with_for_update()
         return self.session.scalar(statement)
+
+    def list_membership_users(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        user_ids: tuple[int, ...],
+    ) -> tuple[User, ...]:
+        if not user_ids:
+            return ()
+
+        statement = (
+            select(User)
+            .join(
+                UserOrganizationMembership,
+                UserOrganizationMembership.user_id == User.id,
+            )
+            .where(
+                UserOrganizationMembership.organization_id == organization_id,
+                User.id.in_(user_ids),
+            )
+            .order_by(User.id)
+        )
+        return tuple(self.session.scalars(statement))
 
     def add_seat(
         self,

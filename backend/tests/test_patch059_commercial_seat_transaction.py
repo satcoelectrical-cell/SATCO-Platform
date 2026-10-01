@@ -23,6 +23,7 @@ from app.services.commercial_seat_service import (
     CommercialSeatState,
     assign_seat,
     evaluate_seat,
+    list_seat_evaluations,
     release_seat,
     retain_seats,
     over_capacity_status,
@@ -287,6 +288,44 @@ def test_disabled_membership_is_reserved_effective_and_reenable_is_not_automatic
             assert evaluation.executable is True
             assert evaluation.stored_state is CommercialSeatState.ASSIGNED
             uow.rollback()
+    finally:
+        _cleanup(factory)
+        engine.dispose()
+
+
+def test_batch_seat_list_uses_the_same_effective_state_rules():
+    engine, factory = _engine_and_factory()
+    _cleanup(factory)
+
+    try:
+        user_a, user_b = _seed(factory, capacity=2)
+        assert _assign(factory, user_a)[0] == "accepted"
+        assert _assign(factory, user_b)[0] == "accepted"
+
+        with factory() as session:
+            membership = session.get(
+                UserOrganizationMembership,
+                (user_b, ORG_ID),
+            )
+            membership.is_enabled = False
+            session.commit()
+
+        with CommercialEntitlementUnitOfWork(factory) as uow:
+            result = list_seat_evaluations(
+                uow,
+                organization_id=ORG_ID,
+                deployment_id=DEPLOYMENT_ID,
+            )
+
+        assert result.capacity == 2
+        assert result.consuming_count == 2
+        assert result.over_capacity is False
+        assert [seat.user_id for seat in result.seats] == [user_a, user_b]
+        assert result.seats[0].effective_state is CommercialSeatState.ASSIGNED
+        assert result.seats[0].executable is True
+        assert result.seats[1].effective_state is CommercialSeatState.RESERVED
+        assert result.seats[1].executable is False
+        assert result.seats[1].reason_code == CommercialSeatReason.SEAT_RESERVED.value
     finally:
         _cleanup(factory)
         engine.dispose()

@@ -8,7 +8,10 @@ from enum import StrEnum
 from typing import Iterable
 from uuid import UUID
 
-from app.commercial_entitlements.state import CommercialEntitlementState as EffectiveEntitlementState
+from app.commercial_entitlements.state import (
+    CommercialEntitlementState as EffectiveEntitlementState,
+    effective_entitlement_state,
+)
 from app.models.commercial_entitlement import CommercialSeatAssignment
 from app.repositories.commercial_entitlement_unit_of_work import (
     CommercialEntitlementUnitOfWork,
@@ -66,22 +69,21 @@ class OverCapacityStatus:
     unresolved: bool
 
 
+@dataclass(frozen=True)
+class SeatListEvaluation:
+    capacity: int
+    consuming_count: int
+    over_capacity: bool
+    seats: tuple[SeatEvaluation, ...]
+
+
 def _utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("server time must be timezone-aware")
     return value.astimezone(timezone.utc)
 
 
-def _effective_entitlement_state(state, now: datetime) -> EffectiveEntitlementState:
-    if state.time_untrusted_at is not None:
-        return EffectiveEntitlementState.TIME_UNTRUSTED
-    if now < state.not_before:
-        return EffectiveEntitlementState.INVALID_OR_UNAVAILABLE
-    if now <= state.valid_until:
-        return EffectiveEntitlementState.ACTIVE
-    if now <= state.grace_until:
-        return EffectiveEntitlementState.GRACE
-    return EffectiveEntitlementState.EXPIRED
+_effective_entitlement_state = effective_entitlement_state
 
 
 def _locked_state(
@@ -151,7 +153,7 @@ def assign_seat(
         deployment_id=deployment_id,
     )
 
-    if _effective_entitlement_state(state, now) is not EffectiveEntitlementState.ACTIVE:
+    if effective_entitlement_state(state, now) is not EffectiveEntitlementState.ACTIVE:
         raise CommercialSeatError(CommercialSeatReason.ENTITLEMENT_NOT_ACTIVE)
 
     membership = repository.get_membership(
@@ -282,7 +284,6 @@ def evaluate_seat(
             reason_code=CommercialSeatReason.SEAT_REQUIRED.value,
         )
 
-    stored = CommercialSeatState(seat.state)
     membership = repository.get_membership(
         organization_id=organization_id,
         user_id=user_id,
@@ -292,12 +293,29 @@ def evaluate_seat(
         organization_id=organization_id,
         deployment_id=deployment_id,
     )
-    count = len(seats)
+    return _evaluate_seat(
+        seat=seat,
+        membership=membership,
+        consuming_count=len(seats),
+        capacity=state.seat_capacity,
+    )
 
-    if count > state.seat_capacity:
+
+def _evaluate_seat(
+    *,
+    seat: CommercialSeatAssignment,
+    membership,
+    consuming_count: int,
+    capacity: int,
+) -> SeatEvaluation:
+    """Evaluate one loaded seat without creating a second rule path."""
+
+    stored = CommercialSeatState(seat.state)
+
+    if consuming_count > capacity:
         if stored is not CommercialSeatState.RETAINED:
             return SeatEvaluation(
-                user_id=user_id,
+                user_id=seat.user_id,
                 stored_state=stored,
                 effective_state=stored,
                 executable=False,
@@ -306,7 +324,7 @@ def evaluate_seat(
 
     if membership is None or not membership.is_enabled:
         return SeatEvaluation(
-            user_id=user_id,
+            user_id=seat.user_id,
             stored_state=stored,
             effective_state=CommercialSeatState.RESERVED,
             executable=False,
@@ -315,7 +333,7 @@ def evaluate_seat(
 
     if stored is CommercialSeatState.RESERVED:
         return SeatEvaluation(
-            user_id=user_id,
+            user_id=seat.user_id,
             stored_state=stored,
             effective_state=CommercialSeatState.RESERVED,
             executable=False,
@@ -323,11 +341,50 @@ def evaluate_seat(
         )
 
     return SeatEvaluation(
-        user_id=user_id,
+        user_id=seat.user_id,
         stored_state=stored,
         effective_state=stored,
         executable=True,
         reason_code=None,
+    )
+
+
+def list_seat_evaluations(
+    uow: CommercialEntitlementUnitOfWork,
+    *,
+    organization_id: UUID,
+    deployment_id: str,
+) -> SeatListEvaluation:
+    """Return one transactionally consistent, canonically evaluated seat list."""
+
+    repository, state = _locked_state(
+        uow,
+        organization_id=organization_id,
+        deployment_id=deployment_id,
+    )
+    seats = repository.list_seats(
+        organization_id=organization_id,
+        deployment_id=deployment_id,
+    )
+    count = len(seats)
+    evaluations = tuple(
+        _evaluate_seat(
+            seat=seat,
+            membership=repository.get_membership(
+                organization_id=organization_id,
+                user_id=seat.user_id,
+            ),
+            consuming_count=count,
+            capacity=state.seat_capacity,
+        )
+        for seat in seats
+    )
+
+    return SeatListEvaluation(
+        capacity=state.seat_capacity,
+        consuming_count=count,
+        over_capacity=count > state.seat_capacity,
+        seats=evaluations,
     )
 
 

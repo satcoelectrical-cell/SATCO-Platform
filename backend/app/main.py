@@ -52,6 +52,7 @@ from app.api.v1.routers.discipline_package_operations import router as disciplin
 from app.api.v1.routers.standards import router as standards_router
 from app.api.v1.routers.retention import router as retention_router
 from app.api.v1.routers.engineering_performance import router as engineering_performance_router
+from app.api.v1.routers.commercial_entitlements import router as commercial_entitlement_router
 from app.discipline_packages.descriptors.releases.release_051_core_v1 import RELEASE_051_CORE_V1
 from app.discipline_packages.registry import assemble_registry
 from app.core.operations import (
@@ -144,6 +145,7 @@ app.include_router(project_context_router)
 app.include_router(project_completeness_router)
 app.include_router(cross_discipline_router)
 app.include_router(discipline_package_router)
+app.include_router(commercial_entitlement_router)
 
 
 app.include_router(discipline_package_operation_router)

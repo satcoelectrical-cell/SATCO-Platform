@@ -81,6 +81,7 @@ class Settings(BaseSettings):
     SATCO_ENVIRONMENT: str = "development"
     SATCO_DEPLOYMENT_ID: str = ""
     SATCO_COMMERCIAL_ENTITLEMENT_ENABLED: bool = False
+    SATCO_COMMERCIAL_ENTITLEMENT_TRUST_STORE_FILE: str = ""
     SATCO_RELEASE_MANIFEST_PATH: str = ""
     SATCO_PUBLIC_URL: str = ""
     SATCO_TRUSTED_HOSTS: str = ""
@@ -193,6 +194,8 @@ class Settings(BaseSettings):
             errors.append("deployment_id")
         if not self.SATCO_COMMERCIAL_ENTITLEMENT_ENABLED:
             errors.append("commercial_entitlement")
+        if not self.SATCO_COMMERCIAL_ENTITLEMENT_TRUST_STORE_FILE.strip():
+            errors.append("commercial_trust_store")
         secret_key = self.resolved_secret_key()
         if len(secret_key) < 32 or secret_key == "CHANGE_THIS_SECRET_KEY":
             errors.append("signing_secret")

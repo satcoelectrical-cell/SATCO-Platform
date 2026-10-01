@@ -528,3 +528,146 @@ def _verification_reason(exc: ValueError) -> str:
         return "untrusted_key"
 
     return "invalid_signature"
+
+
+@dataclass(frozen=True)
+class ValidationPreview:
+    valid: bool
+    effect: str
+    entitlement_id: UUID | None = None
+    revision: int | None = None
+    canonical_payload_digest: str | None = None
+    reason_code: str | None = None
+
+
+def preview_entitlement(
+    *,
+    envelope: EntitlementEnvelope,
+    trust_store: TrustStore,
+    current_state: CommercialEntitlementStateModel | None,
+    expected_organization_id: UUID,
+    expected_deployment_id: str,
+    observed_now: datetime,
+) -> ValidationPreview:
+    """Validate an entitlement candidate without mutating commercial state."""
+
+    now = _utc(observed_now, "observed_now")
+
+    try:
+        verify_envelope(envelope, trust_store, now=now)
+    except ValueError as exc:
+        return ValidationPreview(
+            valid=False,
+            effect="rejected",
+            reason_code=_verification_reason(exc),
+        )
+
+    payload = envelope.payload
+    digest = canonical_payload_digest(payload)
+
+    common = {
+        "entitlement_id": payload.entitlement_id,
+        "revision": payload.revision,
+        "canonical_payload_digest": digest,
+    }
+
+    if payload.organization_id != expected_organization_id:
+        return ValidationPreview(
+            valid=False,
+            effect="rejected",
+            reason_code="organization_mismatch",
+            **common,
+        )
+
+    if payload.deployment_id != expected_deployment_id:
+        return ValidationPreview(
+            valid=False,
+            effect="rejected",
+            reason_code="deployment_mismatch",
+            **common,
+        )
+
+    if now < payload.not_before:
+        return ValidationPreview(
+            valid=False,
+            effect="rejected",
+            reason_code="not_yet_valid",
+            **common,
+        )
+
+    revision = evaluate_revision(
+        current_revision=(
+            None if current_state is None else current_state.accepted_revision
+        ),
+        current_entitlement_id=(
+            None if current_state is None else current_state.entitlement_id
+        ),
+        current_digest=(
+            None
+            if current_state is None
+            else current_state.canonical_payload_digest
+        ),
+        incoming_revision=payload.revision,
+        incoming_entitlement_id=payload.entitlement_id,
+        incoming_digest=digest,
+    )
+
+    if revision.decision is RevisionDecision.ROLLBACK_DETECTED:
+        return ValidationPreview(
+            valid=False,
+            effect="rejected",
+            reason_code="rollback_detected",
+            **common,
+        )
+
+    if revision.decision is RevisionDecision.SAME_REVISION_CONFLICT:
+        return ValidationPreview(
+            valid=False,
+            effect="rejected",
+            reason_code="same_revision_conflict",
+            **common,
+        )
+
+    trusted_time = evaluate_trusted_time(
+        observed_now=now,
+        last_trusted_time=(
+            None if current_state is None else current_state.last_trusted_time
+        ),
+        time_untrusted_at=(
+            None if current_state is None else current_state.time_untrusted_at
+        ),
+    )
+    if trusted_time.decision is TrustedTimeDecision.TIME_UNTRUSTED:
+        return ValidationPreview(
+            valid=False,
+            effect="rejected",
+            reason_code="time_untrusted",
+            **common,
+        )
+
+    temporal_state = entitlement_temporal_state(
+        payload,
+        trusted_now=trusted_time.effective_time,
+    )
+
+    if temporal_state == "expired":
+        return ValidationPreview(
+            valid=False,
+            effect="rejected",
+            reason_code="expired",
+            **common,
+        )
+
+    if revision.decision is RevisionDecision.INITIAL:
+        effect = "initial"
+    elif revision.decision is RevisionDecision.SUCCESSOR:
+        effect = "successor"
+    else:
+        effect = "idempotent"
+
+    return ValidationPreview(
+        valid=True,
+        effect=effect,
+        reason_code="grace" if temporal_state == "grace" else None,
+        **common,
+    )
