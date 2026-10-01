@@ -1,5 +1,6 @@
-import type { AdviceResponse, ApiResult, Capture, ChangeImpactMutation, ContextNode, ContextNodeKind, Customer, DeliverableMutation, DeliverableRegister, EngineeringGuidanceRequest, EngineeringGuidanceResult, EvidenceCandidatePage, EvidenceRecord, ExecutionActivityStanding, ExecutionMutation, ExecutionPlan, IssuedCredential, JournalWorkspace, MemberList, MemoryAdmissionResult, MemoryDetailResult, MemoryPage, OneHopSuccess, Paginated, Project, ProjectContextSectionKind, ProjectContextSuccess, ProjectControl, ProjectControlHistory, ProjectControlKind, ProjectControlList, ProjectControlMutation, ProjectFoundation, ProjectFoundationInput, ProjectFoundationSourcePage, ProjectStage, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, SupportingFile, SupportingFilePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, UserProfile, Workspace } from "./types";
+import type { AdviceResponse, ApiResult, Capture, ChangeImpactMutation, CommercialApiResult, ContextNode, ContextNodeKind, Customer, DeliverableMutation, DeliverableRegister, EngineeringGuidanceRequest, EngineeringGuidanceResult, EvidenceCandidatePage, EvidenceRecord, ExecutionActivityStanding, ExecutionMutation, ExecutionPlan, IssuedCredential, JournalWorkspace, MemberList, MemoryAdmissionResult, MemoryDetailResult, MemoryPage, OneHopSuccess, Paginated, Project, ProjectContextSectionKind, ProjectContextSuccess, ProjectControl, ProjectControlHistory, ProjectControlKind, ProjectControlList, ProjectControlMutation, ProjectFoundation, ProjectFoundationInput, ProjectFoundationSourcePage, ProjectStage, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, SupportingFile, SupportingFilePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, UserProfile, Workspace } from "./types";
 import type { EffectiveDisciplinePackages, OrganizationPackageConfiguration, PackageObjectCreateResult, PackageRuleResult, ProjectPackageConfiguration, SupportedPackages, WorkspacePackageApplicability, StandardApplicability, StandardAssertion, StandardCandidate, StandardIdentityView, StandardRightsView, StandardSourceSnapshot, StandardsIntelligenceRun, StandardsPage, StandardsRightsPage, TechnicalReportStandardCandidate, TechnicalReportStandardsBasisRevision } from "./types";
+import type { CommercialEntitlementStatus, CommercialEntitlementValidation, CommercialSeatList, CommercialSeatMutation, CommercialSeatRetention } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 let accessToken: string | null = null;
@@ -70,25 +71,41 @@ function isSafeRefreshRetry(init: RequestInit): boolean {
   return method === "GET" || method === "HEAD" || method === "OPTIONS";
 }
 
-async function request<T>(path: string, init: RequestInit = {}, allowRefresh = true): Promise<ApiResult<T>> {
+type RequestBehavior = { sensitiveCommercial?: boolean };
+
+function request<T>(path: string, init: RequestInit, allowRefresh: boolean, behavior: { sensitiveCommercial: true }): Promise<CommercialApiResult<T>>;
+function request<T>(path: string, init?: RequestInit, allowRefresh?: boolean, behavior?: RequestBehavior): Promise<ApiResult<T>>;
+async function request<T>(path: string, init: RequestInit = {}, allowRefresh = true, behavior: RequestBehavior = {}): Promise<CommercialApiResult<T>> {
   const token = authSession.get();
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   if (init.body && !(init.body instanceof URLSearchParams) && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
+  if (behavior.sensitiveCommercial) {
+    const csrf = csrfToken();
+    if (csrf) headers.set("X-CSRF-Token", csrf);
+  }
 
   try {
-    const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      credentials: behavior.sensitiveCommercial ? "include" : init.credentials,
+      headers,
+    });
 
     if (response.status === 401) {
       if (allowRefresh && path !== "/auth/refresh" && isSafeRefreshRetry(init)) {
         if (await refreshAccessToken()) {
-          return request<T>(path, init, false);
+          return request<T>(path, init, false, behavior);
         }
       }
       authSession.clear();
       return { state: "protected" };
     }
 
+    if (response.status === 403 && behavior.sensitiveCommercial) {
+      const payload = await response.clone().json().catch(() => null) as { detail?: unknown } | null;
+      if (payload?.detail === "Recent authentication required") return { state: "step_up_required" };
+    }
     if (response.status === 403 || response.status === 404) return { state: "protected" };
     if (response.status === 400 || response.status === 422) return { state: "invalid" };
     if (response.status === 409) return { state: "conflict" };
@@ -320,6 +337,13 @@ export const api = {
   supportedPackages: () => request<SupportedPackages>("/discipline-packages/supported?limit=50"),
   compatibilityProfiles: () => request<{registry_digest:string;items:{handle:string;label:string;profile_digest:string}[]}>("/discipline-packages/compatibility-profiles"),
   organizationPackageConfiguration: () => request<OrganizationPackageConfiguration>("/organizations/current/discipline-package-configuration"),
+  commercialEntitlement: () => request<CommercialEntitlementStatus>("/organizations/current/commercial-entitlement"),
+  validateCommercialEntitlement: (signedEnvelope:string) => request<CommercialEntitlementValidation>("/organizations/current/commercial-entitlement/validate",{method:"POST",body:signedEnvelope},true,{sensitiveCommercial:true}),
+  activateCommercialEntitlement: (signedEnvelope:string) => request<CommercialEntitlementValidation>("/organizations/current/commercial-entitlement/activate",{method:"POST",body:signedEnvelope},true,{sensitiveCommercial:true}),
+  commercialSeats: () => request<CommercialSeatList>("/organizations/current/commercial-seats"),
+  assignCommercialSeat: (userId:number) => request<CommercialSeatMutation>(`/organizations/current/commercial-seats/${encodeURIComponent(userId)}`,{method:"POST"},true,{sensitiveCommercial:true}),
+  releaseCommercialSeat: (userId:number) => request<CommercialSeatMutation>(`/organizations/current/commercial-seats/${encodeURIComponent(userId)}`,{method:"DELETE"},true,{sensitiveCommercial:true}),
+  retainCommercialSeats: (userIds:number[]) => request<CommercialSeatRetention>("/organizations/current/commercial-seats/retained",{method:"PUT",body:JSON.stringify({user_ids:userIds})},true,{sensitiveCommercial:true}),
   replaceOrganizationPackageConfiguration: (payload:{expected_configuration_version:number;enabled_selections:{package_key:string;package_version:string}[];rationale:string}) => request<{configuration_version:number;registry_digest:string}>("/organizations/current/discipline-package-configuration",{method:"PUT",headers:{"X-Correlation-ID":crypto.randomUUID()},body:JSON.stringify(payload)}),
   organizationPackageConfigurationAudit: (cursor?:string, category?:string) => request<{items:{event_id:string;project_id:number|null;workspace_id:number|null;category:string;action:string;occurred_at:string|null}[];next_cursor:string|null}>(`/organizations/current/discipline-package-configuration/audit?${new URLSearchParams([...(cursor ? [["cursor",cursor]] : []),...(category ? [["category",category]] : [])]).toString()}`),
   projectPackageConfiguration: (id:number) => request<ProjectPackageConfiguration>(`/projects/${id}/discipline-package-configuration`),

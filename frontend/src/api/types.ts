@@ -1,5 +1,6 @@
 export type ResultState = "success" | "protected" | "invalid" | "conflict" | "unavailable" | "error";
 export type ApiResult<T> = { state: "success"; data: T } | { state: Exclude<ResultState, "success"> };
+export type CommercialApiResult<T> = ApiResult<T> | { state: "step_up_required" };
 export interface StandardIdentityView { standard_id:string; catalog_scope:"global_trusted"|"organization_private"; issuer:string; designation:string; title:string; language?:string|null; jurisdiction?:Record<string,unknown>; identity_digest:string; retired_from_new_selection:boolean; editions?:StandardEditionView[] }
 export interface StandardEditionView { edition_id:string; standard_id:string; edition_designation:string; edition_disambiguator:string; official_publication_identifier?:string|null; edition_digest:string; standing_history?:Array<{standing:"current"|"superseded"|"withdrawn"|"unknown";observed_effective_at:string;version:number}> }
 export interface StandardRightsCapabilities { metadata_visibility:boolean; content_storage:boolean; indexing:boolean; excerpt_display:boolean; source_retrieval:boolean; derived_retention:boolean; derived_current_use:boolean }
@@ -38,6 +39,24 @@ export interface Capture {
 }
 
 export interface PackageSelection { package_key:string; package_version:string; descriptor_digest?:string }
+export type CommercialPackageKey = "electrical" | "instrumentation" | "control_automation";
+export type CommercialEntitlementState = "active" | "grace" | "expired" | "invalid_or_unavailable" | "time_untrusted";
+export type CommercialReasonCode = "entitlement_missing" | "invalid_signature" | "untrusted_key" | "revoked_key" | "organization_mismatch" | "deployment_mismatch" | "not_yet_valid" | "grace" | "expired" | "rollback_detected" | "same_revision_conflict" | "time_untrusted" | "package_not_entitled" | "seat_required" | "seat_reserved" | "over_capacity" | "release_sequence_out_of_range";
+export interface CommercialEntitlementStatus {
+  available:boolean; effective_state:CommercialEntitlementState; entitlement_id:string|null; revision:number|null;
+  digest_prefix:string|null; package_keys:CommercialPackageKey[]; seat_capacity:number|null; valid_until:string|null;
+  grace_until:string|null; support_until:string|null; baseline_release_sequence:number|null; max_release_sequence:number|null;
+  reason_code:CommercialReasonCode|null;
+}
+export interface CommercialEntitlementValidation {
+  valid:boolean; effect:"initial"|"successor"|"idempotent"|"rejected"; entitlement_id:string|null;
+  revision:number|null; digest_prefix:string|null; reason_code:CommercialReasonCode|null;
+}
+export type CommercialSeatState = "ASSIGNED" | "RESERVED" | "RETAINED";
+export interface CommercialSeat { user_id:number; state:CommercialSeatState; executable:boolean; display_name:string|null }
+export interface CommercialSeatList { capacity:number; consuming_count:number; over_capacity:boolean; seats:CommercialSeat[] }
+export interface CommercialSeatMutation { user_id:number; state:CommercialSeatState|null; consuming_count:number; capacity:number }
+export interface CommercialSeatRetention { capacity:number; consuming_count:number; over_capacity:boolean; unresolved:boolean }
 export interface SupportedPackage { package_key:string; package_version:string; primary_discipline_id:string; standing:string; descriptor_digest:string }
 export interface SupportedPackages { registry_digest:string; items:SupportedPackage[]; next_cursor:string|null }
 export interface OrganizationPackageConfiguration { organization_id:string; configuration_version:number; enabled_selections:PackageSelection[]; disabled_selections:PackageSelection[]; registry_digest:string; updated_at:string|null }
