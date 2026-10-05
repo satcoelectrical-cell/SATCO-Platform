@@ -1,3 +1,7 @@
 # Exact historical false positive: this prose-only PATCH-051 design line names
 # profile_digest schema fields and contains no credential or secret material.
 536bf6e59e5ae8abdca328c62f663520365cb381:docs/design/Implementation-Plan-051-Shared-Multi-Discipline-Core-and-Discipline-Package-Contract.md:generic-api-key:189
+
+# Exact reviewed false positive: this PATCH-059 ADR line contains a non-secret
+# documentation identifier, not credential material.
+a00ad1f751cfb98b0ada146c3be8aa80f5fbee39:docs/adr/ADR-032-PATCH-059-Release-and-Recovery-Evidence-Authentication-DRAFT.md:generic-api-key:183
