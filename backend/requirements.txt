@@ -5,6 +5,7 @@ sqlalchemy
 psycopg2-binary
 alembic
 boto3
+urllib3>=2.8.0,<3
 
 python-dotenv
 
@@ -14,6 +15,7 @@ python-jose[cryptography]
 cryptography>=50.0.0
 pyotp>=2.9.0,<3
 python-multipart
+rfc8785==0.1.4
 
 email-validator
 
