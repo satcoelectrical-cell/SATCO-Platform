@@ -1,0 +1,680 @@
+"""PATCH-059 release-evidence verification fixtures; no fixture is real approval."""
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import subprocess
+from copy import deepcopy
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _module(name: str, path: str):
+    spec = importlib.util.spec_from_file_location(name, ROOT / path)
+    assert spec and spec.loader
+    result = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(result)
+    return result
+
+
+release_evidence = _module(
+    "patch059_release_evidence", "ops/scripts/patch059-release-evidence.py"
+)
+candidate_evidence = _module(
+    "patch059_candidate_evidence", "ops/scripts/patch059-candidate-evidence.py"
+)
+
+REPOSITORY = "satcoelectrical-cell/SATCO-Platform"
+SOURCE = "a" * 40
+RELEASE_ID = "patch059-fixture-only"
+SEQUENCE = 59
+ISSUER = "https://token.actions.githubusercontent.com"
+WORKFLOW = (
+    "https://github.com/satcoelectrical-cell/SATCO-Platform/.github/workflows/"
+    "patch059-sign-release.yml@refs/heads/patch-059-implementation"
+)
+NOW = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
+HUMAN = {"login": "samiphone651-sys", "id": 301386823, "type": "User"}
+BOT_POLICY = {
+    "status": "CONFIGURED",
+    "login": "fixture-dispatcher[bot]",
+    "id": 987654,
+    "type": "Bot",
+    "app_id": 7654,
+    "installation_id": 8765,
+}
+BOT_ACTOR = {
+    "login": BOT_POLICY["login"],
+    "id": BOT_POLICY["id"],
+    "type": "Bot",
+}
+
+
+def _digest(path: Path) -> str:
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write(path: Path, value: object) -> None:
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _subjects(values: dict[str, str]) -> list[dict[str, object]]:
+    return [
+        {"name": name, "digest": {"sha256": digest.removeprefix("sha256:")}}
+        for name, digest in sorted(values.items())
+    ]
+
+
+def _policy(tmp_path: Path) -> Path:
+    document = json.loads(
+        (ROOT / "ops/patch059-single-human-authority-policy.example.v1.json")
+        .read_text(encoding="utf-8")
+    )
+    document["dispatcher"] = deepcopy(BOT_POLICY)
+    path = tmp_path / "single-human-authority-policy.v1.json"
+    _write(path, document)
+    return path
+
+
+def _protected_run() -> dict[str, object]:
+    return {
+        "id": 700,
+        "run_attempt": 1,
+        "path": ".github/workflows/patch059-sign-release.yml",
+        "event": "workflow_dispatch",
+        "head_branch": "patch-059-implementation",
+        "head_sha": SOURCE,
+        "html_url": f"https://github.com/{REPOSITORY}/actions/runs/700",
+        "repository": {"full_name": REPOSITORY},
+        "head_repository": {"full_name": REPOSITORY},
+        "actor": deepcopy(BOT_ACTOR),
+        "triggering_actor": deepcopy(BOT_ACTOR),
+    }
+
+
+def _candidate_run(*, producer: bool = False) -> dict[str, object]:
+    return {
+        "id": 123456,
+        "run_attempt": 2,
+        "path": ".github/workflows/patch059-candidate-evidence.yml",
+        "event": "workflow_dispatch",
+        "head_branch": "patch-059-implementation",
+        "head_sha": SOURCE,
+        "status": "in_progress" if producer else "completed",
+        "conclusion": None if producer else "success",
+        "html_url": f"https://github.com/{REPOSITORY}/actions/runs/123456",
+        "repository": {"full_name": REPOSITORY},
+        "head_repository": {"full_name": REPOSITORY},
+        "actor": deepcopy(HUMAN),
+        "triggering_actor": deepcopy(HUMAN),
+    }
+
+
+def _environment(stage: str) -> tuple[dict[str, object], dict[str, object]]:
+    final = stage == "final"
+    branches = ["patch-059-implementation"] if final else ["patch-058", "patch-059-implementation"]
+    rules: list[dict[str, object]] = [
+        {
+            "type": "required_reviewers",
+            "prevent_self_review": True,
+            "reviewers": [{"type": "User", "reviewer": deepcopy(HUMAN)}],
+        },
+        {"type": "branch_policy"},
+    ]
+    if final:
+        rules.append({"type": "wait_timer", "wait_timer": 15})
+    return (
+        {
+            "name": "patch059-final-release-approval" if final else "patch058-protected-release",
+            "can_admins_bypass": False,
+            "deployment_branch_policy": {
+                "protected_branches": False,
+                "custom_branch_policies": True,
+            },
+            "protection_rules": rules,
+        },
+        {
+            "total_count": len(branches),
+            "branch_policies": [
+                {"id": index, "node_id": f"node-{index}", "name": name, "type": "branch"}
+                for index, name in enumerate(branches, start=1)
+            ],
+        },
+    )
+
+
+def _approval(environment: str, comment: str, submitted_at: str) -> list[dict[str, object]]:
+    return [
+        {
+            "state": "approved",
+            "comment": comment,
+            "submitted_at": submitted_at,
+            "user": deepcopy(HUMAN),
+            "environments": [{"name": environment}],
+        }
+    ]
+
+
+def _fixture(tmp_path: Path) -> dict[str, object]:
+    policy_path = _policy(tmp_path)
+    artifacts = {
+        "backend": tmp_path / "backend-image.oci.tar",
+        "frontend": tmp_path / "frontend-dist.tar",
+        "migrations": tmp_path / "migration-set.tar",
+    }
+    for name, path in artifacts.items():
+        path.write_bytes(("fixture-" + name).encode("ascii"))
+    digests = {name: _digest(path) for name, path in artifacts.items()}
+
+    _write(tmp_path / "resolved-high-exceptions.json", [])
+    decision = {
+        "schemaVersion": "PATCH-058-security-decision-v1",
+        "mode": "post-build-human-decision",
+        "candidateRevision": SOURCE,
+        "artifactDigest": digests["backend"],
+        "exceptionEvidenceDigest": _digest(tmp_path / "resolved-high-exceptions.json"),
+        "decisionCommit": "b" * 40,
+        "decisionRef": "refs/heads/patch-058-security-decisions",
+    }
+    _write(tmp_path / "security-decision.json", decision)
+    candidate = candidate_evidence.create_identity(
+        _candidate_run(producer=True),
+        repository=REPOSITORY,
+        source_sha=SOURCE,
+        release_id=RELEASE_ID,
+        security_decision_commit=decision["decisionCommit"],
+        security_decision_path=tmp_path / "security-decision.json",
+    )
+    _write(tmp_path / "candidate-identity.json", candidate)
+    _write(
+        tmp_path / "provenance.intoto.json",
+        {
+            "subject": _subjects(digests),
+            "predicate": {
+                "buildDefinition": {
+                    "externalParameters": {
+                        "repository": REPOSITORY,
+                        "revision": SOURCE,
+                        "releaseId": RELEASE_ID,
+                    }
+                }
+            },
+        },
+    )
+
+    run_path = tmp_path / "protected-run.json"
+    sign_env_path = tmp_path / "signing-environment.json"
+    sign_branches_path = tmp_path / "signing-branch-policies.json"
+    sign_approvals_path = tmp_path / "signing-approvals.json"
+    _write(run_path, _protected_run())
+    signing_environment, signing_branches = _environment("signing")
+    _write(sign_env_path, signing_environment)
+    _write(sign_branches_path, signing_branches)
+    sign_comment = (
+        f"SIGN PATCH-059 release_id={RELEASE_ID} source_sha={SOURCE} "
+        "candidate_run_id=123456 candidate_run_attempt=2"
+    )
+    _write(
+        sign_approvals_path,
+        _approval("patch058-protected-release", sign_comment, "2026-10-03T10:00:00Z"),
+    )
+    signing = release_evidence.create_signing_authorization(
+        policy_path=policy_path,
+        run_path=run_path,
+        environment_path=sign_env_path,
+        branch_policies_path=sign_branches_path,
+        approvals_path=sign_approvals_path,
+        bundle=tmp_path,
+        repository=REPOSITORY,
+        release_id=RELEASE_ID,
+        source_sha=SOURCE,
+    )
+    _write(tmp_path / "human-signing-authorization.json", signing)
+
+    _write(tmp_path / "signature-verification-summary.json", {"source_commit": SOURCE})
+    for expected_files in release_evidence.DOSSIER_SECTION_FILES.values():
+        for filename in expected_files.values():
+            path = tmp_path / filename
+            if not path.exists():
+                if path.suffix == ".json":
+                    _write(path, {"fixture": filename})
+                else:
+                    path.write_bytes(b"fixture")
+    dossier_sections = {
+        section: {
+            name: {"reference": filename, "digest": _digest(tmp_path / filename)}
+            for name, filename in expected_files.items()
+        }
+        for section, expected_files in release_evidence.DOSSIER_SECTION_FILES.items()
+    }
+    dossier = {
+        "schema_version": "v1",
+        "release_id": RELEASE_ID,
+        "source_commit": SOURCE,
+        **dossier_sections,
+        "provenance": {
+            "reference": "provenance.intoto.json",
+            "digest": _digest(tmp_path / "provenance.intoto.json"),
+        },
+        "signature_verification": {
+            "reference": "signature-verification-summary.json",
+            "digest": _digest(tmp_path / "signature-verification-summary.json"),
+        },
+        "human_signing_authorization": {
+            "status": "approved",
+            "reference": "human-signing-authorization.json",
+            "digest": _digest(tmp_path / "human-signing-authorization.json"),
+        },
+        "human_release_approval": {
+            "status": "pending",
+            "reference": "patch059-final-release-approval",
+        },
+        "created_at": "2026-10-03T10:01:00Z",
+    }
+    _write(tmp_path / "release-dossier.pending.v1.json", dossier)
+    manifest = {
+        "schema": "satco.patch059-release-manifest/v1",
+        "release_id": RELEASE_ID,
+        "release_sequence": SEQUENCE,
+        "source_sha": SOURCE,
+        "artifacts": digests,
+        "expected_alembic_head": "e05900000002",
+        "configuration_schema": "v1",
+        "candidate_identity_sha256": _digest(tmp_path / "candidate-identity.json"),
+        "provenance_sha256": _digest(tmp_path / "provenance.intoto.json"),
+        "dossier_sha256": _digest(tmp_path / "release-dossier.pending.v1.json"),
+        "created_at": "2026-10-03T10:02:00Z",
+    }
+    _write(tmp_path / "release-manifest.v1.json", manifest)
+    manifest_digest = _digest(tmp_path / "release-manifest.v1.json")
+    _write(
+        tmp_path / "release-provenance.intoto.json",
+        {
+            "subject": _subjects(digests | {"manifest": manifest_digest}),
+            "predicate": {
+                "buildDefinition": {
+                    "externalParameters": {
+                        "releaseId": RELEASE_ID,
+                        "releaseSequence": SEQUENCE,
+                        "repository": REPOSITORY,
+                        "revision": SOURCE,
+                        "workflow": WORKFLOW,
+                        "candidateEvidence": candidate,
+                    }
+                }
+            },
+        },
+    )
+    handoff = release_evidence.create_signed_handoff(
+        policy_path=policy_path,
+        bundle=tmp_path,
+        release_id=RELEASE_ID,
+        release_sequence=SEQUENCE,
+        source_sha=SOURCE,
+        workflow_run_id=700,
+        workflow_run_attempt=1,
+        created_at="2026-10-03T10:15:00Z",
+    )
+    _write(tmp_path / "signed-candidate-handoff.v1.json", handoff)
+
+    final_env_path = tmp_path / "final-environment.json"
+    final_branches_path = tmp_path / "final-branch-policies.json"
+    final_approvals_path = tmp_path / "final-approvals.json"
+    final_jobs_path = tmp_path / "final-jobs.json"
+    _write(tmp_path / "final-run.json", _protected_run())
+    _write(
+        final_jobs_path,
+        {
+            "total_count": 1,
+            "jobs": [
+                {
+                    "id": 701,
+                    "name": "sign-candidate",
+                    "run_id": 700,
+                    "run_attempt": 1,
+                    "head_sha": SOURCE,
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            ],
+        },
+    )
+    final_environment, final_branches = _environment("final")
+    _write(final_env_path, final_environment)
+    _write(final_branches_path, final_branches)
+    final_comment = (
+        f"FINAL PATCH-059 release_id={RELEASE_ID} release_sequence={SEQUENCE} "
+        f"source_sha={SOURCE} manifest_sha256={manifest_digest} "
+        f"signing_authorization_sha256={_digest(tmp_path / 'human-signing-authorization.json')} "
+        f"signed_handoff_sha256={_digest(tmp_path / 'signed-candidate-handoff.v1.json')}"
+    )
+    _write(
+        final_approvals_path,
+        _approval("patch059-final-release-approval", final_comment, "2026-10-03T10:30:00Z"),
+    )
+    approval = release_evidence.create_final_approval(
+        policy_path=policy_path,
+        run_path=run_path,
+        environment_path=final_env_path,
+        branch_policies_path=final_branches_path,
+        approvals_path=final_approvals_path,
+        jobs_path=final_jobs_path,
+        bundle=tmp_path,
+        repository=REPOSITORY,
+        release_id=RELEASE_ID,
+        release_sequence=SEQUENCE,
+        source_sha=SOURCE,
+    )
+    _write(tmp_path / "human-release-approval.json", approval)
+    finalization = release_evidence.create_finalization(
+        policy_path=policy_path,
+        bundle=tmp_path,
+        repository=REPOSITORY,
+        issuer=ISSUER,
+        workflow_ref=WORKFLOW,
+        finalized_at="2026-10-03T10:31:00Z",
+    )
+    _write(tmp_path / "release-finalization.v2.json", finalization)
+    return {
+        "manifest": manifest,
+        "signing": signing,
+        "handoff": handoff,
+        "approval": approval,
+        "finalization": finalization,
+        "manifest_digest": manifest_digest.removeprefix("sha256:"),
+    }
+
+
+class FixtureCosign:
+    """Deterministic test double; explicitly not protected signing."""
+
+    def __init__(self, *, reject: bool = False):
+        self.reject = reject
+        self.commands: list[list[str]] = []
+
+    def __call__(self, command, **_kwargs):
+        self.commands.append(command)
+        if self.reject and command[1] != "version":
+            raise subprocess.CalledProcessError(1, command)
+        output = "cosign v2.6.0" if command[1] == "version" else "Verified OK"
+        return subprocess.CompletedProcess(command, 0, stdout=output, stderr="")
+
+
+def _verify(tmp_path: Path, state: dict[str, object], runner=None):
+    return release_evidence.verify_bundle(
+        tmp_path,
+        repository=REPOSITORY,
+        issuer=ISSUER,
+        workflow_ref=WORKFLOW,
+        source_sha=SOURCE,
+        release_id=RELEASE_ID,
+        release_sequence=SEQUENCE,
+        manifest_sha256=state["manifest_digest"],
+        now=NOW,
+        runner=runner or FixtureCosign(),
+    )
+
+
+def test_offline_verifier_accepts_fully_bound_v2_bundle(tmp_path):
+    state = _fixture(tmp_path)
+    runner = FixtureCosign()
+    assert _verify(tmp_path, state, runner)["release_id"] == RELEASE_ID
+    verified = [command for command in runner.commands if command[1] == "verify-blob"]
+    assert {Path(command[-1]).name for command in verified} == {
+        "backend-image.oci.tar",
+        "frontend-dist.tar",
+        "migration-set.tar",
+        "release-manifest.v1.json",
+        "human-release-approval.json",
+        "release-finalization.v2.json",
+    }
+
+
+@pytest.mark.parametrize(
+    ("filename", "key", "value"),
+    [
+        ("candidate-identity.json", "event", "push"),
+        ("candidate-identity.json", "security_decision_commit", "c" * 40),
+        ("human-signing-authorization.json", "authority", {"login": "other", "id": 1, "type": "User"}),
+        ("signed-candidate-handoff.v1.json", "workflow_run_attempt", 2),
+        ("human-release-approval.json", "minimum_delay_seconds", 0),
+        ("release-finalization.v2.json", "repository", "attacker/fork"),
+    ],
+)
+def test_offline_verifier_rejects_identity_authority_and_binding_mutations(
+    tmp_path, filename, key, value
+):
+    state = _fixture(tmp_path)
+    path = tmp_path / filename
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document[key] = value
+    _write(path, document)
+    with pytest.raises(release_evidence.ReleaseVerificationError):
+        _verify(tmp_path, state)
+
+
+def test_offline_verifier_rejects_unresolved_dispatcher_policy(tmp_path):
+    state = _fixture(tmp_path)
+    unresolved = json.loads(
+        (ROOT / "ops/patch059-single-human-authority-policy.example.v1.json")
+        .read_text(encoding="utf-8")
+    )
+    _write(tmp_path / "single-human-authority-policy.v1.json", unresolved)
+    with pytest.raises(release_evidence.ReleaseVerificationError, match="dispatcher identity unresolved"):
+        _verify(tmp_path, state)
+
+
+def test_offline_verifier_rejects_reused_approval_event(tmp_path):
+    state = _fixture(tmp_path)
+    approval = deepcopy(state["approval"])
+    approval["approval_event_sha256"] = state["signing"]["approval_event_sha256"]
+    _write(tmp_path / "human-release-approval.json", approval)
+    with pytest.raises(release_evidence.ReleaseVerificationError):
+        _verify(tmp_path, state)
+
+
+@pytest.mark.parametrize("snapshot", ["protected-run.json", "final-run.json"])
+def test_offline_verifier_rejects_retained_dispatcher_snapshot_substitution(
+    tmp_path, snapshot
+):
+    state = _fixture(tmp_path)
+    path = tmp_path / snapshot
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["actor"] = deepcopy(HUMAN)
+    _write(path, document)
+    with pytest.raises(release_evidence.ReleaseVerificationError):
+        _verify(tmp_path, state)
+
+
+def test_offline_verifier_rejects_retained_environment_snapshot_substitution(tmp_path):
+    state = _fixture(tmp_path)
+    path = tmp_path / "final-environment.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["protection_rules"][0]["prevent_self_review"] = False
+    _write(path, document)
+    with pytest.raises(release_evidence.ReleaseVerificationError):
+        _verify(tmp_path, state)
+
+
+def test_offline_verifier_rejects_any_raw_api_snapshot_byte_change(tmp_path):
+    state = _fixture(tmp_path)
+    path = tmp_path / "protected-run.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["otherwise_unused_api_field"] = "changed"
+    _write(path, document)
+    with pytest.raises(release_evidence.ReleaseVerificationError):
+        _verify(tmp_path, state)
+
+
+def test_offline_verifier_rejects_non_successful_signing_job_result(tmp_path):
+    state = _fixture(tmp_path)
+    path = tmp_path / "final-jobs.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["jobs"][0]["conclusion"] = "failure"
+    _write(path, document)
+    with pytest.raises(
+        release_evidence.ReleaseVerificationError,
+        match="signing job did not complete successfully",
+    ):
+        _verify(tmp_path, state)
+
+
+def test_final_approval_generator_rejects_less_than_fifteen_minutes(tmp_path):
+    _fixture(tmp_path)
+    handoff = json.loads((tmp_path / "signed-candidate-handoff.v1.json").read_text())
+    handoff["created_at"] = "2026-10-03T10:29:01Z"
+    _write(tmp_path / "signed-candidate-handoff.v1.json", handoff)
+    with pytest.raises(release_evidence.ReleaseVerificationError):
+        release_evidence.create_final_approval(
+            policy_path=tmp_path / "single-human-authority-policy.v1.json",
+            run_path=tmp_path / "protected-run.json",
+            environment_path=tmp_path / "final-environment.json",
+            branch_policies_path=tmp_path / "final-branch-policies.json",
+            approvals_path=tmp_path / "final-approvals.json",
+            jobs_path=tmp_path / "final-jobs.json",
+            bundle=tmp_path,
+            repository=REPOSITORY,
+            release_id=RELEASE_ID,
+            release_sequence=SEQUENCE,
+            source_sha=SOURCE,
+        )
+
+
+def test_offline_verifier_rejects_unauthenticated_fixture(tmp_path):
+    state = _fixture(tmp_path)
+    with pytest.raises(subprocess.CalledProcessError):
+        _verify(tmp_path, state, FixtureCosign(reject=True))
+
+
+def test_protected_workflow_is_narrow_separate_and_fail_closed():
+    workflow = (ROOT / ".github/workflows/patch059-sign-release.yml").read_text(encoding="utf-8")
+    assert "preflight:" in workflow
+    assert "needs: preflight" in workflow
+    assert "environment: patch058-protected-release" in workflow
+    assert "environment: patch059-final-release-approval" in workflow
+    assert "gate-run" in workflow
+    assert "--policy ops/patch059-single-human-authority-policy.v1.json" in workflow
+    assert "cp ops/patch059-single-human-authority-policy.v1.json bundle/single-human-authority-policy.v1.json" in workflow
+    assert "single-human-authority-policy.example.v1.json" not in workflow
+    assert "signed-candidate-handoff.v1.json" in workflow
+    assert "release-finalization.v2.json" in workflow
+    assert "cosign-release: v2.6.0" in workflow
+    assert "inputs.ref" not in workflow
+
+
+def test_candidate_evidence_accepts_only_exact_authenticated_run(tmp_path):
+    _write(tmp_path / "security-decision.json", {"decisionCommit": "b" * 40})
+    identity = candidate_evidence.create_identity(
+        _candidate_run(producer=True),
+        repository=REPOSITORY,
+        source_sha=SOURCE,
+        release_id=RELEASE_ID,
+        security_decision_commit="b" * 40,
+        security_decision_path=tmp_path / "security-decision.json",
+    )
+    candidate_evidence.validate_run_api(_candidate_run(), identity)
+
+
+def test_candidate_producer_rejects_already_completed_or_unsuccessful_run(tmp_path):
+    _write(tmp_path / "security-decision.json", {"decisionCommit": "b" * 40})
+    with pytest.raises(
+        candidate_evidence.CandidateEvidenceError,
+        match="producer run is not in progress",
+    ):
+        candidate_evidence.create_identity(
+            _candidate_run(),
+            repository=REPOSITORY,
+            source_sha=SOURCE,
+            release_id=RELEASE_ID,
+            security_decision_commit="b" * 40,
+            security_decision_path=tmp_path / "security-decision.json",
+        )
+
+
+def test_candidate_exception_requires_the_sole_human_authority(tmp_path):
+    path = tmp_path / "exceptions.json"
+    _write(path, [{"approver_id": "someone-else"}])
+    with pytest.raises(
+        candidate_evidence.CandidateEvidenceError,
+        match="wrong Human Authority",
+    ):
+        candidate_evidence.validate_exception_authority(path)
+    _write(path, [{"approver_id": "github:samiphone651-sys#301386823"}])
+    candidate_evidence.validate_exception_authority(path)
+
+
+@pytest.mark.parametrize("release_id", ["line\nbreak", "یونی‌کد", "a" * 129, "-leading"])
+def test_candidate_and_release_verifiers_reject_ambiguous_release_ids(
+    tmp_path, release_id
+):
+    _write(tmp_path / "security-decision.json", {"decisionCommit": "b" * 40})
+    with pytest.raises(candidate_evidence.CandidateEvidenceError):
+        candidate_evidence.create_identity(
+            _candidate_run(producer=True),
+            repository=REPOSITORY,
+            source_sha=SOURCE,
+            release_id=release_id,
+            security_decision_commit="b" * 40,
+            security_decision_path=tmp_path / "security-decision.json",
+        )
+    with pytest.raises(
+        release_evidence.ReleaseVerificationError, match="invalid release ID"
+    ):
+        release_evidence.verify_bundle(
+            tmp_path,
+            repository=REPOSITORY,
+            issuer=ISSUER,
+            workflow_ref=WORKFLOW,
+            source_sha=SOURCE,
+            release_id=release_id,
+            release_sequence=SEQUENCE,
+            manifest_sha256="0" * 64,
+            now=NOW,
+            runner=FixtureCosign(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("path", ".github/workflows/attacker.yml"),
+        ("event", "pull_request"),
+        ("head_branch", "main"),
+        ("head_sha", "b" * 40),
+        ("conclusion", "failure"),
+        ("run_attempt", 3),
+        ("actor", {"login": "attacker", "id": 1, "type": "User"}),
+        ("repository", {"full_name": "attacker/fork"}),
+    ],
+)
+def test_candidate_evidence_rejects_run_api_substitution(tmp_path, key, value):
+    _write(tmp_path / "security-decision.json", {"decisionCommit": "b" * 40})
+    run = _candidate_run()
+    producer_run = _candidate_run(producer=True)
+    identity = candidate_evidence.create_identity(
+        producer_run,
+        repository=REPOSITORY,
+        source_sha=SOURCE,
+        release_id=RELEASE_ID,
+        security_decision_commit="b" * 40,
+        security_decision_path=tmp_path / "security-decision.json",
+    )
+    run[key] = value
+    with pytest.raises(candidate_evidence.CandidateEvidenceError):
+        candidate_evidence.validate_run_api(run, identity)
+
+
+def test_candidate_producer_workflow_has_exact_non_reusable_trigger():
+    workflow = (ROOT / ".github/workflows/patch059-candidate-evidence.yml").read_text(encoding="utf-8")
+    assert "workflow_dispatch:" in workflow
+    assert "pull_request:" not in workflow
+    assert "push:" not in workflow
+    assert "workflow_call:" not in workflow
+    assert "actions: read" in workflow
+    assert "candidate-identity.json" in workflow

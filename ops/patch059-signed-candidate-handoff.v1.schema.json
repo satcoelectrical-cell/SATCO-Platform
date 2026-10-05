@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SATCO PATCH-059 signed-candidate handoff v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "policy_sha256", "release_id", "release_sequence", "source_sha", "candidate_run_id", "candidate_run_attempt", "candidate_identity_sha256", "artifact_digests", "manifest_sha256", "signing_authorization_sha256", "release_provenance_sha256", "signature_verification_sha256", "workflow_run_id", "workflow_run_attempt", "signing_job", "signing_job_result", "created_at"],
+  "properties": {
+    "schema": {"const": "satco.patch059-signed-candidate-handoff/v1"},
+    "policy_sha256": {"$ref": "#/$defs/digest"},
+    "release_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "release_sequence": {"type": "integer", "minimum": 1},
+    "source_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "candidate_run_id": {"type": "integer", "minimum": 1},
+    "candidate_run_attempt": {"type": "integer", "minimum": 1},
+    "candidate_identity_sha256": {"$ref": "#/$defs/digest"},
+    "artifact_digests": {"$ref": "#/$defs/artifacts"},
+    "manifest_sha256": {"$ref": "#/$defs/digest"},
+    "signing_authorization_sha256": {"$ref": "#/$defs/digest"},
+    "release_provenance_sha256": {"$ref": "#/$defs/digest"},
+    "signature_verification_sha256": {"$ref": "#/$defs/digest"},
+    "workflow_run_id": {"type": "integer", "minimum": 1},
+    "workflow_run_attempt": {"const": 1},
+    "signing_job": {"const": "sign-candidate"},
+    "signing_job_result": {"const": "success"},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "artifacts": {"type": "object", "additionalProperties": false, "required": ["backend", "frontend", "migrations"], "properties": {"backend": {"$ref": "#/$defs/digest"}, "frontend": {"$ref": "#/$defs/digest"}, "migrations": {"$ref": "#/$defs/digest"}}}
+  }
+}

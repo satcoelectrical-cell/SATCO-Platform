@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SATCO PATCH-059 release finalization v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "operating_mode", "policy_sha256", "release_id", "release_sequence", "source_sha", "repository", "issuer", "workflow_ref", "manifest_sha256", "artifacts", "provenance_sha256", "dossier_sha256", "candidate_identity_sha256", "signing_authorization_sha256", "signed_handoff_sha256", "final_approval_sha256", "signing_approval_event_sha256", "final_approval_event_sha256", "finalized_at"],
+  "properties": {
+    "schema": {"const": "satco.patch059-release-finalization/v2"},
+    "operating_mode": {"const": "single-human-authority"},
+    "policy_sha256": {"$ref": "#/$defs/digest"},
+    "release_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "release_sequence": {"type": "integer", "minimum": 1},
+    "source_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "repository": {"type": "string", "minLength": 1},
+    "issuer": {"type": "string", "format": "uri"},
+    "workflow_ref": {"type": "string", "format": "uri"},
+    "manifest_sha256": {"$ref": "#/$defs/digest"},
+    "artifacts": {"$ref": "#/$defs/artifacts"},
+    "provenance_sha256": {"$ref": "#/$defs/digest"},
+    "dossier_sha256": {"$ref": "#/$defs/digest"},
+    "candidate_identity_sha256": {"$ref": "#/$defs/digest"},
+    "signing_authorization_sha256": {"$ref": "#/$defs/digest"},
+    "signed_handoff_sha256": {"$ref": "#/$defs/digest"},
+    "final_approval_sha256": {"$ref": "#/$defs/digest"},
+    "signing_approval_event_sha256": {"$ref": "#/$defs/digest"},
+    "final_approval_event_sha256": {"$ref": "#/$defs/digest"},
+    "finalized_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "artifacts": {"type": "object", "additionalProperties": false, "required": ["backend", "frontend", "migrations"], "properties": {"backend": {"$ref": "#/$defs/digest"}, "frontend": {"$ref": "#/$defs/digest"}, "migrations": {"$ref": "#/$defs/digest"}}}
+  }
+}

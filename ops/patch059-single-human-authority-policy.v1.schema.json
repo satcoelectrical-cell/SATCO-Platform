@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SATCO PATCH-059 Single-Human-Authority policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "mode", "repository", "branch", "workflow_path", "human_authority", "dispatcher", "signing_environment", "final_environment", "minimum_final_approval_delay_seconds", "claims"],
+  "properties": {
+    "schema": {"const": "satco.patch059-single-human-authority-policy/v1"},
+    "mode": {"const": "single-human-authority"},
+    "repository": {"const": "satcoelectrical-cell/SATCO-Platform"},
+    "branch": {"const": "patch-059-implementation"},
+    "workflow_path": {"const": ".github/workflows/patch059-sign-release.yml"},
+    "human_authority": {"$ref": "#/$defs/human"},
+    "dispatcher": {"$ref": "#/$defs/dispatcher"},
+    "signing_environment": {"$ref": "#/$defs/signing_environment"},
+    "final_environment": {"$ref": "#/$defs/final_environment"},
+    "minimum_final_approval_delay_seconds": {"const": 900},
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["personnel_independence", "dual_human_control", "quorum"],
+      "properties": {
+        "personnel_independence": {"const": false},
+        "dual_human_control": {"const": false},
+        "quorum": {"const": false}
+      }
+    }
+  },
+  "$defs": {
+    "human": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["login", "id", "type"],
+      "properties": {
+        "login": {"const": "samiphone651-sys"},
+        "id": {"const": 301386823},
+        "type": {"const": "User"}
+      }
+    },
+    "dispatcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "login", "id", "type", "app_id", "installation_id"],
+      "properties": {
+        "status": {"enum": ["UNRESOLVED", "CONFIGURED"]},
+        "login": {"type": ["string", "null"], "minLength": 1},
+        "id": {"type": ["integer", "null"], "minimum": 1},
+        "type": {"const": "Bot"},
+        "app_id": {"type": ["integer", "null"], "minimum": 1},
+        "installation_id": {"type": ["integer", "null"], "minimum": 1}
+      },
+      "not": {
+        "anyOf": [
+          {"properties": {"login": {"const": "samiphone651-sys"}}, "required": ["login"]},
+          {"properties": {"id": {"const": 301386823}}, "required": ["id"]}
+        ]
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "UNRESOLVED"}}},
+          "then": {"properties": {"login": {"type": "null"}, "id": {"type": "null"}, "app_id": {"type": "null"}, "installation_id": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "CONFIGURED"}}},
+          "then": {"properties": {"login": {"type": "string", "minLength": 1}, "id": {"type": "integer", "minimum": 1}, "app_id": {"type": "integer", "minimum": 1}, "installation_id": {"type": "integer", "minimum": 1}}}
+        }
+      ]
+    },
+    "signing_environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "reviewers", "prevent_self_review", "can_admins_bypass", "branches"],
+      "properties": {
+        "name": {"const": "patch058-protected-release"},
+        "reviewers": {"type": "array", "prefixItems": [{"$ref": "#/$defs/human"}], "items": false, "minItems": 1, "maxItems": 1},
+        "prevent_self_review": {"const": true},
+        "can_admins_bypass": {"const": false},
+        "branches": {"type": "array", "prefixItems": [{"const": "patch-058"}, {"const": "patch-059-implementation"}], "items": false, "minItems": 2, "maxItems": 2}
+      }
+    },
+    "final_environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "reviewers", "prevent_self_review", "can_admins_bypass", "branches", "wait_timer_minutes"],
+      "properties": {
+        "name": {"const": "patch059-final-release-approval"},
+        "reviewers": {"type": "array", "prefixItems": [{"$ref": "#/$defs/human"}], "items": false, "minItems": 1, "maxItems": 1},
+        "prevent_self_review": {"const": true},
+        "can_admins_bypass": {"const": false},
+        "branches": {"type": "array", "prefixItems": [{"const": "patch-059-implementation"}], "items": false, "minItems": 1, "maxItems": 1},
+        "wait_timer_minutes": {"const": 15}
+      }
+    }
+  }
+}

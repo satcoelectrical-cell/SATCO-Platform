@@ -1,0 +1,58 @@
+{
+  "schema": "satco.patch059-single-human-authority-policy/v1",
+  "mode": "single-human-authority",
+  "repository": "satcoelectrical-cell/SATCO-Platform",
+  "branch": "patch-059-implementation",
+  "workflow_path": ".github/workflows/patch059-sign-release.yml",
+  "human_authority": {
+    "login": "samiphone651-sys",
+    "id": 301386823,
+    "type": "User"
+  },
+  "dispatcher": {
+    "status": "UNRESOLVED",
+    "login": null,
+    "id": null,
+    "type": "Bot",
+    "app_id": null,
+    "installation_id": null
+  },
+  "signing_environment": {
+    "name": "patch058-protected-release",
+    "reviewers": [
+      {
+        "login": "samiphone651-sys",
+        "id": 301386823,
+        "type": "User"
+      }
+    ],
+    "prevent_self_review": true,
+    "can_admins_bypass": false,
+    "branches": [
+      "patch-058",
+      "patch-059-implementation"
+    ]
+  },
+  "final_environment": {
+    "name": "patch059-final-release-approval",
+    "reviewers": [
+      {
+        "login": "samiphone651-sys",
+        "id": 301386823,
+        "type": "User"
+      }
+    ],
+    "prevent_self_review": true,
+    "can_admins_bypass": false,
+    "branches": [
+      "patch-059-implementation"
+    ],
+    "wait_timer_minutes": 15
+  },
+  "minimum_final_approval_delay_seconds": 900,
+  "claims": {
+    "personnel_independence": false,
+    "dual_human_control": false,
+    "quorum": false
+  }
+}
