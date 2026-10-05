@@ -2,7 +2,7 @@
   {
     "approved_at": "2026-10-05T08:03:00Z",
     "approver_id": "github:301386823:samiphone651-sys",
-    "artifact_digest": "sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57",
+    "artifact_digest": "sha256:9a87120a105143d8d0ef502c5764bde314ca620566e02811019b940fd383a7f7",
     "compensating_controls": "Exact commit/artifact binding; HS256-only JWT configuration; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T08:03:00Z",
     "finding_id": "PYSEC-2026-1325",
@@ -13,13 +13,13 @@
     "scope": "PATCH-059 backend candidate commit 1eda588fe8604775be384433380f91006d3ba7e3 and artifact sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57 only; pip-audit/PYSEC-2026-1325. No transfer to any other commit, artifact, or production topology.",
     "severity": "HIGH",
     "source": "pip-audit",
-    "source_revision": "1eda588fe8604775be384433380f91006d3ba7e3",
+    "source_revision": "5f99fbd89045fe24d9f62fb74a3060921d5f0500",
     "status": "active"
   },
   {
     "approved_at": "2026-10-05T08:03:00Z",
     "approver_id": "github:301386823:samiphone651-sys",
-    "artifact_digest": "sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57",
+    "artifact_digest": "sha256:9a87120a105143d8d0ef502c5764bde314ca620566e02811019b940fd383a7f7",
     "compensating_controls": "Exact commit/artifact binding; HS256-only JWT configuration; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T08:03:00Z",
     "finding_id": "CVE-2024-23342",
@@ -30,13 +30,13 @@
     "scope": "PATCH-059 backend candidate commit 1eda588fe8604775be384433380f91006d3ba7e3 and artifact sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57 only; trivy/CVE-2024-23342. No transfer to any other commit, artifact, or production topology.",
     "severity": "HIGH",
     "source": "trivy",
-    "source_revision": "1eda588fe8604775be384433380f91006d3ba7e3",
+    "source_revision": "5f99fbd89045fe24d9f62fb74a3060921d5f0500",
     "status": "active"
   },
   {
     "approved_at": "2026-10-05T08:03:00Z",
     "approver_id": "github:301386823:samiphone651-sys",
-    "artifact_digest": "sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57",
+    "artifact_digest": "sha256:9a87120a105143d8d0ef502c5764bde314ca620566e02811019b940fd383a7f7",
     "compensating_controls": "Exact commit/artifact binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T08:03:00Z",
     "finding_id": "CVE-2025-69720",
@@ -47,13 +47,13 @@
     "scope": "PATCH-059 backend candidate commit 1eda588fe8604775be384433380f91006d3ba7e3 and artifact sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57 only; trivy/CVE-2025-69720. No transfer to any other commit, artifact, or production topology.",
     "severity": "HIGH",
     "source": "trivy",
-    "source_revision": "1eda588fe8604775be384433380f91006d3ba7e3",
+    "source_revision": "5f99fbd89045fe24d9f62fb74a3060921d5f0500",
     "status": "active"
   },
   {
     "approved_at": "2026-10-05T08:03:00Z",
     "approver_id": "github:301386823:samiphone651-sys",
-    "artifact_digest": "sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57",
+    "artifact_digest": "sha256:9a87120a105143d8d0ef502c5764bde314ca620566e02811019b940fd383a7f7",
     "compensating_controls": "Exact commit/artifact binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T08:03:00Z",
     "finding_id": "CVE-2026-16742",
@@ -64,13 +64,13 @@
     "scope": "PATCH-059 backend candidate commit 1eda588fe8604775be384433380f91006d3ba7e3 and artifact sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57 only; trivy/CVE-2026-16742. No transfer to any other commit, artifact, or production topology.",
     "severity": "HIGH",
     "source": "trivy",
-    "source_revision": "1eda588fe8604775be384433380f91006d3ba7e3",
+    "source_revision": "5f99fbd89045fe24d9f62fb74a3060921d5f0500",
     "status": "active"
   },
   {
     "approved_at": "2026-10-05T08:03:00Z",
     "approver_id": "github:301386823:samiphone651-sys",
-    "artifact_digest": "sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57",
+    "artifact_digest": "sha256:9a87120a105143d8d0ef502c5764bde314ca620566e02811019b940fd383a7f7",
     "compensating_controls": "Exact commit/artifact binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T08:03:00Z",
     "finding_id": "CVE-2026-54369",
@@ -81,13 +81,13 @@
     "scope": "PATCH-059 backend candidate commit 1eda588fe8604775be384433380f91006d3ba7e3 and artifact sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57 only; trivy/CVE-2026-54369. No transfer to any other commit, artifact, or production topology.",
     "severity": "HIGH",
     "source": "trivy",
-    "source_revision": "1eda588fe8604775be384433380f91006d3ba7e3",
+    "source_revision": "5f99fbd89045fe24d9f62fb74a3060921d5f0500",
     "status": "active"
   },
   {
     "approved_at": "2026-10-05T08:03:00Z",
     "approver_id": "github:301386823:samiphone651-sys",
-    "artifact_digest": "sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57",
+    "artifact_digest": "sha256:9a87120a105143d8d0ef502c5764bde314ca620566e02811019b940fd383a7f7",
     "compensating_controls": "Exact commit/artifact binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T08:03:00Z",
     "finding_id": "CVE-2026-76642",
@@ -98,13 +98,13 @@
     "scope": "PATCH-059 backend candidate commit 1eda588fe8604775be384433380f91006d3ba7e3 and artifact sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57 only; trivy/CVE-2026-76642. No transfer to any other commit, artifact, or production topology.",
     "severity": "HIGH",
     "source": "trivy",
-    "source_revision": "1eda588fe8604775be384433380f91006d3ba7e3",
+    "source_revision": "5f99fbd89045fe24d9f62fb74a3060921d5f0500",
     "status": "active"
   },
   {
     "approved_at": "2026-10-05T08:03:00Z",
     "approver_id": "github:301386823:samiphone651-sys",
-    "artifact_digest": "sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57",
+    "artifact_digest": "sha256:9a87120a105143d8d0ef502c5764bde314ca620566e02811019b940fd383a7f7",
     "compensating_controls": "Exact commit/artifact binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T08:03:00Z",
     "finding_id": "CVE-2026-78408",
@@ -115,13 +115,13 @@
     "scope": "PATCH-059 backend candidate commit 1eda588fe8604775be384433380f91006d3ba7e3 and artifact sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57 only; trivy/CVE-2026-78408. No transfer to any other commit, artifact, or production topology.",
     "severity": "HIGH",
     "source": "trivy",
-    "source_revision": "1eda588fe8604775be384433380f91006d3ba7e3",
+    "source_revision": "5f99fbd89045fe24d9f62fb74a3060921d5f0500",
     "status": "active"
   },
   {
     "approved_at": "2026-10-05T08:03:00Z",
     "approver_id": "github:301386823:samiphone651-sys",
-    "artifact_digest": "sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57",
+    "artifact_digest": "sha256:9a87120a105143d8d0ef502c5764bde314ca620566e02811019b940fd383a7f7",
     "compensating_controls": "Exact commit/artifact binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T08:03:00Z",
     "finding_id": "CVE-2026-78409",
@@ -132,13 +132,13 @@
     "scope": "PATCH-059 backend candidate commit 1eda588fe8604775be384433380f91006d3ba7e3 and artifact sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57 only; trivy/CVE-2026-78409. No transfer to any other commit, artifact, or production topology.",
     "severity": "HIGH",
     "source": "trivy",
-    "source_revision": "1eda588fe8604775be384433380f91006d3ba7e3",
+    "source_revision": "5f99fbd89045fe24d9f62fb74a3060921d5f0500",
     "status": "active"
   },
   {
     "approved_at": "2026-10-05T08:03:00Z",
     "approver_id": "github:301386823:samiphone651-sys",
-    "artifact_digest": "sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57",
+    "artifact_digest": "sha256:9a87120a105143d8d0ef502c5764bde314ca620566e02811019b940fd383a7f7",
     "compensating_controls": "Exact commit/artifact binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T08:03:00Z",
     "finding_id": "CVE-2026-78410",
@@ -149,13 +149,13 @@
     "scope": "PATCH-059 backend candidate commit 1eda588fe8604775be384433380f91006d3ba7e3 and artifact sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57 only; trivy/CVE-2026-78410. No transfer to any other commit, artifact, or production topology.",
     "severity": "HIGH",
     "source": "trivy",
-    "source_revision": "1eda588fe8604775be384433380f91006d3ba7e3",
+    "source_revision": "5f99fbd89045fe24d9f62fb74a3060921d5f0500",
     "status": "active"
   },
   {
     "approved_at": "2026-10-05T08:03:00Z",
     "approver_id": "github:301386823:samiphone651-sys",
-    "artifact_digest": "sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57",
+    "artifact_digest": "sha256:9a87120a105143d8d0ef502c5764bde314ca620566e02811019b940fd383a7f7",
     "compensating_controls": "Exact commit/artifact binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T08:03:00Z",
     "finding_id": "CVE-2026-9538",
@@ -166,7 +166,7 @@
     "scope": "PATCH-059 backend candidate commit 1eda588fe8604775be384433380f91006d3ba7e3 and artifact sha256:2b280ef66e3f3c309f2ed70bb4e1fcae468dd118ae8f90d750411a0d33630a57 only; trivy/CVE-2026-9538. No transfer to any other commit, artifact, or production topology.",
     "severity": "HIGH",
     "source": "trivy",
-    "source_revision": "1eda588fe8604775be384433380f91006d3ba7e3",
+    "source_revision": "5f99fbd89045fe24d9f62fb74a3060921d5f0500",
     "status": "active"
   }
 ]
