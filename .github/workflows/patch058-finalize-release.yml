@@ -39,7 +39,22 @@ on:
 permissions: {}
 
 jobs:
+  authorize-manual-dispatch:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Restrict manual dispatch to the sole Human Authority
+        env:
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: |
+          set -eu
+          test "$ACTOR" = "samiphone651-sys"
+          test "$TRIGGERING_ACTOR" = "samiphone651-sys"
+
   finalize:
+    if: ${{ github.event_name != 'workflow_dispatch' || needs.authorize-manual-dispatch.result == 'success' }}
+    needs: authorize-manual-dispatch
     runs-on: ubuntu-24.04
     permissions:
       actions: read
