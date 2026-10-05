@@ -1,0 +1,371 @@
+name: PATCH-059 protected signing and finalization
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful exact-source PATCH-059 candidate-evidence run ID
+        required: true
+        type: string
+      release_id:
+        description: Immutable PATCH-059 release ID
+        required: true
+        type: string
+      release_sequence:
+        description: Positive immutable SATCO release sequence
+        required: true
+        type: string
+      expected_source_sha:
+        description: Exact 40-character patch-059-implementation source revision
+        required: true
+        type: string
+      expected_alembic_head:
+        description: Exact sole Alembic head
+        required: true
+        default: e05900000002
+        type: string
+      configuration_schema:
+        description: Exact deployment configuration-schema identity
+        required: true
+        default: v1
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: patch059-release-${{ inputs.release_id }}-${{ inputs.expected_source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected_source_sha }}
+      - name: Fail closed unless the separately authorized dispatcher is configured
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+        run: |
+          set -eu
+          test "$GITHUB_REF" = "refs/heads/patch-059-implementation"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          printf '%s' "$EXPECTED_SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+          printf '%s' "$RELEASE_SEQUENCE" | grep -Eq '^[1-9][0-9]*$'
+          curl --fail --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            > protected-run.json
+          python3 ops/scripts/patch059-release-evidence.py gate-run \
+            --policy ops/patch059-single-human-authority-policy.v1.json \
+            --run-json protected-run.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-sha "$EXPECTED_SOURCE_SHA"
+
+  sign-candidate:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    environment: patch058-protected-release
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected_source_sha }}
+          fetch-depth: 0
+      - name: Enforce the narrow PATCH-059 source and workflow identity
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+        run: |
+          set -eu
+          test "$GITHUB_REF" = "refs/heads/patch-059-implementation"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          printf '%s' "$EXPECTED_SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$RELEASE_SEQUENCE" | grep -Eq '^[1-9][0-9]*$'
+
+      - name: Capture authenticated protected-run and signing-Environment evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > protected-run.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/patch058-protected-release" > signing-environment.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/patch058-protected-release/deployment-branch-policies" > signing-branch-policies.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" > signing-approvals.json
+
+      - name: Verify candidate run identity and download exact evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+        run: |
+          set -eu
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID" > candidate-run.json
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: patch059-release-candidate-${{ inputs.expected_source_sha }}
+          path: bundle
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
+
+      - name: Reconcile exact candidate evidence and signing authorization
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+          EXPECTED_ALEMBIC_HEAD: ${{ inputs.expected_alembic_head }}
+          CONFIGURATION_SCHEMA: ${{ inputs.configuration_schema }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: |
+          set -eu
+          for path in candidate-identity.json backend-image.oci.tar frontend-dist.tar migration-set.tar provenance.intoto.json resolved-high-exceptions.json security-decision.json backend-production.lock backend-uv.lock frontend-package-lock.json migration-set.sha256 backend-qualification.json frontend-qualification.json migration-qualification.json pip-audit.json npm-audit.json semgrep.json gitleaks.json trivy-backend.json backend-sbom.cdx.json frontend-sbom.cdx.json vulnerability-gate.json
+          do
+            test -f "bundle/$path"
+            test ! -L "bundle/$path"
+          done
+          python3 ops/scripts/patch059-candidate-evidence.py verify \
+            --run-json candidate-run.json \
+            --identity bundle/candidate-identity.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-sha "$EXPECTED_SOURCE_SHA" \
+            --release-id "$RELEASE_ID" \
+            --run-id "$CANDIDATE_RUN_ID" \
+            --security-decision bundle/security-decision.json \
+            --security-decision-commit "$(python3 -c 'import json; print(json.load(open("bundle/security-decision.json", encoding="utf-8"))["decisionCommit"])')" \
+            --exceptions bundle/resolved-high-exceptions.json
+          cp ops/patch059-single-human-authority-policy.v1.json bundle/single-human-authority-policy.v1.json
+          python3 ops/scripts/patch059-release-evidence.py signing-authorization \
+            --policy bundle/single-human-authority-policy.v1.json \
+            --run-json protected-run.json \
+            --environment-json signing-environment.json \
+            --branch-policies-json signing-branch-policies.json \
+            --approvals-json signing-approvals.json \
+            --bundle bundle \
+            --repository "$GITHUB_REPOSITORY" \
+            --release-id "$RELEASE_ID" \
+            --source-sha "$EXPECTED_SOURCE_SHA" \
+            --output bundle/human-signing-authorization.json
+          cp protected-run.json signing-environment.json signing-branch-policies.json signing-approvals.json bundle/
+
+      - name: Install the reviewed release signer
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with:
+          cosign-release: v2.6.0
+
+      - name: Sign and verify every exact candidate artifact
+        working-directory: bundle
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+        run: |
+          set -eu
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/patch059-sign-release.yml@refs/heads/patch-059-implementation"
+          issuer="https://token.actions.githubusercontent.com"
+          for entry in backend=backend-image.oci.tar frontend=frontend-dist.tar migrations=migration-set.tar
+          do
+            name="${entry%%=*}"
+            artifact="${entry#*=}"
+            cosign sign-blob --yes --bundle "$name-signature.bundle.json" "$artifact"
+            cosign verify-blob --offline --bundle "$name-signature.bundle.json" \
+              --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" \
+              --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
+              --certificate-github-workflow-sha "$EXPECTED_SOURCE_SHA" "$artifact" \
+              > "$name-signature-verification.json"
+          done
+          export SIGNER_IDENTITY="$identity" OIDC_ISSUER="$issuer"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          root = pathlib.Path(".")
+          def digest(name):
+              return "sha256:" + hashlib.sha256((root / name).read_bytes()).hexdigest()
+          decision = json.load(open("security-decision.json", encoding="utf-8"))
+          artifacts = {"backend": "backend-image.oci.tar", "frontend": "frontend-dist.tar", "migrations": "migration-set.tar"}
+          summary = {
+              "source_commit": os.environ["EXPECTED_SOURCE_SHA"],
+              "security_decision_commit": decision["decisionCommit"],
+              "artifacts": [
+                  {"name": name, "artifact_digest": digest(path), "verified": True,
+                   "signer_identity": os.environ["SIGNER_IDENTITY"], "oidc_issuer": os.environ["OIDC_ISSUER"]}
+                  for name, path in sorted(artifacts.items())
+              ],
+          }
+          with open("signature-verification-summary.json", "w") as output:
+              json.dump(summary, output, indent=2, sort_keys=True); output.write("\n")
+          PY
+
+      - name: Assemble the pending dossier and signed release identity
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+          EXPECTED_ALEMBIC_HEAD: ${{ inputs.expected_alembic_head }}
+          CONFIGURATION_SCHEMA: ${{ inputs.configuration_schema }}
+        run: |
+          set -eu
+          created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          (
+            cd bundle
+            python3 ../ops/scripts/patch058-release-dossier.py generate \
+              --release-id "$RELEASE_ID" --source-commit "$EXPECTED_SOURCE_SHA" --created-at "$created_at" \
+              --artifact backend=backend-image.oci.tar --artifact frontend=frontend-dist.tar --artifact migrations=migration-set.tar \
+              --build-input backend-production-lock=backend-production.lock --build-input backend-uv-lock=backend-uv.lock \
+              --build-input frontend-package-lock=frontend-package-lock.json --build-input migration-set=migration-set.sha256 \
+              --qualification-evidence backend=backend-qualification.json --qualification-evidence frontend=frontend-qualification.json \
+              --qualification-evidence migration=migration-qualification.json \
+              --security-evidence pip-audit=pip-audit.json --security-evidence npm-audit=npm-audit.json \
+              --security-evidence semgrep=semgrep.json --security-evidence gitleaks=gitleaks.json \
+              --security-evidence trivy=trivy-backend.json --security-evidence vulnerability_gate=vulnerability-gate.json \
+              --exception high_findings=resolved-high-exceptions.json --exception security_decision=security-decision.json \
+              --sbom backend=backend-sbom.cdx.json --sbom frontend=frontend-sbom.cdx.json \
+              --provenance provenance.intoto.json --signature-verification signature-verification-summary.json \
+              --human-signing-authorization approved=human-signing-authorization.json \
+              --human-release-approval pending=patch059-final-release-approval \
+              --output release-dossier.pending.v1.json
+            python3 ../ops/scripts/patch058-release-dossier.py verify --dossier release-dossier.pending.v1.json \
+              --now "$created_at" --allow-pending-approvals
+          )
+          python3 - <<'PY'
+          import datetime as dt, hashlib, json, os, pathlib
+          root = pathlib.Path("bundle")
+          def digest(path): return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+          artifacts = {"backend": digest(root / "backend-image.oci.tar"), "frontend": digest(root / "frontend-dist.tar"), "migrations": digest(root / "migration-set.tar")}
+          manifest = {
+              "schema": "satco.patch059-release-manifest/v1", "release_id": os.environ["RELEASE_ID"],
+              "release_sequence": int(os.environ["RELEASE_SEQUENCE"]), "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
+              "artifacts": artifacts, "expected_alembic_head": os.environ["EXPECTED_ALEMBIC_HEAD"],
+              "configuration_schema": os.environ["CONFIGURATION_SCHEMA"],
+              "candidate_identity_sha256": digest(root / "candidate-identity.json"),
+              "provenance_sha256": digest(root / "provenance.intoto.json"),
+              "dossier_sha256": digest(root / "release-dossier.pending.v1.json"),
+              "created_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+          }
+          (root / "release-manifest.v1.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+          workflow = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/.github/workflows/patch059-sign-release.yml@refs/heads/patch-059-implementation"
+          external = {"releaseId": os.environ["RELEASE_ID"], "releaseSequence": int(os.environ["RELEASE_SEQUENCE"]),
+                      "repository": os.environ["GITHUB_REPOSITORY"], "revision": os.environ["EXPECTED_SOURCE_SHA"],
+                      "workflow": workflow, "candidateEvidence": json.load(open(root / "candidate-identity.json"))}
+          subjects = artifacts | {"manifest": digest(root / "release-manifest.v1.json")}
+          provenance = {"_type": "https://in-toto.io/Statement/v1",
+                        "subject": [{"name": k, "digest": {"sha256": v.removeprefix("sha256:")}} for k, v in sorted(subjects.items())],
+                        "predicateType": "https://slsa.dev/provenance/v1",
+                        "predicate": {"buildDefinition": {"buildType": "https://satcoelectrical.ir/PATCH-059/protected-release/v1", "externalParameters": external},
+                                      "runDetails": {"builder": {"id": workflow}}}}
+          (root / "release-provenance.intoto.json").write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
+          PY
+          cd bundle
+          cosign sign-blob --yes --bundle manifest-signature.bundle.json release-manifest.v1.json
+          cosign attest-blob --yes --type slsaprovenance1 --statement release-provenance.intoto.json \
+            --bundle manifest-provenance-attestation.bundle.json release-manifest.v1.json
+          python3 ../ops/scripts/patch059-release-evidence.py handoff \
+            --policy single-human-authority-policy.v1.json \
+            --bundle . \
+            --release-id "$RELEASE_ID" \
+            --release-sequence "$RELEASE_SEQUENCE" \
+            --source-sha "$EXPECTED_SOURCE_SHA" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --created-at "$created_at" \
+            --output signed-candidate-handoff.v1.json
+          {
+            printf 'manifest_sha256=%s\n' "$(sha256sum release-manifest.v1.json | awk '{print $1}')"
+            printf 'signing_authorization_sha256=%s\n' "$(sha256sum human-signing-authorization.json | awk '{print $1}')"
+            printf 'signed_handoff_sha256=%s\n' "$(sha256sum signed-candidate-handoff.v1.json | awk '{print $1}')"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: patch059-signed-candidate-${{ inputs.expected_source_sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: bundle
+
+  finalize:
+    needs: sign-candidate
+    runs-on: ubuntu-24.04
+    environment: patch059-final-release-approval
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected_source_sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: patch059-signed-candidate-${{ inputs.expected_source_sha }}
+          path: bundle
+      - name: Bind the distinct protected final Human release approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+        run: |
+          set -eu
+          test "$GITHUB_REF" = "refs/heads/patch-059-implementation"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > final-run.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/patch059-final-release-approval" > final-environment.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/patch059-final-release-approval/deployment-branch-policies" > final-branch-policies.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" > final-approvals.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" > final-jobs.json
+          python3 ops/scripts/patch059-release-evidence.py final-approval \
+            --policy bundle/single-human-authority-policy.v1.json \
+            --run-json final-run.json \
+            --environment-json final-environment.json \
+            --branch-policies-json final-branch-policies.json \
+            --approvals-json final-approvals.json \
+            --jobs-json final-jobs.json \
+            --bundle bundle \
+            --repository "$GITHUB_REPOSITORY" \
+            --release-id "$RELEASE_ID" \
+            --release-sequence "$RELEASE_SEQUENCE" \
+            --source-sha "$EXPECTED_SOURCE_SHA" \
+            --output bundle/human-release-approval.json
+          workflow="https://github.com/$GITHUB_REPOSITORY/.github/workflows/patch059-sign-release.yml@refs/heads/patch-059-implementation"
+          python3 ops/scripts/patch059-release-evidence.py finalization \
+            --policy bundle/single-human-authority-policy.v1.json \
+            --bundle bundle \
+            --repository "$GITHUB_REPOSITORY" \
+            --issuer "https://token.actions.githubusercontent.com" \
+            --workflow-ref "$workflow" \
+            --finalized-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --output bundle/release-finalization.v2.json
+          cp final-run.json final-environment.json final-branch-policies.json final-approvals.json final-jobs.json bundle/
+
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with:
+          cosign-release: v2.6.0
+      - name: Sign approval and finalization, then run pinned offline verification
+        working-directory: bundle
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+        run: |
+          set -eu
+          cosign sign-blob --yes --bundle approval-signature.bundle.json human-release-approval.json
+          cosign sign-blob --yes --bundle finalization-signature.bundle.json release-finalization.v2.json
+          manifest_digest="$(sha256sum release-manifest.v1.json | awk '{print $1}')"
+          python3 ../ops/scripts/patch059-release-evidence.py verify --bundle . --repository "$GITHUB_REPOSITORY" --issuer "https://token.actions.githubusercontent.com" --workflow-ref "https://github.com/$GITHUB_REPOSITORY/.github/workflows/patch059-sign-release.yml@refs/heads/patch-059-implementation" --source-sha "$EXPECTED_SOURCE_SHA" --release-id "$RELEASE_ID" --release-sequence "$RELEASE_SEQUENCE" --manifest-sha256 "$manifest_digest" --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: patch059-release-ready-${{ inputs.expected_source_sha }}
+          retention-days: 90
+          if-no-files-found: error
+          path: bundle
