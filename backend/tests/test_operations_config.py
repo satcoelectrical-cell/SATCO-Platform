@@ -15,6 +15,7 @@ def production_settings(manifest_path: str, **overrides) -> Settings:
     totp_key = str(parent / "totp-key")
     recovery_key = str(parent / "recovery-key")
     throttle_key = str(parent / "throttle-key")
+    commercial_trust_store = str(parent / "commercial-trust-store.json")
     parent.joinpath("scanner-token").write_text("s" * 40, encoding="utf-8")
     parent.joinpath("object-access").write_text("access-key", encoding="utf-8")
     parent.joinpath("object-secret").write_text("o" * 40, encoding="utf-8")
@@ -24,10 +25,12 @@ def production_settings(manifest_path: str, **overrides) -> Settings:
     )
     parent.joinpath("recovery-key").write_text("c" * 40, encoding="utf-8")
     parent.joinpath("throttle-key").write_text("h" * 40, encoding="utf-8")
+    parent.joinpath("commercial-trust-store.json").write_text("{}", encoding="utf-8")
     values = {
         "SATCO_ENVIRONMENT": "production",
         "SATCO_DEPLOYMENT_ID": "test-production-deployment",
         "SATCO_COMMERCIAL_ENTITLEMENT_ENABLED": True,
+        "SATCO_COMMERCIAL_ENTITLEMENT_TRUST_STORE_FILE": commercial_trust_store,
         "SECRET_KEY": "a" * 40,
         "REFRESH_VERIFIER_KEY": "r" * 40,
         "TOTP_ENCRYPTION_KEY_FILE": totp_key,

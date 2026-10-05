@@ -61,6 +61,8 @@ def test_production_readiness_requires_database_and_non_content_health(tmp_path,
     recovery_key.write_text("r" * 40, encoding="utf-8")
     throttle_key = tmp_path / "throttle-key"
     throttle_key.write_text("h" * 40, encoding="utf-8")
+    commercial_trust_store = tmp_path / "commercial-trust-store.json"
+    commercial_trust_store.write_text("{}", encoding="utf-8")
     subprocess.run(
         ["sh", str(ROOT / "ops/scripts/set-ops-mode.sh"), "normal"],
         check=True,
@@ -74,6 +76,7 @@ def test_production_readiness_requires_database_and_non_content_health(tmp_path,
         SATCO_ENVIRONMENT="production",
         SATCO_DEPLOYMENT_ID="test-production-deployment",
         SATCO_COMMERCIAL_ENTITLEMENT_ENABLED=True,
+        SATCO_COMMERCIAL_ENTITLEMENT_TRUST_STORE_FILE=str(commercial_trust_store),
         SECRET_KEY="a" * 40,
         SATCO_RELEASE_MANIFEST_PATH=str(manifest), SATCO_PUBLIC_URL="https://satco.example",
         SATCO_TRUSTED_HOSTS="satco.example", SATCO_ALLOWED_ORIGINS="https://satco.example",

@@ -53,7 +53,7 @@ def _truncate():
 
 
 def test_p056_dat_01_repository_head_and_exact_tables():
-    assert TEST_DATABASE_REVISION == "e05800000001"
+    assert TEST_DATABASE_REVISION == "e05900000002"
     command.downgrade(alembic_config, PATCH_056_HEAD)
     assert _revision() == PATCH_056_HEAD
     tables = set(inspect(owner_engine).get_table_names())
