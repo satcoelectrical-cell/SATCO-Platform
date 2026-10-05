@@ -51,7 +51,7 @@ jobs:
           test "$TRIGGERING_ACTOR" = "samiphone651-sys"
 
   sign:
-    if: ${{ github.event_name != 'workflow_dispatch' || needs.authorize-manual-dispatch.result == 'success' }}
+    if: ${{ always() && (github.event_name != 'workflow_dispatch' || needs.authorize-manual-dispatch.result == 'success') }}
     needs: authorize-manual-dispatch
     runs-on: ubuntu-24.04
     environment: patch058-protected-release
