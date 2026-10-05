@@ -1,7 +1,7 @@
 [
   {
     "approved_at": "2026-10-05T11:51:42Z",
-    "approver_id": "github:301386823:samiphone651-sys",
+    "approver_id": "github:samiphone651-sys#301386823",
     "artifact_digest": "sha256:ad0e2abdfaa584aef5d7c62f5810428a5f4cc778456c30950f7b415f95330448",
     "compensating_controls": "Exact source/artifact/evidence binding; HS256-only JWT configuration; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T11:51:42Z",
@@ -18,7 +18,7 @@
   },
   {
     "approved_at": "2026-10-05T11:51:42Z",
-    "approver_id": "github:301386823:samiphone651-sys",
+    "approver_id": "github:samiphone651-sys#301386823",
     "artifact_digest": "sha256:ad0e2abdfaa584aef5d7c62f5810428a5f4cc778456c30950f7b415f95330448",
     "compensating_controls": "Exact source/artifact/evidence binding; HS256-only JWT configuration; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T11:51:42Z",
@@ -35,7 +35,7 @@
   },
   {
     "approved_at": "2026-10-05T11:51:42Z",
-    "approver_id": "github:301386823:samiphone651-sys",
+    "approver_id": "github:samiphone651-sys#301386823",
     "artifact_digest": "sha256:ad0e2abdfaa584aef5d7c62f5810428a5f4cc778456c30950f7b415f95330448",
     "compensating_controls": "Exact source/artifact/evidence binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T11:51:42Z",
@@ -52,7 +52,7 @@
   },
   {
     "approved_at": "2026-10-05T11:51:42Z",
-    "approver_id": "github:301386823:samiphone651-sys",
+    "approver_id": "github:samiphone651-sys#301386823",
     "artifact_digest": "sha256:ad0e2abdfaa584aef5d7c62f5810428a5f4cc778456c30950f7b415f95330448",
     "compensating_controls": "Exact source/artifact/evidence binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T11:51:42Z",
@@ -69,7 +69,7 @@
   },
   {
     "approved_at": "2026-10-05T11:51:42Z",
-    "approver_id": "github:301386823:samiphone651-sys",
+    "approver_id": "github:samiphone651-sys#301386823",
     "artifact_digest": "sha256:ad0e2abdfaa584aef5d7c62f5810428a5f4cc778456c30950f7b415f95330448",
     "compensating_controls": "Exact source/artifact/evidence binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T11:51:42Z",
@@ -86,7 +86,7 @@
   },
   {
     "approved_at": "2026-10-05T11:51:42Z",
-    "approver_id": "github:301386823:samiphone651-sys",
+    "approver_id": "github:samiphone651-sys#301386823",
     "artifact_digest": "sha256:ad0e2abdfaa584aef5d7c62f5810428a5f4cc778456c30950f7b415f95330448",
     "compensating_controls": "Exact source/artifact/evidence binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T11:51:42Z",
@@ -103,7 +103,7 @@
   },
   {
     "approved_at": "2026-10-05T11:51:42Z",
-    "approver_id": "github:301386823:samiphone651-sys",
+    "approver_id": "github:samiphone651-sys#301386823",
     "artifact_digest": "sha256:ad0e2abdfaa584aef5d7c62f5810428a5f4cc778456c30950f7b415f95330448",
     "compensating_controls": "Exact source/artifact/evidence binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T11:51:42Z",
@@ -120,7 +120,7 @@
   },
   {
     "approved_at": "2026-10-05T11:51:42Z",
-    "approver_id": "github:301386823:samiphone651-sys",
+    "approver_id": "github:samiphone651-sys#301386823",
     "artifact_digest": "sha256:ad0e2abdfaa584aef5d7c62f5810428a5f4cc778456c30950f7b415f95330448",
     "compensating_controls": "Exact source/artifact/evidence binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T11:51:42Z",
@@ -137,7 +137,7 @@
   },
   {
     "approved_at": "2026-10-05T11:51:42Z",
-    "approver_id": "github:301386823:samiphone651-sys",
+    "approver_id": "github:samiphone651-sys#301386823",
     "artifact_digest": "sha256:ad0e2abdfaa584aef5d7c62f5810428a5f4cc778456c30950f7b415f95330448",
     "compensating_controls": "Exact source/artifact/evidence binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T11:51:42Z",
@@ -154,7 +154,7 @@
   },
   {
     "approved_at": "2026-10-05T11:51:42Z",
-    "approver_id": "github:301386823:samiphone651-sys",
+    "approver_id": "github:samiphone651-sys#301386823",
     "artifact_digest": "sha256:ad0e2abdfaa584aef5d7c62f5810428a5f4cc778456c30950f7b415f95330448",
     "compensating_controls": "Exact source/artifact/evidence binding; non-root read-only runtime; no-new-privileges; zero effective Linux capabilities; unconfigured fstab; no application invocation of affected utilities/features; mandatory fail-closed rescanning and expiry/retest.",
     "expires_at": "2026-11-04T11:51:42Z",
