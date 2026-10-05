@@ -132,7 +132,7 @@ jobs:
           CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
         run: |
           set -eu
-          for path in candidate-identity.json backend-image.oci.tar frontend-dist.tar migration-set.tar provenance.intoto.json resolved-high-exceptions.json security-decision.json backend-production.lock backend-uv.lock frontend-package-lock.json migration-set.sha256 backend-qualification.json frontend-qualification.json migration-qualification.json pip-audit.json npm-audit.json semgrep.json gitleaks.json trivy-backend.json backend-sbom.cdx.json frontend-sbom.cdx.json vulnerability-gate.json
+          for path in candidate-identity.json backend-image.oci.tar frontend-dist.tar migration-set.tar provenance.intoto.json resolved-high-exceptions.json security-decision.json backend-production.lock backend-uv.lock frontend-package-lock.json migration-set.sha256 backend-qualification.json frontend-qualification.json migration-qualification.json pip-audit.json npm-audit.json semgrep.json gitleaks.json trivy-backend.json backend-sbom.cdx.json frontend-sbom.cdx.json vulnerability-gate.json pre-decision-evidence.json pre-decision-artifact.json pre-decision-run.json pre-decision-artifact-api.json pre-decision-artifact.zip
           do
             test -f "bundle/$path"
             test ! -L "bundle/$path"
@@ -146,7 +146,13 @@ jobs:
             --run-id "$CANDIDATE_RUN_ID" \
             --security-decision bundle/security-decision.json \
             --security-decision-commit "$(python3 -c 'import json; print(json.load(open("bundle/security-decision.json", encoding="utf-8"))["decisionCommit"])')" \
-            --exceptions bundle/resolved-high-exceptions.json
+            --exceptions bundle/resolved-high-exceptions.json \
+            --pre-decision-evidence bundle/pre-decision-evidence.json \
+            --pre-decision-artifact bundle/pre-decision-artifact.json \
+            --pre-decision-run-json bundle/pre-decision-run.json \
+            --pre-decision-artifact-json bundle/pre-decision-artifact-api.json \
+            --pre-decision-archive bundle/pre-decision-artifact.zip \
+            --bundle bundle
           cp ops/patch059-single-human-authority-policy.v1.json bundle/single-human-authority-policy.v1.json
           python3 ops/scripts/patch059-release-evidence.py signing-authorization \
             --policy bundle/single-human-authority-policy.v1.json \

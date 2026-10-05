@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import os
 import pathlib
@@ -82,6 +83,12 @@ DOSSIER_KEYS = {
     "build_inputs", "qualification_evidence", "security_evidence",
     "exceptions", "sboms", "provenance", "signature_verification",
     "human_signing_authorization", "human_release_approval", "created_at",
+}
+PRE_DECISION_PROVENANCE_FILES = {
+    "pre-decision-evidence": "pre-decision-evidence.json",
+    "pre-decision-artifact": "pre-decision-artifact.json",
+    "pre-decision-run": "pre-decision-run.json",
+    "pre-decision-artifact-api": "pre-decision-artifact-api.json",
 }
 
 
@@ -181,6 +188,31 @@ def _canonical_digest(value: object) -> str:
         value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
     ).encode("utf-8")
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _verify_pre_decision_custody(
+    root: pathlib.Path, *, repository: str, source_sha: str, release_id: str
+) -> None:
+    script = pathlib.Path(__file__).with_name("patch059-candidate-evidence.py")
+    spec = importlib.util.spec_from_file_location("patch059_candidate_evidence", script)
+    if spec is None or spec.loader is None:
+        raise ReleaseVerificationError("pre-decision verifier unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        module.verify_pre_decision_custody(
+            identity=_load(root / "pre-decision-artifact.json"),
+            evidence=_load(root / "pre-decision-evidence.json"),
+            run=_load(root / "pre-decision-run.json"),
+            artifact=_load(root / "pre-decision-artifact-api.json"),
+            repository=repository,
+            source_sha=source_sha,
+            release_id=release_id,
+            archive_path=root / "pre-decision-artifact.zip",
+            bundle=root,
+        )
+    except (OSError, module.CandidateEvidenceError) as exc:
+        raise ReleaseVerificationError("pre-decision custody mismatch") from exc
 
 
 def validate_authority_policy(
@@ -1003,6 +1035,9 @@ def verify_bundle(
         or not SHA256.fullmatch(str(candidate_identity.get("security_decision_sha256", "")))
     ):
         raise ReleaseVerificationError("candidate producer identity mismatch")
+    _verify_pre_decision_custody(
+        root, repository=repository, source_sha=source_sha, release_id=release_id
+    )
 
     candidate_provenance = _load(file("provenance.intoto.json"))
     if manifest["provenance_sha256"] != _digest(file("provenance.intoto.json")):
@@ -1019,6 +1054,25 @@ def verify_bundle(
         or _subjects(candidate_provenance) != actual_artifacts
     ):
         raise ReleaseVerificationError("candidate provenance mismatch")
+    try:
+        pre_decision_descriptors = _subjects(
+            {
+                "subject": candidate_provenance["predicate"]["satco"][  # type: ignore[index]
+                    "qualificationEvidence"
+                ]
+            }
+        )
+    except (KeyError, TypeError) as exc:
+        raise ReleaseVerificationError("candidate pre-decision provenance missing") from exc
+    expected_pre_decision = {
+        name: _digest(file(filename))
+        for name, filename in PRE_DECISION_PROVENANCE_FILES.items()
+    }
+    if any(
+        pre_decision_descriptors.get(name) != digest
+        for name, digest in expected_pre_decision.items()
+    ):
+        raise ReleaseVerificationError("candidate pre-decision provenance mismatch")
 
     dossier_path = file("release-dossier.pending.v1.json")
     dossier = _load(dossier_path)

@@ -50,19 +50,45 @@ dispatcher mismatch fails closed.
 
 ## Candidate evidence
 
-The sole candidate producer is the dispatch-only workflow
+The sole candidate producer remains the dispatch-only workflow
 `.github/workflows/patch059-candidate-evidence.yml` at
-`refs/heads/patch-059-implementation`. Its closed
-`satco.patch059-candidate-evidence/v2` identity binds:
+`refs/heads/patch-059-implementation`, but candidate production has two
+purpose-distinct dispatch phases. The `pre-decision` phase qualifies the exact
+source, builds each artifact once, runs the pinned scanners, binds the SBOMs,
+and publishes `satco.patch059-pre-decision-evidence/v1`. It does not accept a
+security-decision commit and cannot produce successful candidate evidence.
+
+The pre-decision record binds repository, workflow path/ref, event, branch,
+source, release ID, API-authenticated run ID/attempt/URL and actor identities,
+plus the SHA-256 digest of every artifact, governed build input, qualification
+result, scanner report and SBOM. The upload step publishes the GitHub artifact
+ID and GitHub-reported archive digest for Human review. This is evidence for a
+later security decision, not approval or release authorization.
+
+Only after the Human decision exists may a separate `post-decision` dispatch
+name the exact pre-decision run ID/attempt, artifact ID, artifact digest and
+security-decision commit. That job authenticates the prior run and artifact
+through the GitHub API, downloads by immutable artifact ID, verifies the
+archive digest and closed member set, safely extracts it, and reconciles every
+file against the pre-decision record. It performs no build, dependency install,
+qualification or scanner execution. It then validates the exact Human
+exception, runs the vulnerability gate against the retained scanner reports,
+and emits the existing closed `satco.patch059-candidate-evidence/v2` identity,
+which binds:
 
 - repository, workflow path/ref, event, branch, source SHA, and release ID;
 - API-authenticated run ID, run attempt, run URL, actor, and triggering actor;
 - candidate-specific security-decision commit; and
 - SHA-256 of the exact security-decision document.
 
-The consumer fetches the run from the GitHub API and reconciles every field.
-Candidate, artifact, provenance, exception, and security-decision mismatch is
-fail closed.
+The final candidate provenance binds the pre-decision evidence, prior run API
+snapshot and artifact API snapshot. The original downloaded archive and its
+closed `satco.patch059-pre-decision-artifact/v1` identity are retained in the
+candidate bundle. The protected signer and offline verifier revalidate that
+custody chain. Wrong source, artifact digest, run, attempt, repository,
+workflow, event, branch, scanner evidence, archive contents, Human decision or
+candidate provenance fails closed. Rebuilding after the Human decision is not
+an available workflow path.
 
 ## Protected signing event and signed handoff
 
@@ -105,8 +131,10 @@ are separately signed with the pinned signer identity.
 ## Offline verification and fail-closed controls
 
 `ops/scripts/patch059-release-evidence.py` parses duplicate-member-free JSON
-and verifies only bundle-local regular, single-link subjects. It checks closed
-contracts, exact digests, candidate and release provenance, exception
+and verifies only bundle-local regular, single-link subjects. It revalidates
+the retained pre-decision archive, API run/artifact snapshots and every
+pre-decision file digest. It also checks closed contracts, exact digests,
+candidate and release provenance, exception
 freshness, sole-Human identity, configured non-Human dispatcher, attempt-1
 protected run, Environment controls, distinct purpose-bound events, 15-minute
 separation, handoff/finalization custody, and every cross-document binding.
@@ -114,15 +142,16 @@ It then invokes pinned Cosign v2.6.0 in offline mode for the artifact,
 manifest, approval, and finalization signatures and the manifest attestation.
 
 The unresolved example policy is valid documentation but invalid execution
-policy. A self-consistent forged bundle, Human-dispatched protected run, wrong
-actor, rerun attempt, wrong reviewer, self-review-enabled Environment,
-administrator bypass, branch-policy drift, missing timer, early final approval,
-event reuse, or any digest substitution is rejected.
+policy. A self-consistent forged bundle, substituted pre-decision archive or
+scanner report, Human-dispatched protected run, wrong actor, wrong run attempt,
+wrong reviewer, self-review-enabled Environment, administrator bypass,
+branch-policy drift, missing timer, early final approval, event reuse, rebuild,
+or any digest substitution is rejected.
 
 ## Explicit exclusions and next authorization boundary
 
 This implementation does not modify GitHub repository, ruleset, Environment,
-App, or Actions settings. It does not authorize workflow dispatch, the
+App, or Actions settings. It does not authorize either workflow phase, the
 candidate-specific vulnerability exception, real OIDC/Cosign evidence,
 release, deployment, or Human Acceptance. Deployment authorization and Human
 Acceptance remain separate later events. Application persistence, migrations,

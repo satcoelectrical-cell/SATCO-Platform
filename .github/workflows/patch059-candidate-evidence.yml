@@ -3,6 +3,13 @@ name: PATCH-059 release candidate evidence
 on:
   workflow_dispatch:
     inputs:
+      phase:
+        description: Produce immutable pre-decision evidence or finalize that exact evidence after Human decision
+        required: true
+        type: choice
+        options:
+          - pre-decision
+          - post-decision
       expected_source_sha:
         description: Exact 40-character patch-059-implementation source revision
         required: true
@@ -12,8 +19,24 @@ on:
         required: true
         type: string
       security_decision_commit:
-        description: Exact Human decision commit on patch-058-security-decisions
-        required: true
+        description: Post-decision only; exact Human decision commit on patch-058-security-decisions
+        required: false
+        type: string
+      pre_decision_run_id:
+        description: Post-decision only; authenticated pre-decision workflow run ID
+        required: false
+        type: string
+      pre_decision_run_attempt:
+        description: Post-decision only; exact pre-decision run attempt
+        required: false
+        type: string
+      pre_decision_artifact_id:
+        description: Post-decision only; exact immutable GitHub artifact ID
+        required: false
+        type: string
+      pre_decision_artifact_digest:
+        description: Post-decision only; exact GitHub artifact sha256 digest
+        required: false
         type: string
 
 permissions:
@@ -21,11 +44,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: patch059-candidate-${{ inputs.release_id }}-${{ inputs.expected_source_sha }}
+  group: patch059-candidate-${{ inputs.phase }}-${{ inputs.release_id }}-${{ inputs.expected_source_sha }}
   cancel-in-progress: false
 
 jobs:
-  produce:
+  produce-pre-decision:
+    if: inputs.phase == 'pre-decision'
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -46,10 +70,15 @@ jobs:
         with:
           ref: ${{ inputs.expected_source_sha }}
           fetch-depth: 0
-      - name: Enforce exact producer identity and clean source
+      - name: Enforce exact pre-decision producer identity and clean source
         env:
           EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
           RELEASE_ID: ${{ inputs.release_id }}
+          SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
+          PRE_DECISION_RUN_ID: ${{ inputs.pre_decision_run_id }}
+          PRE_DECISION_RUN_ATTEMPT: ${{ inputs.pre_decision_run_attempt }}
+          PRE_DECISION_ARTIFACT_ID: ${{ inputs.pre_decision_artifact_id }}
+          PRE_DECISION_ARTIFACT_DIGEST: ${{ inputs.pre_decision_artifact_digest }}
         run: |
           set -eu
           test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
@@ -59,6 +88,11 @@ jobs:
           test -z "$(git status --porcelain --untracked-files=all)"
           printf '%s' "$EXPECTED_SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
           printf '%s' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+          test -z "$SECURITY_DECISION_COMMIT"
+          test -z "$PRE_DECISION_RUN_ID"
+          test -z "$PRE_DECISION_RUN_ATTEMPT"
+          test -z "$PRE_DECISION_ARTIFACT_ID"
+          test -z "$PRE_DECISION_ARTIFACT_DIGEST"
 
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
@@ -106,7 +140,7 @@ jobs:
           version: "v0.35.0"
           driver: docker-container
           driver-opts: image=moby/buildkit@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
-      - name: Build exact immutable subjects
+      - name: Build exact immutable pre-decision subjects once
         env:
           BUILDX_DRIVER: ${{ steps.buildx.outputs.driver }}
         run: |
@@ -122,18 +156,12 @@ jobs:
             -cf frontend-dist.tar -C frontend/dist .
           tar --sort=name --mtime="@$source_epoch" --owner=0 --group=0 --numeric-owner \
             -cf migration-set.tar backend/migrations
-          sha256sum backend/requirements.production.lock backend/uv.lock frontend/package-lock.json > governed-locks.sha256
           find backend/migrations/versions -type f -name '*.py' -print0 | sort -z | xargs -0 sha256sum > migration-set.sha256
           cp backend/requirements.production.lock backend-production.lock
           cp backend/uv.lock backend-uv.lock
           cp frontend/package-lock.json frontend-package-lock.json
-          printf 'BACKEND_ARTIFACT_DIGEST=sha256:%s\n' "$(sha256sum backend-image.oci.tar | awk '{print $1}')" > artifact-digests.env
-          printf 'FRONTEND_ARTIFACT_DIGEST=sha256:%s\n' "$(sha256sum frontend-dist.tar | awk '{print $1}')" >> artifact-digests.env
-          printf 'MIGRATION_ARTIFACT_DIGEST=sha256:%s\n' "$(sha256sum migration-set.tar | awk '{print $1}')" >> artifact-digests.env
 
-      - name: Produce pinned security evidence and exact Human decision
-        env:
-          SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
+      - name: Produce pinned scanner and SBOM evidence for Human decision
         run: |
           set -eu
           . ops/security/toolchain.env
@@ -152,40 +180,9 @@ jobs:
           gitleaks_code=$?
           set -e
           test "$npm_code" -le 1
-          test "$semgrep_code" -le 1
+          test "$semgrep_code" = 0
+          test "$gitleaks_code" = 0
           test -e gitleaks.json
-          printf '%s\n' "$semgrep_code" > semgrep.exit
-          printf '%s\n' "$gitleaks_code" > gitleaks.exit
-          decision_ref=refs/heads/patch-058-security-decisions
-          printf '%s' "$SECURITY_DECISION_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
-          git fetch --no-tags origin "+$decision_ref:refs/remotes/origin/patch-058-security-decisions"
-          test "$(git rev-parse "$SECURITY_DECISION_COMMIT^{commit}")" = "$SECURITY_DECISION_COMMIT"
-          git merge-base --is-ancestor "$SECURITY_DECISION_COMMIT" refs/remotes/origin/patch-058-security-decisions
-          git show "$SECURITY_DECISION_COMMIT:ops/security/patch058-high-exceptions.json" > resolved-high-exceptions.json
-          . artifact-digests.env
-          export decision_ref BACKEND_ARTIFACT_DIGEST
-          python3 - <<'PY'
-          import hashlib, json, os
-          evidence = open("resolved-high-exceptions.json", "rb").read()
-          value = {
-              "schemaVersion": "PATCH-058-security-decision-v1",
-              "mode": "post-build-human-decision",
-              "candidateRevision": os.environ["GITHUB_SHA"],
-              "artifactDigest": os.environ["BACKEND_ARTIFACT_DIGEST"],
-              "exceptionEvidenceDigest": "sha256:" + hashlib.sha256(evidence).hexdigest(),
-              "decisionCommit": os.environ["SECURITY_DECISION_COMMIT"],
-              "decisionRef": os.environ["decision_ref"],
-          }
-          with open("security-decision.json", "w") as output:
-              json.dump(value, output, indent=2, sort_keys=True); output.write("\n")
-          PY
-
-      - name: Scan exact artifact, bind SBOMs and enforce vulnerability gate
-        env:
-          SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
-        run: |
-          set -eu
-          . ops/security/toolchain.env
           mkdir trivy-backend-oci
           tar -xf backend-image.oci.tar -C trivy-backend-oci
           docker run --rm -v "$PWD/trivy-backend-oci:/oci:ro" -v "$PWD:/work" "$TRIVY_IMAGE" image \
@@ -201,26 +198,12 @@ jobs:
           python3 ops/scripts/patch058-sbom.py bind --input frontend-sbom.raw.cdx.json \
             --output frontend-sbom.cdx.json --artifact frontend-dist.tar \
             --artifact-name frontend-dist --revision "$GITHUB_SHA" --syft-version "$SYFT_VERSION"
-          . artifact-digests.env
-          SATCO_HIGH_EXCEPTION_FILE=resolved-high-exceptions.json \
-          SATCO_ARTIFACT_DIGEST="$BACKEND_ARTIFACT_DIGEST" SATCO_SOURCE_REVISION="$GITHUB_SHA" \
-            sh ops/scripts/validate-high-exceptions.sh
-          python3 ops/scripts/patch058-vulnerability-gate.py \
-            --trivy-json trivy-backend.json --pip-audit-json pip-audit.json \
-            --npm-audit-json npm-audit.json --source-revision "$GITHUB_SHA" \
-            --artifact-digest "$BACKEND_ARTIFACT_DIGEST" --exceptions resolved-high-exceptions.json \
-            --security-decision-evidence security-decision.json \
-            --security-decision-commit "$SECURITY_DECISION_COMMIT" \
-            --evaluated-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --output vulnerability-gate.json
-          test "$(cat semgrep.exit)" = 0
-          test "$(cat gitleaks.exit)" = 0
 
-      - name: Bind API-authenticated candidate actor and security decision
+      - name: Create authenticated closed pre-decision evidence
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
           RELEASE_ID: ${{ inputs.release_id }}
-          SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
         run: |
           set -eu
           curl --fail --silent --show-error \
@@ -228,45 +211,21 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            > candidate-run.json
-          python3 ops/scripts/patch059-candidate-evidence.py create \
-            --run-json candidate-run.json \
-            --repository "$GITHUB_REPOSITORY" \
-            --source-sha "$EXPECTED_SOURCE_SHA" \
-            --release-id "$RELEASE_ID" \
-            --security-decision security-decision.json \
-            --security-decision-commit "$SECURITY_DECISION_COMMIT" \
-            --exceptions resolved-high-exceptions.json \
-            --output candidate-identity.json
+            > pre-decision-run.json
+          python3 ops/scripts/patch059-candidate-evidence.py create-pre-decision \
+            --run-json pre-decision-run.json --repository "$GITHUB_REPOSITORY" \
+            --source-sha "$EXPECTED_SOURCE_SHA" --release-id "$RELEASE_ID" --bundle . \
+            --created-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --output pre-decision-evidence.json
 
-      - name: Generate and independently verify candidate provenance
-        env:
-          RELEASE_ID: ${{ inputs.release_id }}
-        run: |
-          set -eu
-          . ops/security/toolchain.env
-          workflow="https://github.com/$GITHUB_REPOSITORY/.github/workflows/patch059-candidate-evidence.yml@refs/heads/patch-059-implementation"
-          common=(--repository "$GITHUB_REPOSITORY" --revision "$GITHUB_SHA" --workflow "$workflow" --release-id "$RELEASE_ID"
-            --artifact backend=backend-image.oci.tar --artifact frontend=frontend-dist.tar --artifact migrations=migration-set.tar
-            --sbom backend=backend-sbom.cdx.json --sbom frontend=frontend-sbom.cdx.json
-            --input backend-production-lock=backend-production.lock --input backend-uv-lock=backend-uv.lock
-            --input frontend-package-lock=frontend-package-lock.json --input migration-set=migration-set.sha256
-            --evidence pip-audit=pip-audit.json --evidence npm-audit=npm-audit.json
-            --evidence semgrep=semgrep.json --evidence gitleaks=gitleaks.json
-            --evidence trivy=trivy-backend.json --evidence vulnerability-gate=vulnerability-gate.json
-            --evidence high-exceptions=resolved-high-exceptions.json --evidence security-decision=security-decision.json)
-          python3 ops/scripts/patch058-provenance.py generate "${common[@]}" \
-            --generated-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --output provenance.intoto.json
-          python3 ops/scripts/patch058-provenance.py verify "${common[@]}" --statement provenance.intoto.json
-
-      - name: Upload exact successful candidate evidence
+      - name: Upload immutable pre-decision candidate evidence
+        id: pre-decision-upload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: patch059-release-candidate-${{ inputs.expected_source_sha }}
+          name: patch059-pre-decision-${{ inputs.expected_source_sha }}-${{ inputs.release_id }}
           retention-days: 30
           if-no-files-found: error
           path: |
-            candidate-identity.json
+            pre-decision-evidence.json
             backend-image.oci.tar
             frontend-dist.tar
             migration-set.tar
@@ -284,7 +243,169 @@ jobs:
             trivy-backend.json
             backend-sbom.cdx.json
             frontend-sbom.cdx.json
-            vulnerability-gate.json
-            resolved-high-exceptions.json
-            security-decision.json
-            provenance.intoto.json
+
+      - name: Publish exact Human security-decision inputs
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          ARTIFACT_ID: ${{ steps.pre-decision-upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.pre-decision-upload.outputs.artifact-digest }}
+        run: |
+          set -eu
+          backend_digest="sha256:$(sha256sum backend-image.oci.tar | awk '{print $1}')"
+          {
+            printf 'PRE-DECISION ONLY — no vulnerability exception or release authorization has been granted.\n'
+            printf 'source_sha=%s\n' "$EXPECTED_SOURCE_SHA"
+            printf 'release_id=%s\n' "$RELEASE_ID"
+            printf 'pre_decision_run_id=%s\n' "$GITHUB_RUN_ID"
+            printf 'pre_decision_run_attempt=%s\n' "$GITHUB_RUN_ATTEMPT"
+            printf 'pre_decision_artifact_id=%s\n' "$ARTIFACT_ID"
+            printf 'pre_decision_artifact_digest=%s\n' "$ARTIFACT_DIGEST"
+            printf 'backend_artifact_digest=%s\n' "$backend_digest"
+            printf 'STOP: Human security decision required before post-decision dispatch.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  finalize-post-decision:
+    if: inputs.phase == 'post-decision'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected_source_sha }}
+          fetch-depth: 0
+      - name: Enforce exact post-decision consumer identity
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
+          PRE_DECISION_RUN_ID: ${{ inputs.pre_decision_run_id }}
+          PRE_DECISION_RUN_ATTEMPT: ${{ inputs.pre_decision_run_attempt }}
+          PRE_DECISION_ARTIFACT_ID: ${{ inputs.pre_decision_artifact_id }}
+          PRE_DECISION_ARTIFACT_DIGEST: ${{ inputs.pre_decision_artifact_digest }}
+        run: |
+          set -eu
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_REF" = "refs/heads/patch-059-implementation"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          test "$GITHUB_SHA" = "$EXPECTED_SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          printf '%s' "$EXPECTED_SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+          printf '%s' "$SECURITY_DECISION_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$PRE_DECISION_RUN_ID" | grep -Eq '^[1-9][0-9]*$'
+          printf '%s' "$PRE_DECISION_RUN_ATTEMPT" | grep -Eq '^[1-9][0-9]*$'
+          printf '%s' "$PRE_DECISION_ARTIFACT_ID" | grep -Eq '^[1-9][0-9]*$'
+          printf '%s' "$PRE_DECISION_ARTIFACT_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          test "$PRE_DECISION_RUN_ID" != "$GITHUB_RUN_ID"
+
+      - name: Authenticate and consume the exact immutable pre-decision artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          PRE_DECISION_RUN_ID: ${{ inputs.pre_decision_run_id }}
+          PRE_DECISION_RUN_ATTEMPT: ${{ inputs.pre_decision_run_attempt }}
+          PRE_DECISION_ARTIFACT_ID: ${{ inputs.pre_decision_artifact_id }}
+          PRE_DECISION_ARTIFACT_DIGEST: ${{ inputs.pre_decision_artifact_digest }}
+        run: |
+          set -eu
+          api=(-H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28")
+          curl --fail --silent --show-error "${api[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > candidate-run.json
+          curl --fail --silent --show-error "${api[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$PRE_DECISION_RUN_ID" > pre-decision-run.json
+          curl --fail --silent --show-error "${api[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$PRE_DECISION_ARTIFACT_ID" > pre-decision-artifact-api.json
+          curl --fail --silent --show-error --location "${api[@]}" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$PRE_DECISION_ARTIFACT_ID/zip" --output pre-decision-artifact.zip
+          artifact_name="patch059-pre-decision-$EXPECTED_SOURCE_SHA-$RELEASE_ID"
+          python3 ops/scripts/patch059-candidate-evidence.py bind-pre-decision-artifact \
+            --run-json pre-decision-run.json --artifact-json pre-decision-artifact-api.json \
+            --repository "$GITHUB_REPOSITORY" --source-sha "$EXPECTED_SOURCE_SHA" --release-id "$RELEASE_ID" \
+            --run-id "$PRE_DECISION_RUN_ID" --run-attempt "$PRE_DECISION_RUN_ATTEMPT" \
+            --artifact-id "$PRE_DECISION_ARTIFACT_ID" --artifact-name "$artifact_name" \
+            --artifact-digest "$PRE_DECISION_ARTIFACT_DIGEST" --archive pre-decision-artifact.zip \
+            --bundle bundle --output bundle/pre-decision-artifact.json
+          cp pre-decision-artifact.zip bundle/
+          cp pre-decision-run.json bundle/
+          cp pre-decision-artifact-api.json bundle/
+
+      - name: Resolve the post-build Human security decision
+        env:
+          SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
+        run: |
+          set -eu
+          decision_ref=refs/heads/patch-058-security-decisions
+          git fetch --no-tags origin "+$decision_ref:refs/remotes/origin/patch-058-security-decisions"
+          test "$(git rev-parse "$SECURITY_DECISION_COMMIT^{commit}")" = "$SECURITY_DECISION_COMMIT"
+          git merge-base --is-ancestor "$SECURITY_DECISION_COMMIT" refs/remotes/origin/patch-058-security-decisions
+          git show "$SECURITY_DECISION_COMMIT:ops/security/patch058-high-exceptions.json" > bundle/resolved-high-exceptions.json
+          export decision_ref SECURITY_DECISION_COMMIT
+          export BACKEND_ARTIFACT_DIGEST="sha256:$(sha256sum bundle/backend-image.oci.tar | awk '{print $1}')"
+          python3 - <<'PY'
+          import hashlib, json, os
+          evidence = open("bundle/resolved-high-exceptions.json", "rb").read()
+          value = {
+              "schemaVersion": "PATCH-058-security-decision-v1",
+              "mode": "post-build-human-decision",
+              "candidateRevision": os.environ["GITHUB_SHA"],
+              "artifactDigest": os.environ["BACKEND_ARTIFACT_DIGEST"],
+              "exceptionEvidenceDigest": "sha256:" + hashlib.sha256(evidence).hexdigest(),
+              "decisionCommit": os.environ["SECURITY_DECISION_COMMIT"],
+              "decisionRef": os.environ["decision_ref"],
+          }
+          with open("bundle/security-decision.json", "w") as output:
+              json.dump(value, output, indent=2, sort_keys=True); output.write("\n")
+          PY
+
+      - name: Enforce the vulnerability gate on the exact reviewed artifact and scans
+        env:
+          SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
+        run: |
+          set -eu
+          backend_digest="sha256:$(sha256sum bundle/backend-image.oci.tar | awk '{print $1}')"
+          SATCO_HIGH_EXCEPTION_FILE=bundle/resolved-high-exceptions.json \
+          SATCO_ARTIFACT_DIGEST="$backend_digest" SATCO_SOURCE_REVISION="$GITHUB_SHA" \
+            sh ops/scripts/validate-high-exceptions.sh
+          python3 ops/scripts/patch058-vulnerability-gate.py \
+            --trivy-json bundle/trivy-backend.json --pip-audit-json bundle/pip-audit.json \
+            --npm-audit-json bundle/npm-audit.json --source-revision "$GITHUB_SHA" \
+            --artifact-digest "$backend_digest" --exceptions bundle/resolved-high-exceptions.json \
+            --security-decision-evidence bundle/security-decision.json \
+            --security-decision-commit "$SECURITY_DECISION_COMMIT" \
+            --evaluated-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --output bundle/vulnerability-gate.json
+
+      - name: Bind final candidate identity and provenance without rebuilding
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
+        run: |
+          set -eu
+          python3 ops/scripts/patch059-candidate-evidence.py create \
+            --run-json candidate-run.json --repository "$GITHUB_REPOSITORY" --source-sha "$EXPECTED_SOURCE_SHA" \
+            --release-id "$RELEASE_ID" --security-decision bundle/security-decision.json \
+            --security-decision-commit "$SECURITY_DECISION_COMMIT" \
+            --exceptions bundle/resolved-high-exceptions.json --output bundle/candidate-identity.json
+          workflow="https://github.com/$GITHUB_REPOSITORY/.github/workflows/patch059-candidate-evidence.yml@refs/heads/patch-059-implementation"
+          common=(--repository "$GITHUB_REPOSITORY" --revision "$GITHUB_SHA" --workflow "$workflow" --release-id "$RELEASE_ID"
+            --artifact backend=bundle/backend-image.oci.tar --artifact frontend=bundle/frontend-dist.tar --artifact migrations=bundle/migration-set.tar
+            --sbom backend=bundle/backend-sbom.cdx.json --sbom frontend=bundle/frontend-sbom.cdx.json
+            --input backend-production-lock=bundle/backend-production.lock --input backend-uv-lock=bundle/backend-uv.lock
+            --input frontend-package-lock=bundle/frontend-package-lock.json --input migration-set=bundle/migration-set.sha256
+            --evidence pip-audit=bundle/pip-audit.json --evidence npm-audit=bundle/npm-audit.json
+            --evidence semgrep=bundle/semgrep.json --evidence gitleaks=bundle/gitleaks.json
+            --evidence trivy=bundle/trivy-backend.json --evidence vulnerability-gate=bundle/vulnerability-gate.json
+            --evidence high-exceptions=bundle/resolved-high-exceptions.json --evidence security-decision=bundle/security-decision.json
+            --evidence pre-decision-evidence=bundle/pre-decision-evidence.json
+            --evidence pre-decision-artifact=bundle/pre-decision-artifact.json
+            --evidence pre-decision-run=bundle/pre-decision-run.json
+            --evidence pre-decision-artifact-api=bundle/pre-decision-artifact-api.json)
+          python3 ops/scripts/patch058-provenance.py generate "${common[@]}" \
+            --generated-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --output bundle/provenance.intoto.json
+          python3 ops/scripts/patch058-provenance.py verify "${common[@]}" --statement bundle/provenance.intoto.json
+
+      - name: Upload exact successful candidate evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: patch059-release-candidate-${{ inputs.expected_source_sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: bundle

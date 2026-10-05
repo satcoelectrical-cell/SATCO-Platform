@@ -916,3 +916,65 @@ trusted clean-runner execution, a candidate-specific Human High-finding
 decision, real OIDC/Cosign evidence, distinct attributable final approval,
 immutable evidence custody and final Human Acceptance. None was exercised or
 claimed by this continuation.
+
+
+## PATCH-059 post-build security-decision handoff remediation — 2026-10-05
+
+GitHub candidate run `37287240052` qualified and built source
+`5f99fbd89045fe24d9f62fb74a3060921d5f0500`, and its pinned Trivy execution
+scanned the exact runner-built OCI subject. The run then failed in
+`validate-high-exceptions.sh` because the supplied Human exception was bound to
+a different, locally produced OCI archive digest. This was an exception-binding
+failure before the vulnerability gate completed, not a vulnerability-gate
+rejection.
+
+### Gap analysis
+
+The workflow required a security-decision commit at dispatch, before its clean
+runner built the authoritative artifact or produced current scanner evidence.
+That order contradicted the already accepted Workstream 2 requirement that the
+real exception may be created only after those exact facts exist. Reproducing a
+GitHub runner's OCI archive digest on another host is not an authority or
+custody mechanism. The former single-run sequence therefore could not provide
+the documented post-build Human-decision boundary without guessing a digest or
+weakening exception validation; neither is permitted.
+
+### Bounded remediation
+
+The dispatch-only candidate workflow now has two mutually exclusive phases.
+`pre-decision` performs qualification, builds the artifacts once, runs the
+pinned scanners, binds SBOMs, emits closed
+`satco.patch059-pre-decision-evidence/v1`, and uploads the exact archive while
+publishing its run ID/attempt, artifact ID/API digest and backend digest for
+Human review. It accepts no security-decision commit and grants no approval.
+
+After a separate Human security decision, `post-decision` must name all of
+those exact identities. It API-authenticates the prior run and artifact,
+downloads by immutable artifact ID, verifies the GitHub-reported archive
+digest, rejects unsafe or unexpected archive members, reconciles every
+artifact/input/qualification/scanner/SBOM digest, validates the exact decision,
+and runs the vulnerability gate on the retained evidence. It contains no build,
+dependency-install, qualification or scanner step. The original archive,
+closed `satco.patch059-pre-decision-artifact/v1` binding and API snapshots are
+retained in candidate provenance and revalidated by protected signing and the
+offline release verifier.
+
+Focused local qualification passed **113 tests plus 7 subtests** across the
+PATCH-059 release-evidence, PATCH-058 supply-chain/dossier and PATCH-059 release
+authority suites. Negative coverage includes wrong source, artifact digest,
+pre-decision run, run attempt, repository, workflow, branch/event, artifact ID,
+expired/substituted archive, substituted scanner evidence, wrong Human
+authority and stale/mismatched security decision. Python syntax compilation,
+workflow YAML parsing and `git diff --check` passed. The focused test command
+used `--noconftest` because these evidence tests require no database; no
+PostgreSQL instance, protected workflow, signing authority or release boundary
+was exercised.
+
+This remediation changes the candidate source and therefore requires a new
+source commit followed by a new authorized clean-runner `pre-decision` run. The
+old decision commit cannot be transferred to the new runner artifact. After
+reviewing that exact pre-decision bundle, the sole Human Security Authority
+must make a new candidate-specific exception decision before a post-decision
+run may be dispatched. SEC-E-MAJ-05 remains **PARTIALLY REMEDIATED**; protected
+signing, final release approval, deployment and Human Acceptance remain
+separate and unauthorized.

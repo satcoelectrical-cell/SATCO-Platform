@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import subprocess
+import zipfile
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -114,6 +115,42 @@ def _candidate_run(*, producer: bool = False) -> dict[str, object]:
         "actor": deepcopy(HUMAN),
         "triggering_actor": deepcopy(HUMAN),
     }
+
+
+def _pre_decision_fixture(tmp_path: Path):
+    source = tmp_path / "pre-source"
+    source.mkdir()
+    for filename in candidate_evidence.PRE_DECISION_FILES:
+        (source / filename).write_bytes(("pre-decision:" + filename).encode("utf-8"))
+    producer_run = _candidate_run(producer=True)
+    evidence = candidate_evidence.create_pre_decision(
+        producer_run,
+        repository=REPOSITORY,
+        source_sha=SOURCE,
+        release_id=RELEASE_ID,
+        bundle=source,
+        created_at="2026-10-03T09:00:00Z",
+    )
+    _write(source / "pre-decision-evidence.json", evidence)
+    archive = tmp_path / "pre-decision.zip"
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as output:
+        for filename in sorted(candidate_evidence.PRE_DECISION_ARCHIVE_FILES):
+            output.write(source / filename, filename)
+    digest = _digest(archive)
+    artifact = {
+        "id": 7654321,
+        "name": f"patch059-pre-decision-{SOURCE}-{RELEASE_ID}",
+        "digest": digest,
+        "expired": False,
+        "url": f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/7654321",
+        "archive_download_url": f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/7654321/zip",
+        "workflow_run": {
+            "id": producer_run["id"],
+            "head_branch": "patch-059-implementation",
+            "head_sha": SOURCE,
+        },
+    }
+    return source, archive, evidence, artifact
 
 
 def _environment(stage: str) -> tuple[dict[str, object], dict[str, object]]:
@@ -246,6 +283,66 @@ def _fixture(tmp_path: Path) -> dict[str, object]:
                     _write(path, {"fixture": filename})
                 else:
                     path.write_bytes(b"fixture")
+    pre_decision = candidate_evidence.create_pre_decision(
+        _candidate_run(producer=True),
+        repository=REPOSITORY,
+        source_sha=SOURCE,
+        release_id=RELEASE_ID,
+        bundle=tmp_path,
+        created_at="2026-10-03T09:00:00Z",
+    )
+    _write(tmp_path / "pre-decision-evidence.json", pre_decision)
+    pre_archive = tmp_path / "pre-decision-artifact.zip"
+    with zipfile.ZipFile(pre_archive, "w", compression=zipfile.ZIP_STORED) as output:
+        for filename in sorted(candidate_evidence.PRE_DECISION_ARCHIVE_FILES):
+            output.write(tmp_path / filename, filename)
+    pre_archive_digest = _digest(pre_archive)
+    pre_artifact_api = {
+        "id": 7654321,
+        "name": f"patch059-pre-decision-{SOURCE}-{RELEASE_ID}",
+        "digest": pre_archive_digest,
+        "expired": False,
+        "url": f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/7654321",
+        "archive_download_url": f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/7654321/zip",
+        "workflow_run": {
+            "id": 123456,
+            "head_branch": "patch-059-implementation",
+            "head_sha": SOURCE,
+        },
+    }
+    _write(tmp_path / "pre-decision-run.json", _candidate_run())
+    _write(tmp_path / "pre-decision-artifact-api.json", pre_artifact_api)
+    _write(
+        tmp_path / "pre-decision-artifact.json",
+        {
+            "schema": "satco.patch059-pre-decision-artifact/v1",
+            "repository": REPOSITORY,
+            "source_sha": SOURCE,
+            "release_id": RELEASE_ID,
+            "run_id": 123456,
+            "run_attempt": 2,
+            "artifact_id": 7654321,
+            "artifact_name": pre_artifact_api["name"],
+            "artifact_digest": pre_archive_digest,
+            "archive_sha256": pre_archive_digest,
+            "pre_decision_evidence_sha256": _digest(
+                tmp_path / "pre-decision-evidence.json"
+            ),
+        },
+    )
+    provenance = json.loads((tmp_path / "provenance.intoto.json").read_text())
+    provenance["predicate"]["satco"] = {
+        "qualificationEvidence": [
+            {
+                "name": name,
+                "digest": {"sha256": _digest(tmp_path / filename).removeprefix("sha256:")},
+            }
+            for name, filename in sorted(
+                release_evidence.PRE_DECISION_PROVENANCE_FILES.items()
+            )
+        ]
+    }
+    _write(tmp_path / "provenance.intoto.json", provenance)
     dossier_sections = {
         section: {
             name: {"reference": filename, "digest": _digest(tmp_path / filename)}
@@ -441,6 +538,7 @@ def test_offline_verifier_accepts_fully_bound_v2_bundle(tmp_path):
     [
         ("candidate-identity.json", "event", "push"),
         ("candidate-identity.json", "security_decision_commit", "c" * 40),
+        ("pre-decision-artifact.json", "source_sha", "c" * 40),
         ("human-signing-authorization.json", "authority", {"login": "other", "id": 1, "type": "User"}),
         ("signed-candidate-handoff.v1.json", "workflow_run_attempt", 2),
         ("human-release-approval.json", "minimum_delay_seconds", 0),
@@ -678,3 +776,128 @@ def test_candidate_producer_workflow_has_exact_non_reusable_trigger():
     assert "workflow_call:" not in workflow
     assert "actions: read" in workflow
     assert "candidate-identity.json" in workflow
+    assert "produce-pre-decision:" in workflow
+    assert "finalize-post-decision:" in workflow
+    assert "bind-pre-decision-artifact" in workflow
+    assert "PRE-DECISION ONLY" in workflow
+    post_decision = workflow.split("  finalize-post-decision:", 1)[1]
+    assert "docker buildx build" not in post_decision
+    assert "npm ci" not in post_decision
+    assert "uv run pytest" not in post_decision
+
+
+def test_pre_decision_handoff_binds_exact_run_artifact_and_scanner_evidence(tmp_path):
+    _source, archive, _evidence, artifact = _pre_decision_fixture(tmp_path)
+    run = _candidate_run()
+    extracted = tmp_path / "extracted"
+    identity = candidate_evidence.bind_pre_decision_artifact(
+        run=run,
+        artifact=artifact,
+        repository=REPOSITORY,
+        source_sha=SOURCE,
+        release_id=RELEASE_ID,
+        run_id=run["id"],
+        run_attempt=run["run_attempt"],
+        artifact_id=artifact["id"],
+        artifact_name=artifact["name"],
+        artifact_digest=artifact["digest"],
+        archive=archive,
+        bundle=extracted,
+    )
+    assert identity["schema"] == "satco.patch059-pre-decision-artifact/v1"
+    candidate_evidence.validate_pre_decision_artifact_identity(
+        identity,
+        evidence_path=extracted / "pre-decision-evidence.json",
+        archive_path=archive,
+    )
+
+
+@pytest.mark.parametrize(
+    ("target", "key", "value"),
+    [
+        ("run", "id", 999),
+        ("run", "run_attempt", 9),
+        ("run", "path", ".github/workflows/attacker.yml"),
+        ("run", "event", "push"),
+        ("run", "head_branch", "main"),
+        ("run", "head_sha", "b" * 40),
+        ("run", "repository", {"full_name": "attacker/fork"}),
+        ("artifact", "id", 999),
+        ("artifact", "digest", "sha256:" + "0" * 64),
+        ("artifact", "url", "https://api.github.com/repos/attacker/fork/actions/artifacts/7654321"),
+        ("artifact", "expired", True),
+    ],
+)
+def test_pre_decision_handoff_rejects_run_or_artifact_substitution(
+    tmp_path, target, key, value
+):
+    _source, archive, _evidence, artifact = _pre_decision_fixture(tmp_path)
+    run = _candidate_run()
+    selected = run if target == "run" else artifact
+    selected[key] = value
+    with pytest.raises(candidate_evidence.CandidateEvidenceError):
+        candidate_evidence.bind_pre_decision_artifact(
+            run=run,
+            artifact=artifact,
+            repository=REPOSITORY,
+            source_sha=SOURCE,
+            release_id=RELEASE_ID,
+            run_id=123456,
+            run_attempt=2,
+            artifact_id=7654321,
+            artifact_name=f"patch059-pre-decision-{SOURCE}-{RELEASE_ID}",
+            artifact_digest=_digest(archive),
+            archive=archive,
+            bundle=tmp_path / "extracted",
+        )
+
+
+def test_pre_decision_handoff_rejects_substituted_scanner_evidence(tmp_path):
+    source, archive, evidence, artifact = _pre_decision_fixture(tmp_path)
+    (source / "trivy-backend.json").write_bytes(b"substituted scanner evidence")
+    replacement = tmp_path / "substituted.zip"
+    with zipfile.ZipFile(replacement, "w", compression=zipfile.ZIP_STORED) as output:
+        for filename in sorted(candidate_evidence.PRE_DECISION_ARCHIVE_FILES):
+            output.write(source / filename, filename)
+    artifact["digest"] = _digest(replacement)
+    with pytest.raises(
+        candidate_evidence.CandidateEvidenceError,
+        match="trivy-backend.json substitution",
+    ):
+        candidate_evidence.bind_pre_decision_artifact(
+            run=_candidate_run(),
+            artifact=artifact,
+            repository=REPOSITORY,
+            source_sha=SOURCE,
+            release_id=RELEASE_ID,
+            run_id=123456,
+            run_attempt=2,
+            artifact_id=7654321,
+            artifact_name=artifact["name"],
+            artifact_digest=artifact["digest"],
+            archive=replacement,
+            bundle=tmp_path / "extracted",
+        )
+
+
+def test_pre_decision_handoff_rejects_archive_byte_substitution(tmp_path):
+    _source, archive, _evidence, artifact = _pre_decision_fixture(tmp_path)
+    archive.write_bytes(archive.read_bytes() + b"substitution")
+    with pytest.raises(
+        candidate_evidence.CandidateEvidenceError,
+        match="archive digest mismatch",
+    ):
+        candidate_evidence.bind_pre_decision_artifact(
+            run=_candidate_run(),
+            artifact=artifact,
+            repository=REPOSITORY,
+            source_sha=SOURCE,
+            release_id=RELEASE_ID,
+            run_id=123456,
+            run_attempt=2,
+            artifact_id=7654321,
+            artifact_name=artifact["name"],
+            artifact_digest=artifact["digest"],
+            archive=archive,
+            bundle=tmp_path / "extracted",
+        )
