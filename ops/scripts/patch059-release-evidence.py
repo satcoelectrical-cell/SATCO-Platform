@@ -19,9 +19,9 @@ from typing import Any, Callable
 
 MANIFEST_SCHEMA = "satco.patch059-release-manifest/v1"
 POLICY_SCHEMA = "satco.patch059-single-human-authority-policy/v1"
-SIGNING_AUTHORIZATION_SCHEMA = "satco.patch059-human-signing-authorization/v2"
+SIGNING_AUTHORIZATION_SCHEMA = "satco.patch059-human-signing-authorization/v3"
 HANDOFF_SCHEMA = "satco.patch059-signed-candidate-handoff/v1"
-APPROVAL_SCHEMA = "satco.patch059-human-release-approval/v2"
+APPROVAL_SCHEMA = "satco.patch059-human-release-approval/v3"
 FINALIZATION_SCHEMA = "satco.patch059-release-finalization/v2"
 OPERATING_MODE = "single-human-authority"
 HUMAN_AUTHORITY = {"login": "samiphone651-sys", "id": 301386823, "type": "User"}
@@ -32,7 +32,7 @@ CANDIDATE_WORKFLOW_PATH = ".github/workflows/patch059-candidate-evidence.yml"
 SIGNING_WORKFLOW_PATH = ".github/workflows/patch059-sign-release.yml"
 CANDIDATE_EVENT = "workflow_dispatch"
 CANDIDATE_BRANCH = "patch-059-implementation"
-MINIMUM_FINAL_APPROVAL_DELAY_SECONDS = 900
+MINIMUM_FINAL_APPROVAL_DELAY_SECONDS = 905
 SHA256 = re.compile(r"sha256:[0-9a-f]{64}\Z")
 RAW_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 SOURCE_SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -215,18 +215,52 @@ def _verify_pre_decision_custody(
         raise ReleaseVerificationError("pre-decision custody mismatch") from exc
 
 
+def _verify_final_human_decision(root: pathlib.Path) -> dict[str, object]:
+    script = pathlib.Path(__file__).with_name("patch059-human-decision.py")
+    spec = importlib.util.spec_from_file_location("patch059_human_decision", script)
+    if spec is None or spec.loader is None:
+        raise ReleaseVerificationError("Human decision verifier unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        return module.verify_decision(
+            policy=_load(root / "single-human-authority-policy.v1.json"),
+            repository=_load(root / "decision-repository.json"),
+            issue=_load(root / "decision-issue.json"),
+            event=_load(root / "decision-event.json"),
+            marker_comment=_load(root / "decision-marker.json"),
+            approval_comment=_load(root / "decision-approval.json"),
+            comments=_load(root / "decision-comments.json"),
+            bundle=root,
+        )
+    except (OSError, module.HumanDecisionError) as exc:
+        raise ReleaseVerificationError("final Human decision evidence mismatch") from exc
+
 def validate_authority_policy(
     policy: object, *, repository: str, require_configured: bool = True
 ) -> dict[str, object]:
     keys = {
-        "schema", "mode", "repository", "branch", "workflow_path",
-        "human_authority", "dispatcher", "signing_environment",
+        "schema", "mode", "repository", "repository_id", "branch", "workflow_path",
+        "decision_workflow_path", "human_authority", "human_ssh_signing_key",
+        "marker_actor", "dispatcher", "signing_environment",
         "final_environment", "minimum_final_approval_delay_seconds", "claims",
     }
     document = _closed(policy, keys, POLICY_SCHEMA)
     if (
         document.get("mode") != OPERATING_MODE
         or document.get("repository") != repository
+        or document.get("repository_id") != 1311705732
+        or document.get("decision_workflow_path") != ".github/workflows/patch059-human-decision.yml"
+        or document.get("marker_actor")
+        != {"login": "github-actions[bot]", "id": 41898282, "type": "Bot"}
+        or document.get("human_ssh_signing_key") != {
+            "github_key_id": 1219405,
+            "algorithm": "ssh-ed25519",
+            "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILtC0QdiVnIF0QYMlVTBN/r0cnzEvetni1ucRlzL7UQa",
+            "fingerprint": "SHA256:0QRoi7nAjRewgACw6V18QJzePt7MdhPr01zpaTJbojw",
+            "principal": "samiphone651-sys",
+            "namespace": "satco-patch059-final-approval-v1",
+        }
         or document.get("branch") != CANDIDATE_BRANCH
         or document.get("workflow_path") != SIGNING_WORKFLOW_PATH
         or document.get("human_authority") != HUMAN_AUTHORITY
@@ -453,12 +487,11 @@ def _approval_event(
     reviewer = _api_actor(event.get("user"))
     if reviewer != HUMAN_AUTHORITY or event.get("comment") != expected_comment:
         raise ReleaseVerificationError("approval evidence mismatch")
-    submitted_at = event.get("submitted_at")
-    _time(submitted_at)
+    # GitHub Environment review history authenticates the Human decision but
+    # does not expose a Human review timestamp. Never fabricate one here.
     canonical = {
         "decision": "approved",
         "comment": expected_comment,
-        "submitted_at": submitted_at,
         "environment": environment_name,
         "reviewer": reviewer,
     }
@@ -688,9 +721,7 @@ def create_signing_authorization(
         "branch_policies_evidence_sha256": _digest(branch_policies_path),
         "approval_history_evidence_sha256": _digest(approvals_path),
         "approval_comment": comment,
-        "approval_submitted_at": approval["submitted_at"],
         "approval_event_sha256": approval["digest"],
-        "created_at": approval["submitted_at"],
     }
 
 
@@ -757,7 +788,7 @@ def create_final_approval(
     environment_path: pathlib.Path,
     branch_policies_path: pathlib.Path,
     approvals_path: pathlib.Path,
-    jobs_path: pathlib.Path,
+    decision_path: pathlib.Path,
     bundle: pathlib.Path,
     repository: str,
     release_id: str,
@@ -771,14 +802,8 @@ def create_final_approval(
     run = validate_protected_run(
         policy, _load(run_path), repository=repository, source_sha=source_sha
     )
-    signing_job = validate_signing_job_result(
-        _load(jobs_path), run_id=run["id"], source_sha=source_sha
-    )
     validate_environment_policy(
-        policy,
-        _load(environment_path),
-        _load(branch_policies_path),
-        stage="final",
+        policy, _load(environment_path), _load(branch_policies_path), stage="final"
     )
     root = bundle.resolve(strict=True)
     manifest_path = root / "release-manifest.v1.json"
@@ -787,45 +812,65 @@ def create_final_approval(
     manifest = _load(manifest_path)
     signing = _load(signing_path)
     handoff = _load(handoff_path)
-    if not all(isinstance(value, dict) for value in (manifest, signing, handoff)):
+    decision = _load(decision_path)
+    if not all(isinstance(value, dict) for value in (manifest, signing, handoff, decision)):
         raise ReleaseVerificationError("invalid final approval inputs")
+    verified_decision = _verify_final_human_decision(root)
+    if decision != verified_decision:
+        raise ReleaseVerificationError("retained final Human decision evidence mismatch")
     if (
-        signing.get("schema") != SIGNING_AUTHORIZATION_SCHEMA  # type: ignore[union-attr]
-        or handoff.get("schema") != HANDOFF_SCHEMA  # type: ignore[union-attr]
-        or signing.get("authority") != HUMAN_AUTHORITY  # type: ignore[union-attr]
-        or handoff.get("signing_authorization_sha256") != _digest(signing_path)  # type: ignore[union-attr]
-        or handoff.get("manifest_sha256") != _digest(manifest_path)  # type: ignore[union-attr]
-        or handoff.get("release_id") != release_id  # type: ignore[union-attr]
-        or handoff.get("release_sequence") != release_sequence  # type: ignore[union-attr]
-        or handoff.get("source_sha") != source_sha  # type: ignore[union-attr]
-        or handoff.get("signing_job_result") != signing_job["result"]  # type: ignore[union-attr]
+        decision.get("schema") != "satco.patch059-final-decision-evidence/v1"
+        or decision.get("purpose") != "verified-final-release-human-decision"
+        or decision.get("repository") != repository
+        or decision.get("repository_id") != policy.get("repository_id")
+        or decision.get("release_id") != release_id
+        or decision.get("release_sequence") != release_sequence
+        or decision.get("source_sha") != source_sha
+        or decision.get("minimum_recorded_delay_seconds") != 905
+        or type(decision.get("elapsed_seconds")) is not int
+        or decision["elapsed_seconds"] < 905
+        or not isinstance(decision.get("approval"), dict)
+        or decision["approval"].get("user") != HUMAN_AUTHORITY
+    ):
+        raise ReleaseVerificationError("final Human decision evidence mismatch")
+    if (
+        signing.get("schema") != SIGNING_AUTHORIZATION_SCHEMA
+        or handoff.get("schema") != HANDOFF_SCHEMA
+        or signing.get("authority") != HUMAN_AUTHORITY
+        or handoff.get("signing_authorization_sha256") != _digest(signing_path)
+        or handoff.get("manifest_sha256") != _digest(manifest_path)
+        or handoff.get("release_id") != release_id
+        or handoff.get("release_sequence") != release_sequence
+        or handoff.get("source_sha") != source_sha
+        or decision.get("manifest_sha256") != _digest(manifest_path)
+        or decision.get("signing_authorization_sha256") != _digest(signing_path)
+        or decision.get("signed_handoff_sha256") != _digest(handoff_path)
     ):
         raise ReleaseVerificationError("final approval binding mismatch")
     manifest_digest = _digest(manifest_path)
     signing_digest = _digest(signing_path)
     handoff_digest = _digest(handoff_path)
+    decision_digest = _digest(decision_path)
+    decision_comment_id = decision["approval"].get("id")
+    decision_body_digest = decision["approval"].get("body_sha256")
+    decided_at = _time(decision["approval"].get("created_at"))
     comment = (
-        f"FINAL PATCH-059 release_id={release_id} release_sequence={release_sequence} "
-        f"source_sha={source_sha} manifest_sha256={manifest_digest} "
-        f"signing_authorization_sha256={signing_digest} "
-        f"signed_handoff_sha256={handoff_digest}"
+        f"FINALIZE PATCH-059 release_id={release_id} release_sequence={release_sequence} "
+        f"source_sha={source_sha} final_decision_comment_id={decision_comment_id} "
+        f"final_decision_sha256={decision_digest} final_decision_body_sha256={decision_body_digest}"
     )
     event = _approval_event(
         policy, _load(approvals_path), stage="final", expected_comment=comment
     )
-    decided_at = _time(event["submitted_at"])
-    handoff_created_at = _time(handoff["created_at"])  # type: ignore[index]
-    if (decided_at - handoff_created_at).total_seconds() < MINIMUM_FINAL_APPROVAL_DELAY_SECONDS:
-        raise ReleaseVerificationError("final approval occurred before minimum delay")
-    if event["digest"] == signing.get("approval_event_sha256"):  # type: ignore[union-attr]
+    if event["digest"] == signing.get("approval_event_sha256"):
         raise ReleaseVerificationError("approval event reused across purposes")
     dispatcher_policy = policy["dispatcher"]
     dispatcher = {
-        "login": dispatcher_policy["login"],  # type: ignore[index]
-        "id": dispatcher_policy["id"],  # type: ignore[index]
+        "login": dispatcher_policy["login"],
+        "id": dispatcher_policy["id"],
         "type": "Bot",
-        "app_id": dispatcher_policy["app_id"],  # type: ignore[index]
-        "installation_id": dispatcher_policy["installation_id"],  # type: ignore[index]
+        "app_id": dispatcher_policy["app_id"],
+        "installation_id": dispatcher_policy["installation_id"],
     }
     return {
         "schema": APPROVAL_SCHEMA,
@@ -841,7 +886,9 @@ def create_final_approval(
         "manifest_sha256": manifest_digest,
         "signed_handoff_sha256": handoff_digest,
         "signing_authorization_sha256": signing_digest,
-        "artifacts": manifest["artifacts"],  # type: ignore[index]
+        "final_decision_evidence_sha256": decision_digest,
+        "final_decision_comment_id": decision_comment_id,
+        "artifacts": manifest["artifacts"],
         "provenance_sha256": _digest(root / "release-provenance.intoto.json"),
         "dossier_sha256": _digest(root / "release-dossier.pending.v1.json"),
         "high_exceptions_sha256": _digest(root / "resolved-high-exceptions.json"),
@@ -853,27 +900,22 @@ def create_final_approval(
         "workflow_actor": run["actor"],
         "workflow_triggering_actor": run["triggering_actor"],
         "workflow_run_evidence_sha256": _digest(run_path),
-        "signing_job_result": signing_job["result"],
-        "signing_jobs_evidence_sha256": _digest(jobs_path),
         "job": "finalize",
         "environment": FINAL_APPROVAL_ENVIRONMENT,
-        "environment_policy_sha256": _canonical_digest(
-            {
-                "environment": _load(environment_path),
-                "branch_policies": _load(branch_policies_path),
-            }
-        ),
+        "environment_policy_sha256": _canonical_digest({
+            "environment": _load(environment_path),
+            "branch_policies": _load(branch_policies_path),
+        }),
         "environment_evidence_sha256": _digest(environment_path),
         "branch_policies_evidence_sha256": _digest(branch_policies_path),
         "approval_history_evidence_sha256": _digest(approvals_path),
         "approval_comment": comment,
-        "approval_submitted_at": event["submitted_at"],
+        "approval_submitted_at": decision["approval"]["created_at"],
         "approval_event_sha256": event["digest"],
-        "signed_handoff_created_at": handoff["created_at"],  # type: ignore[index]
+        "signed_handoff_created_at": handoff["created_at"],
         "minimum_delay_seconds": MINIMUM_FINAL_APPROVAL_DELAY_SECONDS,
         "run_url": run["url"],
     }
-
 
 def create_finalization(
     *,
@@ -1194,8 +1236,7 @@ def verify_bundle(
             "workflow_run_evidence_sha256", "job", "environment",
             "environment_policy_sha256", "environment_evidence_sha256",
             "branch_policies_evidence_sha256", "approval_history_evidence_sha256",
-            "approval_comment",
-            "approval_submitted_at", "approval_event_sha256", "created_at",
+            "approval_comment", "approval_event_sha256",
         },
         SIGNING_AUTHORIZATION_SCHEMA,
     )
@@ -1267,9 +1308,7 @@ def verify_bundle(
         or signing.get("approval_history_evidence_sha256")
         != _digest(file("signing-approvals.json"))
         or signing.get("approval_comment") != expected_sign_comment
-        or signing.get("approval_submitted_at") != signing_event["submitted_at"]
         or signing.get("approval_event_sha256") != signing_event["digest"]
-        or _time(signing.get("created_at")) != _time(signing.get("approval_submitted_at"))
     ):
         raise ReleaseVerificationError("signing authorization mismatch")
 
@@ -1315,11 +1354,11 @@ def verify_bundle(
             "schema", "decision", "purpose", "operating_mode", "policy_sha256",
             "authority", "dispatcher", "release_id", "release_sequence", "source_sha",
             "manifest_sha256", "signed_handoff_sha256", "signing_authorization_sha256",
+            "final_decision_evidence_sha256", "final_decision_comment_id",
             "artifacts", "provenance_sha256", "dossier_sha256", "high_exceptions_sha256",
             "security_decision_sha256", "candidate_identity_sha256", "workflow_run_id",
             "workflow_run_attempt", "workflow_run_url", "workflow_actor",
             "workflow_triggering_actor", "workflow_run_evidence_sha256", "job",
-            "signing_job_result", "signing_jobs_evidence_sha256",
             "environment", "environment_policy_sha256", "environment_evidence_sha256",
             "branch_policies_evidence_sha256", "approval_history_evidence_sha256",
             "approval_comment", "approval_submitted_at",
@@ -1329,40 +1368,53 @@ def verify_bundle(
         APPROVAL_SCHEMA,
     )
     authority = approval["authority"]
+    decision_path = file("final-decision-evidence.json")
+    final_decision = _load(decision_path)
+    verified_final_decision = _verify_final_human_decision(root)
+    if final_decision != verified_final_decision:
+        raise ReleaseVerificationError("retained final Human decision evidence mismatch")
+    if (
+        not isinstance(final_decision, dict)
+        or final_decision.get("schema") != "satco.patch059-final-decision-evidence/v1"
+        or final_decision.get("purpose") != "verified-final-release-human-decision"
+        or final_decision.get("repository") != repository
+        or final_decision.get("repository_id") != policy.get("repository_id")
+        or final_decision.get("release_id") != release_id
+        or final_decision.get("release_sequence") != release_sequence
+        or final_decision.get("source_sha") != source_sha
+        or final_decision.get("manifest_sha256") != actual_manifest_digest
+        or final_decision.get("signing_authorization_sha256") != _digest(signing_path)
+        or final_decision.get("signed_handoff_sha256") != _digest(handoff_path)
+        or final_decision.get("minimum_recorded_delay_seconds") != 905
+        or type(final_decision.get("elapsed_seconds")) is not int
+        or final_decision["elapsed_seconds"] < 905
+        or not isinstance(final_decision.get("approval"), dict)
+        or final_decision["approval"].get("user") != HUMAN_AUTHORITY
+    ):
+        raise ReleaseVerificationError("final Human decision evidence mismatch")
+    final_decision_digest = _digest(decision_path)
+    decision_comment_id = final_decision["approval"].get("id")
+    decision_body_digest = final_decision["approval"].get("body_sha256")
     expected_final_comment = (
-        f"FINAL PATCH-059 release_id={release_id} release_sequence={release_sequence} "
-        f"source_sha={source_sha} manifest_sha256={actual_manifest_digest} "
-        f"signing_authorization_sha256={_digest(signing_path)} "
-        f"signed_handoff_sha256={_digest(handoff_path)}"
+        f"FINALIZE PATCH-059 release_id={release_id} release_sequence={release_sequence} "
+        f"source_sha={source_sha} final_decision_comment_id={decision_comment_id} "
+        f"final_decision_sha256={final_decision_digest} final_decision_body_sha256={decision_body_digest}"
     )
     final_run = validate_protected_run(
-        policy,
-        _load(file("final-run.json")),
-        repository=repository,
-        source_sha=source_sha,
+        policy, _load(file("final-run.json")), repository=repository, source_sha=source_sha
     )
+    if final_run["id"] == signing_run["id"]:
+        raise ReleaseVerificationError("finalization must use a distinct protected workflow run")
     final_environment = _load(file("final-environment.json"))
     final_branches = _load(file("final-branch-policies.json"))
-    validate_environment_policy(
-        policy, final_environment, final_branches, stage="final"
-    )
+    validate_environment_policy(policy, final_environment, final_branches, stage="final")
     final_event = _approval_event(
-        policy,
-        _load(file("final-approvals.json")),
-        stage="final",
+        policy, _load(file("final-approvals.json")), stage="final",
         expected_comment=expected_final_comment,
     )
-    final_environment_digest = _canonical_digest(
-        {
-            "environment": final_environment,
-            "branch_policies": final_branches,
-        }
-    )
-    signing_job = validate_signing_job_result(
-        _load(file("final-jobs.json")),
-        run_id=final_run["id"],
-        source_sha=source_sha,
-    )
+    final_environment_digest = _canonical_digest({
+        "environment": final_environment, "branch_policies": final_branches,
+    })
     if (
         approval["decision"] != "approved"
         or approval.get("purpose") != "final-release-approval"
@@ -1376,6 +1428,8 @@ def verify_bundle(
         or approval["manifest_sha256"] != actual_manifest_digest
         or approval.get("signed_handoff_sha256") != _digest(handoff_path)
         or approval.get("signing_authorization_sha256") != _digest(signing_path)
+        or approval.get("final_decision_evidence_sha256") != final_decision_digest
+        or approval.get("final_decision_comment_id") != decision_comment_id
         or approval["artifacts"] != actual_artifacts
         or approval["provenance_sha256"] != release_provenance_digest
         or approval["dossier_sha256"] != manifest["dossier_sha256"]
@@ -1388,22 +1442,14 @@ def verify_bundle(
         or approval.get("workflow_run_url") != final_run["url"]
         or approval.get("workflow_actor") != final_run["actor"]
         or approval.get("workflow_triggering_actor") != final_run["triggering_actor"]
-        or approval.get("workflow_run_evidence_sha256")
-        != _digest(file("final-run.json"))
-        or approval.get("signing_job_result") != signing_job["result"]
-        or approval.get("signing_jobs_evidence_sha256")
-        != _digest(file("final-jobs.json"))
-        or final_run != signing_run
+        or approval.get("workflow_run_evidence_sha256") != _digest(file("final-run.json"))
         or approval.get("job") != "finalize"
         or approval.get("approval_comment") != expected_final_comment
         or approval.get("environment_policy_sha256") != final_environment_digest
-        or approval.get("environment_evidence_sha256")
-        != _digest(file("final-environment.json"))
-        or approval.get("branch_policies_evidence_sha256")
-        != _digest(file("final-branch-policies.json"))
-        or approval.get("approval_history_evidence_sha256")
-        != _digest(file("final-approvals.json"))
-        or approval.get("approval_submitted_at") != final_event["submitted_at"]
+        or approval.get("environment_evidence_sha256") != _digest(file("final-environment.json"))
+        or approval.get("branch_policies_evidence_sha256") != _digest(file("final-branch-policies.json"))
+        or approval.get("approval_history_evidence_sha256") != _digest(file("final-approvals.json"))
+        or approval.get("approval_submitted_at") != final_decision["approval"].get("created_at")
         or approval.get("approval_event_sha256") != final_event["digest"]
         or approval.get("approval_event_sha256") == signing.get("approval_event_sha256")
         or approval.get("signed_handoff_created_at") != handoff.get("created_at")
@@ -1412,8 +1458,6 @@ def verify_bundle(
     ):
         raise ReleaseVerificationError("final Human approval mismatch")
     decided_at = _time(approval["approval_submitted_at"])
-    if (decided_at - handoff_created_at).total_seconds() < MINIMUM_FINAL_APPROVAL_DELAY_SECONDS:
-        raise ReleaseVerificationError("final approval occurred before minimum delay")
     for exception in exceptions:
         if _time(exception["expires_at"]) <= decided_at:
             raise ReleaseVerificationError("exception stale at approval")
@@ -1517,7 +1561,7 @@ def main() -> int:
         command.add_argument("--source-sha", required=True)
         command.add_argument("--output", required=True)
     final.add_argument("--release-sequence", required=True, type=int)
-    final.add_argument("--jobs-json", required=True)
+    final.add_argument("--decision-evidence", required=True)
 
     handoff = commands.add_parser("handoff")
     handoff.add_argument("--policy", required=True)
@@ -1595,7 +1639,7 @@ def main() -> int:
                 environment_path=pathlib.Path(args.environment_json),
                 branch_policies_path=pathlib.Path(args.branch_policies_json),
                 approvals_path=pathlib.Path(args.approvals_json),
-                jobs_path=pathlib.Path(args.jobs_json),
+                decision_path=pathlib.Path(args.decision_evidence),
                 bundle=pathlib.Path(args.bundle),
                 repository=args.repository,
                 release_id=args.release_id,

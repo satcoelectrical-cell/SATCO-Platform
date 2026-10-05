@@ -2,12 +2,27 @@
   "schema": "satco.patch059-single-human-authority-policy/v1",
   "mode": "single-human-authority",
   "repository": "satcoelectrical-cell/SATCO-Platform",
+  "repository_id": 1311705732,
   "branch": "patch-059-implementation",
   "workflow_path": ".github/workflows/patch059-sign-release.yml",
+  "decision_workflow_path": ".github/workflows/patch059-human-decision.yml",
   "human_authority": {
     "login": "samiphone651-sys",
     "id": 301386823,
     "type": "User"
+  },
+  "human_ssh_signing_key": {
+    "github_key_id": 1219405,
+    "algorithm": "ssh-ed25519",
+    "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILtC0QdiVnIF0QYMlVTBN/r0cnzEvetni1ucRlzL7UQa",
+    "fingerprint": "SHA256:0QRoi7nAjRewgACw6V18QJzePt7MdhPr01zpaTJbojw",
+    "principal": "samiphone651-sys",
+    "namespace": "satco-patch059-final-approval-v1"
+  },
+  "marker_actor": {
+    "login": "github-actions[bot]",
+    "id": 41898282,
+    "type": "Bot"
   },
   "dispatcher": {
     "status": "UNRESOLVED",
@@ -49,7 +64,7 @@
     ],
     "wait_timer_minutes": 15
   },
-  "minimum_final_approval_delay_seconds": 900,
+  "minimum_final_approval_delay_seconds": 905,
   "claims": {
     "personnel_independence": false,
     "dual_human_control": false,

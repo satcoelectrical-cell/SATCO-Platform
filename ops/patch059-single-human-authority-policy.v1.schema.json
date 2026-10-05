@@ -3,18 +3,39 @@
   "title": "SATCO PATCH-059 Single-Human-Authority policy v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "mode", "repository", "branch", "workflow_path", "human_authority", "dispatcher", "signing_environment", "final_environment", "minimum_final_approval_delay_seconds", "claims"],
+  "required": ["schema", "mode", "repository", "repository_id", "branch", "workflow_path", "decision_workflow_path", "human_authority", "human_ssh_signing_key", "marker_actor", "dispatcher", "signing_environment", "final_environment", "minimum_final_approval_delay_seconds", "claims"],
   "properties": {
     "schema": {"const": "satco.patch059-single-human-authority-policy/v1"},
     "mode": {"const": "single-human-authority"},
     "repository": {"const": "satcoelectrical-cell/SATCO-Platform"},
+    "repository_id": {"const": 1311705732},
     "branch": {"const": "patch-059-implementation"},
     "workflow_path": {"const": ".github/workflows/patch059-sign-release.yml"},
+    "decision_workflow_path": {"const": ".github/workflows/patch059-human-decision.yml"},
     "human_authority": {"$ref": "#/$defs/human"},
+    "human_ssh_signing_key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["github_key_id", "algorithm", "public_key", "fingerprint", "principal", "namespace"],
+      "properties": {
+        "github_key_id": {"const": 1219405},
+        "algorithm": {"const": "ssh-ed25519"},
+        "public_key": {"const": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILtC0QdiVnIF0QYMlVTBN/r0cnzEvetni1ucRlzL7UQa"},
+        "fingerprint": {"const": "SHA256:0QRoi7nAjRewgACw6V18QJzePt7MdhPr01zpaTJbojw"},
+        "principal": {"const": "samiphone651-sys"},
+        "namespace": {"const": "satco-patch059-final-approval-v1"}
+      }
+    },
+    "marker_actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["login", "id", "type"],
+      "properties": {"login": {"const": "github-actions[bot]"}, "id": {"const": 41898282}, "type": {"const": "Bot"}}
+    },
     "dispatcher": {"$ref": "#/$defs/dispatcher"},
     "signing_environment": {"$ref": "#/$defs/signing_environment"},
     "final_environment": {"$ref": "#/$defs/final_environment"},
-    "minimum_final_approval_delay_seconds": {"const": 900},
+    "minimum_final_approval_delay_seconds": {"const": 905},
     "claims": {
       "type": "object",
       "additionalProperties": false,

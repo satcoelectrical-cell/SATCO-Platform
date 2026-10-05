@@ -83,15 +83,15 @@ def _policy(tmp_path: Path) -> Path:
     return path
 
 
-def _protected_run() -> dict[str, object]:
+def _protected_run(run_id: int = 700) -> dict[str, object]:
     return {
-        "id": 700,
+        "id": run_id,
         "run_attempt": 1,
         "path": ".github/workflows/patch059-sign-release.yml",
         "event": "workflow_dispatch",
         "head_branch": "patch-059-implementation",
         "head_sha": SOURCE,
-        "html_url": f"https://github.com/{REPOSITORY}/actions/runs/700",
+        "html_url": f"https://github.com/{REPOSITORY}/actions/runs/{run_id}",
         "repository": {"full_name": REPOSITORY},
         "head_repository": {"full_name": REPOSITORY},
         "actor": deepcopy(BOT_ACTOR),
@@ -186,12 +186,12 @@ def _environment(stage: str) -> tuple[dict[str, object], dict[str, object]]:
     )
 
 
-def _approval(environment: str, comment: str, submitted_at: str) -> list[dict[str, object]]:
+def _approval(environment: str, comment: str, _submitted_at: str) -> list[dict[str, object]]:
+    # Real GitHub Environment review history has no Human submitted_at field.
     return [
         {
             "state": "approved",
             "comment": comment,
-            "submitted_at": submitted_at,
             "user": deepcopy(HUMAN),
             "environments": [{"name": environment}],
         }
@@ -423,45 +423,53 @@ def _fixture(tmp_path: Path) -> dict[str, object]:
     final_env_path = tmp_path / "final-environment.json"
     final_branches_path = tmp_path / "final-branch-policies.json"
     final_approvals_path = tmp_path / "final-approvals.json"
-    final_jobs_path = tmp_path / "final-jobs.json"
-    _write(tmp_path / "final-run.json", _protected_run())
-    _write(
-        final_jobs_path,
-        {
-            "total_count": 1,
-            "jobs": [
-                {
-                    "id": 701,
-                    "name": "sign-candidate",
-                    "run_id": 700,
-                    "run_attempt": 1,
-                    "head_sha": SOURCE,
-                    "status": "completed",
-                    "conclusion": "success",
-                }
-            ],
-        },
-    )
+    final_run_path = tmp_path / "final-run.json"
+    _write(final_run_path, _protected_run(800))
     final_environment, final_branches = _environment("final")
     _write(final_env_path, final_environment)
     _write(final_branches_path, final_branches)
+    final_decision = {
+        "schema": "satco.patch059-final-decision-evidence/v1",
+        "purpose": "verified-final-release-human-decision",
+        "repository_id": 1311705732,
+        "repository": REPOSITORY,
+        "governance_issue_number": 59,
+        "release_id": RELEASE_ID,
+        "release_sequence": SEQUENCE,
+        "source_sha": SOURCE,
+        "candidate_run_id": 123456,
+        "candidate_run_attempt": 2,
+        "manifest_sha256": manifest_digest,
+        "signing_authorization_sha256": _digest(tmp_path / "human-signing-authorization.json"),
+        "signed_handoff_sha256": _digest(tmp_path / "signed-candidate-handoff.v1.json"),
+        "signing_workflow_run_id": 700,
+        "signing_workflow_run_attempt": 1,
+        "nonce": "d" * 64,
+        "marker": {"id": 10, "node_id": "marker", "created_at": "2026-10-03T10:15:00Z", "updated_at": "2026-10-03T10:15:00Z", "body_sha256": "sha256:" + "1" * 64, "user": {"login": "github-actions[bot]", "id": 41898282, "type": "Bot"}},
+        "approval": {"id": 11, "node_id": "approval", "created_at": "2026-10-03T10:30:05Z", "updated_at": "2026-10-03T10:30:05Z", "body_sha256": "sha256:" + "2" * 64, "ssh_signature_sha256": "sha256:" + "3" * 64, "user": deepcopy(HUMAN)},
+        "elapsed_seconds": 905,
+        "minimum_recorded_delay_seconds": 905,
+        "ssh_principal": "samiphone651-sys",
+        "ssh_namespace": "satco-patch059-final-approval-v1",
+        "ssh_key_fingerprint": "SHA256:0QRoi7nAjRewgACw6V18QJzePt7MdhPr01zpaTJbojw",
+        "ssh_github_key_id": 1219405,
+    }
+    _write(tmp_path / "final-decision-evidence.json", final_decision)
+    final_decision_digest = _digest(tmp_path / "final-decision-evidence.json")
     final_comment = (
-        f"FINAL PATCH-059 release_id={RELEASE_ID} release_sequence={SEQUENCE} "
-        f"source_sha={SOURCE} manifest_sha256={manifest_digest} "
-        f"signing_authorization_sha256={_digest(tmp_path / 'human-signing-authorization.json')} "
-        f"signed_handoff_sha256={_digest(tmp_path / 'signed-candidate-handoff.v1.json')}"
+        f"FINALIZE PATCH-059 release_id={RELEASE_ID} release_sequence={SEQUENCE} "
+        f"source_sha={SOURCE} final_decision_comment_id=11 "
+        f"final_decision_sha256={final_decision_digest} "
+        f"final_decision_body_sha256={final_decision['approval']['body_sha256']}"
     )
-    _write(
-        final_approvals_path,
-        _approval("patch059-final-release-approval", final_comment, "2026-10-03T10:30:00Z"),
-    )
+    _write(final_approvals_path, _approval("patch059-final-release-approval", final_comment, "2026-10-03T10:31:00Z"))
     approval = release_evidence.create_final_approval(
         policy_path=policy_path,
-        run_path=run_path,
+        run_path=final_run_path,
         environment_path=final_env_path,
         branch_policies_path=final_branches_path,
         approvals_path=final_approvals_path,
-        jobs_path=final_jobs_path,
+        decision_path=tmp_path / "final-decision-evidence.json",
         bundle=tmp_path,
         repository=REPOSITORY,
         release_id=RELEASE_ID,
@@ -487,6 +495,12 @@ def _fixture(tmp_path: Path) -> dict[str, object]:
         "manifest_digest": manifest_digest.removeprefix("sha256:"),
     }
 
+
+@pytest.fixture(autouse=True)
+def _stub_final_human_decision_verifier(monkeypatch):
+    def verify(root):
+        return json.loads((root / "final-decision-evidence.json").read_text(encoding="utf-8"))
+    monkeypatch.setattr(release_evidence, "_verify_final_human_decision", verify)
 
 class FixtureCosign:
     """Deterministic test double; explicitly not protected signing."""
@@ -610,32 +624,27 @@ def test_offline_verifier_rejects_any_raw_api_snapshot_byte_change(tmp_path):
         _verify(tmp_path, state)
 
 
-def test_offline_verifier_rejects_non_successful_signing_job_result(tmp_path):
+def test_offline_verifier_rejects_same_signing_and_final_run(tmp_path):
     state = _fixture(tmp_path)
-    path = tmp_path / "final-jobs.json"
-    document = json.loads(path.read_text(encoding="utf-8"))
-    document["jobs"][0]["conclusion"] = "failure"
-    _write(path, document)
-    with pytest.raises(
-        release_evidence.ReleaseVerificationError,
-        match="signing job did not complete successfully",
-    ):
+    _write(tmp_path / "final-run.json", _protected_run(700))
+    with pytest.raises(release_evidence.ReleaseVerificationError):
         _verify(tmp_path, state)
 
 
-def test_final_approval_generator_rejects_less_than_fifteen_minutes(tmp_path):
+def test_final_approval_generator_rejects_less_than_recorded_threshold(tmp_path):
     _fixture(tmp_path)
-    handoff = json.loads((tmp_path / "signed-candidate-handoff.v1.json").read_text())
-    handoff["created_at"] = "2026-10-03T10:29:01Z"
-    _write(tmp_path / "signed-candidate-handoff.v1.json", handoff)
+    decision_path = tmp_path / "final-decision-evidence.json"
+    decision = json.loads(decision_path.read_text())
+    decision["elapsed_seconds"] = 904
+    _write(decision_path, decision)
     with pytest.raises(release_evidence.ReleaseVerificationError):
         release_evidence.create_final_approval(
             policy_path=tmp_path / "single-human-authority-policy.v1.json",
-            run_path=tmp_path / "protected-run.json",
+            run_path=tmp_path / "final-run.json",
             environment_path=tmp_path / "final-environment.json",
             branch_policies_path=tmp_path / "final-branch-policies.json",
             approvals_path=tmp_path / "final-approvals.json",
-            jobs_path=tmp_path / "final-jobs.json",
+            decision_path=decision_path,
             bundle=tmp_path,
             repository=REPOSITORY,
             release_id=RELEASE_ID,

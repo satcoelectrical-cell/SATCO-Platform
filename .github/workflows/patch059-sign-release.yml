@@ -3,6 +3,24 @@ name: PATCH-059 protected signing and finalization
 on:
   workflow_dispatch:
     inputs:
+      phase:
+        description: Exact protected phase (sign or finalize)
+        required: true
+        default: sign
+        type: choice
+        options: [sign, finalize]
+      governance_issue_number:
+        description: Locked PATCH-059 governance issue number
+        required: true
+        type: string
+      signing_run_id:
+        description: Successful protected signing run ID for finalize phase
+        required: false
+        type: string
+      decision_run_id:
+        description: Successful PATCH-059 Human decision run ID for finalize phase
+        required: false
+        type: string
       candidate_run_id:
         description: Successful exact-source PATCH-059 candidate-evidence run ID
         required: true
@@ -38,6 +56,7 @@ concurrency:
 
 jobs:
   preflight:
+    if: inputs.phase == 'sign'
     runs-on: ubuntu-24.04
     permissions:
       actions: read
@@ -72,6 +91,7 @@ jobs:
             --source-sha "$EXPECTED_SOURCE_SHA"
 
   sign-candidate:
+    if: inputs.phase == 'sign'
     needs: preflight
     runs-on: ubuntu-24.04
     environment: patch058-protected-release
@@ -79,6 +99,7 @@ jobs:
       actions: read
       contents: read
       id-token: write
+      issues: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -292,6 +313,20 @@ jobs:
             printf 'signed_handoff_sha256=%s\n' "$(sha256sum signed-candidate-handoff.v1.json | awk '{print $1}')"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Create and revalidate GitHub-server-timestamped HANDOFF_MARKER
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.governance_issue_number }}
+        run: |
+          set -eu
+          printf '%s' "$ISSUE_NUMBER" | grep -Eq '^[1-9][0-9]*$'
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY" > repository.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" > governance-issue.json
+          python3 ops/scripts/patch059-human-decision.py create-marker --policy ops/patch059-single-human-authority-policy.v1.json --repository-json repository.json --issue-json governance-issue.json --bundle bundle --issue-number "$ISSUE_NUMBER" --signing-run-id "$GITHUB_RUN_ID" --signing-run-attempt "$GITHUB_RUN_ATTEMPT" --payload-output marker-payload.json --comment-output marker-body.txt --request-output marker-request.json
+          curl --fail --silent --show-error -X POST -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments" --data-binary @marker-request.json > marker-comment.json
+          python3 ops/scripts/patch059-human-decision.py validate-marker --policy ops/patch059-single-human-authority-policy.v1.json --repository-json repository.json --issue-json governance-issue.json --comment-json marker-comment.json --output bundle/handoff-marker-evidence.json
+          cp marker-comment.json bundle/handoff-marker-comment.json
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: patch059-signed-candidate-${{ inputs.expected_source_sha }}
@@ -299,14 +334,13 @@ jobs:
           if-no-files-found: error
           path: bundle
 
-  finalize:
-    needs: sign-candidate
+  final-decision-preflight:
+    if: inputs.phase == 'finalize'
     runs-on: ubuntu-24.04
-    environment: patch059-final-release-approval
     permissions:
       actions: read
       contents: read
-      id-token: write
+      issues: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -315,49 +349,138 @@ jobs:
         with:
           name: patch059-signed-candidate-${{ inputs.expected_source_sha }}
           path: bundle
-      - name: Bind the distinct protected final Human release approval
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.signing_run_id }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: patch059-final-decision-${{ inputs.expected_source_sha }}
+          path: decision
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.decision_run_id }}
+      - name: Prove valid Human decision before final Environment can be entered
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.governance_issue_number }}
+        run: |
+          set -eu
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > preflight-final-run.json
+          python3 ops/scripts/patch059-release-evidence.py gate-run --policy ops/patch059-single-human-authority-policy.v1.json --run-json preflight-final-run.json --repository "$GITHUB_REPOSITORY" --source-sha "${{ inputs.expected_source_sha }}"
+          marker_id="$(python3 -c 'import json; print(json.load(open("decision/final-decision-evidence.json"))["marker"]["id"])')"
+          approval_id="$(python3 -c 'import json; print(json.load(open("decision/final-decision-evidence.json"))["approval"]["id"])')"
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY" > repository.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" > governance-issue.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/comments/$marker_id" > marker-live.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/comments/$approval_id" > approval-live.json
+          python3 - <<'PY'
+          import json, os, urllib.request
+          token=os.environ["GH_TOKEN"]; base=os.environ["GITHUB_API_URL"]; repo=os.environ["GITHUB_REPOSITORY"]; issue=os.environ["ISSUE_NUMBER"]
+          items=[]; page=1
+          while True:
+              req=urllib.request.Request(f"{base}/repos/{repo}/issues/{issue}/comments?per_page=100&page={page}", headers={"Accept":"application/vnd.github+json","Authorization":f"Bearer {token}","X-GitHub-Api-Version":"2022-11-28"})
+              with urllib.request.urlopen(req) as r: batch=json.load(r)
+              if not isinstance(batch,list): raise SystemExit("invalid comments response")
+              items.extend(batch)
+              if len(batch)<100: break
+              page += 1
+              if page>100: raise SystemExit("comment pagination limit exceeded")
+          with open("comments-live.json","w") as f: json.dump(items,f,separators=(",",":"))
+          PY
+          python3 ops/scripts/patch059-human-decision.py verify-decision --policy ops/patch059-single-human-authority-policy.v1.json --repository-json repository.json --issue-json governance-issue.json --event-json decision/decision-event.json --marker-json marker-live.json --approval-json approval-live.json --comments-json comments-live.json --bundle bundle --output preflight-decision.json
+          cmp decision/final-decision-evidence.json preflight-decision.json
+
+  finalize:
+    if: inputs.phase == 'finalize'
+    needs: final-decision-preflight
+    runs-on: ubuntu-24.04
+    environment: patch059-final-release-approval
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected_source_sha }}
+      - name: Fail closed on final protected-run identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          SIGNING_RUN_ID: ${{ inputs.signing_run_id }}
+          DECISION_RUN_ID: ${{ inputs.decision_run_id }}
+        run: |
+          set -eu
+          test "$GITHUB_REF" = "refs/heads/patch-059-implementation"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          printf '%s' "$SIGNING_RUN_ID" | grep -Eq '^[1-9][0-9]*$'
+          printf '%s' "$DECISION_RUN_ID" | grep -Eq '^[1-9][0-9]*$'
+          test "$SIGNING_RUN_ID" != "$GITHUB_RUN_ID"
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > final-run.json
+          python3 ops/scripts/patch059-release-evidence.py gate-run --policy ops/patch059-single-human-authority-policy.v1.json --run-json final-run.json --repository "$GITHUB_REPOSITORY" --source-sha "$EXPECTED_SOURCE_SHA"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: patch059-signed-candidate-${{ inputs.expected_source_sha }}
+          path: bundle
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.signing_run_id }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: patch059-final-decision-${{ inputs.expected_source_sha }}
+          path: decision
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.decision_run_id }}
+      - name: Revalidate live Human decision and bind final Environment approval
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
           RELEASE_ID: ${{ inputs.release_id }}
           RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+          ISSUE_NUMBER: ${{ inputs.governance_issue_number }}
+          DECISION_RUN_ID: ${{ inputs.decision_run_id }}
         run: |
           set -eu
-          test "$GITHUB_REF" = "refs/heads/patch-059-implementation"
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
-          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > final-run.json
+          marker_id="$(python3 -c 'import json; print(json.load(open("decision/final-decision-evidence.json"))["marker"]["id"])')"
+          approval_id="$(python3 -c 'import json; print(json.load(open("decision/final-decision-evidence.json"))["approval"]["id"])')"
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY" > repository.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" > governance-issue.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/comments/$marker_id" > marker-live.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/comments/$approval_id" > approval-live.json
+          python3 - <<'PY'
+          import json, os, urllib.request
+          token=os.environ["GH_TOKEN"]; base=os.environ["GITHUB_API_URL"]; repo=os.environ["GITHUB_REPOSITORY"]; issue=os.environ["ISSUE_NUMBER"]
+          items=[]; page=1
+          while True:
+              req=urllib.request.Request(f"{base}/repos/{repo}/issues/{issue}/comments?per_page=100&page={page}", headers={"Accept":"application/vnd.github+json","Authorization":f"Bearer {token}","X-GitHub-Api-Version":"2022-11-28"})
+              with urllib.request.urlopen(req) as r: batch=json.load(r)
+              if not isinstance(batch,list): raise SystemExit("invalid comments response")
+              items.extend(batch)
+              if len(batch)<100: break
+              page += 1
+              if page>100: raise SystemExit("comment pagination limit exceeded")
+          with open("comments-live.json","w") as f: json.dump(items,f,separators=(",",":"))
+          PY
+          python3 ops/scripts/patch059-human-decision.py verify-decision --policy ops/patch059-single-human-authority-policy.v1.json --repository-json repository.json --issue-json governance-issue.json --event-json decision/decision-event.json --marker-json marker-live.json --approval-json approval-live.json --comments-json comments-live.json --bundle bundle --output final-decision-live.json
+          cmp decision/final-decision-evidence.json final-decision-live.json
+          cp final-decision-live.json bundle/final-decision-evidence.json
+          cp decision/decision-event.json bundle/decision-event.json
+          cp repository.json bundle/decision-repository.json
+          cp governance-issue.json bundle/decision-issue.json
+          cp marker-live.json bundle/decision-marker.json
+          cp approval-live.json bundle/decision-approval.json
+          cp comments-live.json bundle/decision-comments.json
           curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/patch059-final-release-approval" > final-environment.json
           curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/patch059-final-release-approval/deployment-branch-policies" > final-branch-policies.json
           curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" > final-approvals.json
-          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" > final-jobs.json
-          python3 ops/scripts/patch059-release-evidence.py final-approval \
-            --policy bundle/single-human-authority-policy.v1.json \
-            --run-json final-run.json \
-            --environment-json final-environment.json \
-            --branch-policies-json final-branch-policies.json \
-            --approvals-json final-approvals.json \
-            --jobs-json final-jobs.json \
-            --bundle bundle \
-            --repository "$GITHUB_REPOSITORY" \
-            --release-id "$RELEASE_ID" \
-            --release-sequence "$RELEASE_SEQUENCE" \
-            --source-sha "$EXPECTED_SOURCE_SHA" \
-            --output bundle/human-release-approval.json
+          python3 ops/scripts/patch059-release-evidence.py final-approval --policy bundle/single-human-authority-policy.v1.json --run-json final-run.json --environment-json final-environment.json --branch-policies-json final-branch-policies.json --approvals-json final-approvals.json --decision-evidence bundle/final-decision-evidence.json --bundle bundle --repository "$GITHUB_REPOSITORY" --release-id "$RELEASE_ID" --release-sequence "$RELEASE_SEQUENCE" --source-sha "$EXPECTED_SOURCE_SHA" --output bundle/human-release-approval.json
+          python3 ops/scripts/patch059-human-decision.py create-consumption --decision bundle/final-decision-evidence.json --comments-json comments-live.json --decision-run-id "$DECISION_RUN_ID" --final-run-id "$GITHUB_RUN_ID" --final-run-attempt "$GITHUB_RUN_ATTEMPT" --payload-output consumption-payload.json --comment-output consumption-body.txt --request-output consumption-request.json
+          curl --fail --silent --show-error -X POST -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments" --data-binary @consumption-request.json > consumption-comment.json
+          cp final-run.json final-environment.json final-branch-policies.json final-approvals.json consumption-comment.json bundle/
           workflow="https://github.com/$GITHUB_REPOSITORY/.github/workflows/patch059-sign-release.yml@refs/heads/patch-059-implementation"
-          python3 ops/scripts/patch059-release-evidence.py finalization \
-            --policy bundle/single-human-authority-policy.v1.json \
-            --bundle bundle \
-            --repository "$GITHUB_REPOSITORY" \
-            --issuer "https://token.actions.githubusercontent.com" \
-            --workflow-ref "$workflow" \
-            --finalized-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --output bundle/release-finalization.v2.json
-          cp final-run.json final-environment.json final-branch-policies.json final-approvals.json final-jobs.json bundle/
-
+          python3 ops/scripts/patch059-release-evidence.py finalization --policy bundle/single-human-authority-policy.v1.json --bundle bundle --repository "$GITHUB_REPOSITORY" --issuer "https://token.actions.githubusercontent.com" --workflow-ref "$workflow" --finalized-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --output bundle/release-finalization.v2.json
       - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
         with:
           cosign-release: v2.6.0
-      - name: Sign approval and finalization, then run pinned offline verification
+      - name: Sign final records and run pinned offline verification
         working-directory: bundle
         env:
           EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}

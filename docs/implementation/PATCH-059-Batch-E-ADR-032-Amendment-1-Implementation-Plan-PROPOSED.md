@@ -368,3 +368,10 @@ change GitHub settings or perform a real protected run unless those operational
 actions are also explicitly authorized.
 
 **IMPLEMENTATION STATUS: NOT AUTHORIZED.**
+
+
+## Human-authorized Amendment 2 supersession note
+
+The Human-authorized zero-cost decision-time mechanism in `docs/adr/ADR-032-Amendment-2-Zero-Cost-Human-Decision-Time-Evidence.md` supersedes only this plan's assumption that GitHub Environment review history supplies an exact Human `submitted_at` timestamp. All other Human Authority, dispatcher, protected-Environment, exact-candidate, signing, fail-closed, and non-deployment controls remain in force.
+
+For final Human timing, implementation MUST use the GitHub-server timestamps of the protected signing workflow's canonical HANDOFF_MARKER and the Human Authority's canonical SSH-signed FINAL_APPROVAL comment, require at least 905 recorded seconds, and retain the final Environment review as a separate subsequent execution authorization. Existing evidence bound to source `20e65ece5ccbf81031f2f03033bf47b33752faa8` is historical only after this source-changing remediation.

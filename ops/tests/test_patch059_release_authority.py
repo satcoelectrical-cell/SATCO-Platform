@@ -220,3 +220,28 @@ def test_approval_event_is_exactly_attributable_and_purpose_bound():
         authority._approval_event(
             _policy(), history, stage="signing", expected_comment=comment
         )
+
+
+def test_environment_approval_without_submitted_at_is_authenticated_without_inventing_time():
+    policy = _policy()
+    comment = "SIGN PATCH-059 release_id=r source_sha=" + ("a" * 40) + " candidate_run_id=1 candidate_run_attempt=1"
+    history = [{
+        "state": "approved", "comment": comment, "user": deepcopy(authority.HUMAN_AUTHORITY),
+        "environments": [{"name": "patch058-protected-release"}],
+    }]
+    event = authority._approval_event(policy, history, stage="signing", expected_comment=comment)
+    assert "submitted_at" not in event
+    assert event["reviewer"] == authority.HUMAN_AUTHORITY
+
+
+def test_environment_approval_does_not_accept_runner_time_as_human_time():
+    policy = _policy()
+    comment = "SIGN PATCH-059 release_id=r source_sha=" + ("a" * 40) + " candidate_run_id=1 candidate_run_attempt=1"
+    history = [{
+        "state": "approved", "comment": comment, "user": deepcopy(authority.HUMAN_AUTHORITY),
+        "runner_local_time": "2099-01-01T00:00:00Z",
+        "environments": [{"name": "patch058-protected-release"}],
+    }]
+    event = authority._approval_event(policy, history, stage="signing", expected_comment=comment)
+    assert "submitted_at" not in event
+    assert "runner_local_time" not in event

@@ -160,3 +160,18 @@ PATCH-060 implementation are unchanged.
 
 The next boundary is a separate Human GitHub Configuration Authorization for
 the real least-privilege dispatcher and exact repository/Environment controls.
+
+
+## Amendment 2 — zero-cost Human final-decision operation
+
+This procedure is not authorization to execute a release. It documents the Human-authorized evidence mechanism.
+
+After a fresh protected signing run succeeds, record its HANDOFF_MARKER comment ID and GitHub `created_at`. Do not create FINAL_APPROVAL until GitHub's recorded interval is at least 905 seconds.
+
+The Human Authority prepares the canonical payload from the live marker with `ops/scripts/patch059-human-decision.py prepare-approval`. The resulting canonical JSON bytes are signed locally with the pinned Human SSH signing key using namespace `satco-patch059-final-approval-v1`. The private key never enters GitHub Actions and must never be printed, uploaded, or copied into release evidence. `assemble-approval` verifies the signature against the pinned public identity before producing the GitHub comment request body.
+
+The FINAL_APPROVAL must be posted by GitHub user `samiphone651-sys` (immutable ID `301386823`) to the dedicated open, locked PATCH-059 governance issue. The `patch059-human-decision.yml` workflow validates the live comment, signature, marker, source/release/run/digest bindings, nonce uniqueness, and GitHub-server interval, then publishes `patch059-final-decision-<source_sha>` evidence.
+
+Only after that decision workflow succeeds may the existing Dispatcher App start a new `patch059-sign-release.yml` run with `phase=finalize`, the exact signing run ID, decision run ID, governance issue number, release identity, and source SHA. The Human Authority then separately approves `patch059-final-release-approval` using the exact purpose-bound FINALIZE comment requested by the workflow. A Human-dispatched final run is invalid.
+
+The final run re-fetches the marker and approval, reproduces the decision evidence byte-for-byte, records single-use consumption, and only then creates finalization evidence. Any edit, deletion, replay, duplicate, stale evidence, API uncertainty, or mismatch fails closed and requires a fresh Human decision where applicable.
