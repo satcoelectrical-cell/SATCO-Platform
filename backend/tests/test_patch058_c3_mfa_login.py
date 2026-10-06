@@ -4,7 +4,7 @@ import base64
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from jose import jwt
+import jwt
 import pyotp
 import pytest
 from fastapi.testclient import TestClient
@@ -160,7 +160,7 @@ def test_primary_failures_survive_mfa_challenge_and_clear_only_on_mfa_success(
     assert primary_state.failure_count == 2
 
     challenge = login.json()["challenge"]
-    claims = jwt.get_unverified_claims(challenge)
+    claims = jwt.decode(challenge, options={"verify_signature": False})
     assert len(claims["pck"]) == 64
     assert len(claims["pnk"]) == 64
     assert admin_user.username not in str(claims)
@@ -222,7 +222,7 @@ def test_mfa_challenge_rejects_malformed_signed_primary_scope(
 ):
     secret = _activate_totp(db_session, admin_user)
     challenge = _login(client, admin_user).json()["challenge"]
-    claims = jwt.get_unverified_claims(challenge)
+    claims = jwt.decode(challenge, options={"verify_signature": False})
     claims["pck"] = admin_user.username
     malformed = jwt.encode(
         claims,
@@ -455,8 +455,8 @@ def test_first_time_mandatory_enrollment_cannot_bypass_mfa(
     assert started.status_code == 200
     assert started.json()["secret"]
     assert started.json()["challenge"] != initial_challenge
-    initial_claims = jwt.get_unverified_claims(initial_challenge)
-    continuation_claims = jwt.get_unverified_claims(started.json()["challenge"])
+    initial_claims = jwt.decode(initial_challenge, options={"verify_signature": False})
+    continuation_claims = jwt.decode(started.json()["challenge"], options={"verify_signature": False})
     assert continuation_claims["pck"] == initial_claims["pck"]
     assert continuation_claims["pnk"] == initial_claims["pnk"]
     assert "access_token" not in started.json()

@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 from uuid import UUID, uuid4
 
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError as JWTError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 

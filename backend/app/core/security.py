@@ -2,7 +2,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError as JWTError
 from pwdlib import PasswordHash
 
 from app.core.config import settings
