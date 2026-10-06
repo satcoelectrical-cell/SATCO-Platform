@@ -261,6 +261,29 @@ class DossierTests(unittest.TestCase):
     def test_valid_candidate(self):
         self.assertTrue(M.validate(self.dossier, NOW))
 
+    def test_patch059_v3_signing_authorization_uses_source_sha_and_authenticated_approval(self):
+        payload = json.loads(self.signing_approval.read_text())
+        payload.pop("source_commit")
+        payload.pop("decided_at")
+        payload.pop("evidence_reference")
+        payload.update({
+            "schema": "satco.patch059-human-signing-authorization/v3",
+            "source_sha": REVISION,
+            "approval_event_sha256": "sha256:" + "c" * 64,
+        })
+        self.signing_approval.write_text(json.dumps(payload))
+        self.dossier["human_signing_authorization"] = {
+            "status": "approved", **ev(self.signing_approval)
+        }
+        self.assertTrue(M.validate(self.dossier, NOW))
+
+        payload["source_sha"] = "d" * 40
+        self.signing_approval.write_text(json.dumps(payload))
+        self.dossier["human_signing_authorization"] = {
+            "status": "approved", **ev(self.signing_approval)
+        }
+        self.blocked(self.dossier)
+
     def test_duplicate_high_finding_occurrences_share_one_governed_exception(self):
         gate = json.loads(self.gate.read_text())
         gate["findings"].append(dict(gate["findings"][0], component="fixture-2"))

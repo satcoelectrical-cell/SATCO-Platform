@@ -115,6 +115,19 @@ def validate_approval(name, item, dossier, security_decision_commit,
         raise ValueError(f"{name} decision is not approved")
     if evidence.get("release_id") != dossier["release_id"]:
         raise ValueError(f"{name} release mismatch")
+    if name == "human_signing_authorization" and evidence.get("schema") == "satco.patch059-human-signing-authorization/v3":
+        if evidence.get("source_sha") != dossier["source_commit"]:
+            raise ValueError(f"{name} source mismatch")
+        if evidence.get("security_decision_commit") != security_decision_commit:
+            raise ValueError(f"{name} security-decision mismatch")
+        if evidence.get("artifact_digests") != {
+            key: value["digest"] for key, value in dossier["artifacts"].items()
+        }:
+            raise ValueError(f"{name} artifact mismatch")
+        if not evidence.get("authority") or not evidence.get("approval_event_sha256"):
+            raise ValueError(f"{name} is not attributable")
+        return
+
     if evidence.get("source_commit") != dossier["source_commit"]:
         raise ValueError(f"{name} source mismatch")
     if evidence.get("security_decision_commit") != security_decision_commit:
