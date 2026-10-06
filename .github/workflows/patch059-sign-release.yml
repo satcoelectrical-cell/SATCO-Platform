@@ -263,7 +263,11 @@ jobs:
               --human-release-approval pending=patch059-final-release-approval \
               --output release-dossier.pending.v1.json
             python3 ../ops/scripts/patch058-release-dossier.py verify --dossier release-dossier.pending.v1.json \
-              --now "$created_at" --allow-pending-approvals
+              --now "$created_at" --allow-pending-approvals \
+              --additional-provenance-evidence pre-decision-evidence=pre-decision-evidence.json \
+              --additional-provenance-evidence pre-decision-artifact=pre-decision-artifact.json \
+              --additional-provenance-evidence pre-decision-run=pre-decision-run.json \
+              --additional-provenance-evidence pre-decision-artifact-api=pre-decision-artifact-api.json
           )
           python3 - <<'PY'
           import datetime as dt, hashlib, json, os, pathlib

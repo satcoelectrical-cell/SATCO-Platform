@@ -571,6 +571,71 @@ def test_offline_verifier_rejects_identity_authority_and_binding_mutations(
         _verify(tmp_path, state)
 
 
+
+@pytest.mark.parametrize(
+    "evidence_name",
+    sorted(release_evidence.PRE_DECISION_PROVENANCE_FILES),
+)
+def test_offline_verifier_rejects_missing_pre_decision_provenance_binding(
+    tmp_path, evidence_name
+):
+    state = _fixture(tmp_path)
+    provenance_path = tmp_path / "provenance.intoto.json"
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    evidence = provenance["predicate"]["satco"]["qualificationEvidence"]
+    provenance["predicate"]["satco"]["qualificationEvidence"] = [
+        descriptor
+        for descriptor in evidence
+        if descriptor["name"] != evidence_name
+    ]
+    _write(provenance_path, provenance)
+
+    manifest_path = tmp_path / "release-manifest.v1.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["provenance_sha256"] = _digest(provenance_path)
+    _write(manifest_path, manifest)
+    state["manifest_digest"] = _digest(manifest_path).removeprefix("sha256:")
+
+    with pytest.raises(
+        release_evidence.ReleaseVerificationError,
+        match="candidate pre-decision provenance mismatch",
+    ):
+        _verify(tmp_path, state)
+
+
+@pytest.mark.parametrize(
+    "evidence_name",
+    sorted(release_evidence.PRE_DECISION_PROVENANCE_FILES),
+)
+def test_offline_verifier_rejects_substituted_pre_decision_provenance_digest(
+    tmp_path, evidence_name
+):
+    state = _fixture(tmp_path)
+    provenance_path = tmp_path / "provenance.intoto.json"
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+
+    for descriptor in provenance["predicate"]["satco"]["qualificationEvidence"]:
+        if descriptor["name"] == evidence_name:
+            descriptor["digest"]["sha256"] = "0" * 64
+            break
+    else:
+        raise AssertionError(f"fixture missing {evidence_name}")
+
+    _write(provenance_path, provenance)
+
+    manifest_path = tmp_path / "release-manifest.v1.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["provenance_sha256"] = _digest(provenance_path)
+    _write(manifest_path, manifest)
+    state["manifest_digest"] = _digest(manifest_path).removeprefix("sha256:")
+
+    with pytest.raises(
+        release_evidence.ReleaseVerificationError,
+        match="candidate pre-decision provenance mismatch",
+    ):
+        _verify(tmp_path, state)
+
+
 def test_offline_verifier_rejects_unresolved_dispatcher_policy(tmp_path):
     state = _fixture(tmp_path)
     unresolved = json.loads(

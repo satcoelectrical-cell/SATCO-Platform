@@ -398,6 +398,95 @@ class DossierTests(unittest.TestCase):
         }
         self.blocked(self.dossier)
 
+    def _additional_provenance_fixture(self):
+        additional = {}
+        for name in (
+            "pre-decision-evidence",
+            "pre-decision-artifact",
+            "pre-decision-run",
+            "pre-decision-artifact-api",
+        ):
+            path = self.path / f"{name}.json"
+            path.write_text(json.dumps({"name": name}))
+            additional[name] = path
+
+        provenance = json.loads(self.provenance.read_text())
+        evidence = provenance["predicate"]["satco"]["qualificationEvidence"]
+        evidence.extend(
+            {
+                "name": name,
+                "digest": {
+                    "sha256": M.digest(path).removeprefix("sha256:")
+                },
+            }
+            for name, path in additional.items()
+        )
+        self.provenance.write_text(json.dumps(provenance))
+        self.dossier["provenance"] = ev(self.provenance)
+        return additional
+
+    def test_additional_provenance_evidence_exact_set_passes(self):
+        additional = self._additional_provenance_fixture()
+        self.assertTrue(
+            M.validate(
+                self.dossier,
+                NOW,
+                additional_provenance_evidence=additional,
+            )
+        )
+
+    def test_missing_additional_provenance_evidence_blocks(self):
+        additional = self._additional_provenance_fixture()
+        del additional["pre-decision-run"]
+        with self.assertRaisesRegex(
+            ValueError, "provenance security-evidence mismatch"
+        ):
+            M.validate(
+                self.dossier,
+                NOW,
+                additional_provenance_evidence=additional,
+            )
+
+    def test_substituted_additional_provenance_evidence_blocks(self):
+        additional = self._additional_provenance_fixture()
+        substituted = self.path / "substituted.json"
+        substituted.write_text(json.dumps({"substituted": True}))
+        additional["pre-decision-run"] = substituted
+        with self.assertRaisesRegex(
+            ValueError, "provenance security-evidence mismatch"
+        ):
+            M.validate(
+                self.dossier,
+                NOW,
+                additional_provenance_evidence=additional,
+            )
+
+    def test_unexpected_additional_provenance_evidence_blocks(self):
+        additional = self._additional_provenance_fixture()
+        unexpected = self.path / "unexpected.json"
+        unexpected.write_text(json.dumps({"unexpected": True}))
+        additional["unexpected-evidence"] = unexpected
+        with self.assertRaisesRegex(
+            ValueError, "provenance security-evidence mismatch"
+        ):
+            M.validate(
+                self.dossier,
+                NOW,
+                additional_provenance_evidence=additional,
+            )
+
+    def test_duplicate_additional_provenance_evidence_name_blocks(self):
+        additional = self._additional_provenance_fixture()
+        additional["security-decision"] = self.decision
+        with self.assertRaisesRegex(
+            ValueError, "duplicate provenance evidence name"
+        ):
+            M.validate(
+                self.dossier,
+                NOW,
+                additional_provenance_evidence=additional,
+            )
+
     def test_release_manifest_example_tracks_required_schema_and_digest_references(self):
         schema = json.loads((ROOT / "ops/release-manifest.v1.schema.json").read_text())
         example = json.loads((ROOT / "ops/release-manifest.example.v1.json").read_text())

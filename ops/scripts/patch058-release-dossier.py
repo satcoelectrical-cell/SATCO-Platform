@@ -128,7 +128,10 @@ def validate_approval(name, item, dossier, security_decision_commit,
         raise ValueError(f"{name} is not attributable")
 
 
-def validate(dossier, now, require_approvals=True):
+def validate(
+    dossier, now, require_approvals=True, additional_provenance_evidence=None
+):
+    additional_provenance_evidence = additional_provenance_evidence or {}
     required = {
         "schema_version", "release_id", "source_commit", "artifacts",
         "build_inputs", "qualification_evidence", "security_evidence",
@@ -208,6 +211,13 @@ def validate(dossier, now, require_approvals=True):
     }
     dossier_evidence["high-exceptions"] = dossier["exceptions"]["high_findings"]["digest"]
     dossier_evidence["security-decision"] = dossier["exceptions"]["security_decision"]["digest"]
+    for name, reference in additional_provenance_evidence.items():
+        if name in dossier_evidence:
+            raise ValueError(f"duplicate provenance evidence name: {name}")
+        path = pathlib.Path(reference)
+        if not path.is_file():
+            raise ValueError(f"missing additional provenance evidence: {name}")
+        dossier_evidence[name] = digest(path)
     if provenance_evidence != dossier_evidence:
         raise ValueError("provenance security-evidence mismatch")
 
@@ -348,6 +358,9 @@ def make_parser():
     verify.add_argument("--dossier", required=True)
     verify.add_argument("--now", required=True)
     verify.add_argument("--allow-pending-approvals", action="store_true")
+    verify.add_argument(
+        "--additional-provenance-evidence", action="append", default=[]
+    )
     return root
 
 
@@ -386,6 +399,9 @@ def main():
         validate(
             dossier, timestamp(args.now),
             require_approvals=not args.allow_pending_approvals,
+            additional_provenance_evidence=pairs(
+                args.additional_provenance_evidence
+            ),
         )
         print("dossier-verified", digest(args.dossier))
         return 0
