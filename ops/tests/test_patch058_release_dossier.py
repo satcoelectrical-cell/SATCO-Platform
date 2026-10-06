@@ -288,6 +288,35 @@ class DossierTests(unittest.TestCase):
         self.dossier["provenance"] = ev(self.provenance)
         self.blocked(self.dossier)
 
+    def test_extra_duplicate_high_occurrence_exception_blocks(self):
+        gate = json.loads(self.gate.read_text())
+        gate["acceptedExceptions"].append(dict(gate["acceptedExceptions"][0]))
+        self.gate.write_text(json.dumps(gate, indent=2, sort_keys=True) + "\n")
+        self.refresh("security_evidence", "vulnerability_gate", self.gate)
+        provenance = json.loads(self.provenance.read_text())
+        for item in provenance["predicate"]["satco"]["qualificationEvidence"]:
+            if item["name"] == "vulnerability-gate":
+                item["digest"]["sha256"] = M.digest(self.gate).removeprefix("sha256:")
+        self.provenance.write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
+        self.dossier["provenance"] = ev(self.provenance)
+        self.blocked(self.dossier)
+
+    def test_tampered_duplicate_high_occurrence_exception_blocks(self):
+        gate = json.loads(self.gate.read_text())
+        tampered = dict(gate["acceptedExceptions"][0])
+        tampered["justification"] = "tampered"
+        gate["findings"].append(dict(gate["findings"][0], component="fixture-2"))
+        gate["acceptedExceptions"].append(tampered)
+        self.gate.write_text(json.dumps(gate, indent=2, sort_keys=True) + "\n")
+        self.refresh("security_evidence", "vulnerability_gate", self.gate)
+        provenance = json.loads(self.provenance.read_text())
+        for item in provenance["predicate"]["satco"]["qualificationEvidence"]:
+            if item["name"] == "vulnerability-gate":
+                item["digest"]["sha256"] = M.digest(self.gate).removeprefix("sha256:")
+        self.provenance.write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
+        self.dossier["provenance"] = ev(self.provenance)
+        self.blocked(self.dossier)
+
     def test_missing_mandatory_evidence_blocks(self):
         dossier = copy.deepcopy(self.dossier)
         del dossier["sboms"]
