@@ -5,3 +5,15 @@
 # Exact reviewed false positive: this PATCH-059 ADR line contains a non-secret
 # documentation identifier, not credential material.
 a00ad1f751cfb98b0ada146c3be8aa80f5fbee39:docs/adr/ADR-032-PATCH-059-Release-and-Recovery-Evidence-Authentication-DRAFT.md:generic-api-key:183
+
+# Exact reviewed false positives: PATCH-059 Human Security Decision records.
+# These eight generic-api-key matches are governance evidence identifiers/digests,
+# not credentials or secret material. Fingerprint-bound only; no path/rule allowlist.
+ce46ca6173c792324d4b121a0c668d551187a61d:ops/security/patch058-high-exceptions.json:generic-api-key:11
+ce46ca6173c792324d4b121a0c668d551187a61d:ops/security/patch058-high-exceptions.json:generic-api-key:28
+ce46ca6173c792324d4b121a0c668d551187a61d:ops/security/patch058-high-exceptions.json:generic-api-key:45
+ce46ca6173c792324d4b121a0c668d551187a61d:ops/security/patch058-high-exceptions.json:generic-api-key:62
+ce46ca6173c792324d4b121a0c668d551187a61d:ops/security/patch058-high-exceptions.json:generic-api-key:79
+ce46ca6173c792324d4b121a0c668d551187a61d:ops/security/patch058-high-exceptions.json:generic-api-key:96
+ce46ca6173c792324d4b121a0c668d551187a61d:ops/security/patch058-high-exceptions.json:generic-api-key:113
+ce46ca6173c792324d4b121a0c668d551187a61d:ops/security/patch058-high-exceptions.json:generic-api-key:130
