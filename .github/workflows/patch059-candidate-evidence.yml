@@ -374,11 +374,18 @@ jobs:
 
       - name: Bind final candidate identity and provenance without rebuilding
         env:
+          GH_TOKEN: ${{ github.token }}
           EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
           RELEASE_ID: ${{ inputs.release_id }}
           SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
         run: |
           set -eu
+          curl --fail --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            > candidate-run.json
           python3 ops/scripts/patch059-candidate-evidence.py create \
             --run-json candidate-run.json --repository "$GITHUB_REPOSITORY" --source-sha "$EXPECTED_SOURCE_SHA" \
             --release-id "$RELEASE_ID" --security-decision bundle/security-decision.json \

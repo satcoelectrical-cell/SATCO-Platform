@@ -858,6 +858,15 @@ def test_candidate_producer_workflow_has_exact_non_reusable_trigger():
     assert "docker buildx build" not in post_decision
     assert "npm ci" not in post_decision
     assert "uv run pytest" not in post_decision
+    bind_step = post_decision.split(
+        "      - name: Bind final candidate identity and provenance without rebuilding", 1
+    )[1].split("      - name: Upload exact successful candidate evidence", 1)[0]
+    assert "GH_TOKEN: ${{ github.token }}" in bind_step
+    refresh = chr(34) + "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" + chr(34)
+    assert refresh in bind_step
+    assert bind_step.index(refresh) < bind_step.index(
+        "python3 ops/scripts/patch059-candidate-evidence.py create"
+    )
 
 
 def test_pre_decision_handoff_binds_exact_run_artifact_and_scanner_evidence(tmp_path):
