@@ -109,6 +109,16 @@ class DossierTests(unittest.TestCase):
                 "blockingFindings": [],
                 "sourceRevision": REVISION,
                 "artifactDigest": M.digest(self.artifacts["backend"]),
+                "findings": [
+                    {
+                        "source": item["source"],
+                        "finding_id": item["finding_id"],
+                        "severity": item["severity"],
+                        "component": "fixture",
+                        "installed_version": "1",
+                    }
+                    for item in json.loads(self.exceptions.read_text())
+                ],
                 "acceptedExceptions": json.loads(self.exceptions.read_text()),
                 "securityDecision": json.loads(self.decision.read_text()),
             },
@@ -250,6 +260,33 @@ class DossierTests(unittest.TestCase):
 
     def test_valid_candidate(self):
         self.assertTrue(M.validate(self.dossier, NOW))
+
+    def test_duplicate_high_finding_occurrences_share_one_governed_exception(self):
+        gate = json.loads(self.gate.read_text())
+        gate["findings"].append(dict(gate["findings"][0], component="fixture-2"))
+        gate["acceptedExceptions"].append(dict(gate["acceptedExceptions"][0]))
+        self.gate.write_text(json.dumps(gate, indent=2, sort_keys=True) + "\n")
+        self.refresh("security_evidence", "vulnerability_gate", self.gate)
+        provenance = json.loads(self.provenance.read_text())
+        for item in provenance["predicate"]["satco"]["qualificationEvidence"]:
+            if item["name"] == "vulnerability-gate":
+                item["digest"]["sha256"] = M.digest(self.gate).removeprefix("sha256:")
+        self.provenance.write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
+        self.dossier["provenance"] = ev(self.provenance)
+        self.assertTrue(M.validate(self.dossier, NOW))
+
+    def test_missing_duplicate_high_occurrence_exception_blocks(self):
+        gate = json.loads(self.gate.read_text())
+        gate["findings"].append(dict(gate["findings"][0], component="fixture-2"))
+        self.gate.write_text(json.dumps(gate, indent=2, sort_keys=True) + "\n")
+        self.refresh("security_evidence", "vulnerability_gate", self.gate)
+        provenance = json.loads(self.provenance.read_text())
+        for item in provenance["predicate"]["satco"]["qualificationEvidence"]:
+            if item["name"] == "vulnerability-gate":
+                item["digest"]["sha256"] = M.digest(self.gate).removeprefix("sha256:")
+        self.provenance.write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
+        self.dossier["provenance"] = ev(self.provenance)
+        self.blocked(self.dossier)
 
     def test_missing_mandatory_evidence_blocks(self):
         dossier = copy.deepcopy(self.dossier)

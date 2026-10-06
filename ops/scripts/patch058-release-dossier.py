@@ -296,18 +296,28 @@ def validate(
             or timestamp(exception["expires_at"]) <= now
         ):
             raise ValueError("inactive, mismatched or expired High exception")
-    accepted = {
-        (item.get("source", "").lower(), item.get("finding_id")): item
-        for item in gate.get("acceptedExceptions", [])
-        if isinstance(item, dict)
-    }
+    accepted_items = gate.get("acceptedExceptions", [])
+    if not isinstance(accepted_items, list) or not all(
+        isinstance(item, dict) for item in accepted_items
+    ):
+        raise ValueError("vulnerability gate acceptedExceptions must be a list of records")
     expected_exceptions = {
         (item["source"].lower(), item["finding_id"]): item for item in exceptions
     }
+    expected_accepted = []
+    for finding in gate.get("findings", []):
+        if not isinstance(finding, dict):
+            raise ValueError("vulnerability gate finding must be a record")
+        key = (finding.get("source", "").lower(), finding.get("finding_id"))
+        if finding.get("severity") == "HIGH" and key in expected_exceptions:
+            expected_accepted.append(expected_exceptions[key])
     if (
-        len(accepted) != len(gate.get("acceptedExceptions", []))
-        or len(expected_exceptions) != len(exceptions)
-        or accepted != expected_exceptions
+        len(expected_exceptions) != len(exceptions)
+        or set(expected_exceptions) != {
+            (item.get("source", "").lower(), item.get("finding_id"))
+            for item in accepted_items
+        }
+        or accepted_items != expected_accepted
     ):
         raise ValueError("vulnerability gate accepted-exception mismatch")
 
