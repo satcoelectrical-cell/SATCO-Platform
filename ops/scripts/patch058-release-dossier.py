@@ -211,13 +211,17 @@ def validate(
     }
     dossier_evidence["high-exceptions"] = dossier["exceptions"]["high_findings"]["digest"]
     dossier_evidence["security-decision"] = dossier["exceptions"]["security_decision"]["digest"]
-    for name, reference in additional_provenance_evidence.items():
+    for name, evidence in additional_provenance_evidence.items():
         if name in dossier_evidence:
             raise ValueError(f"duplicate provenance evidence name: {name}")
-        path = pathlib.Path(reference)
-        if not path.is_file():
-            raise ValueError(f"missing additional provenance evidence: {name}")
-        dossier_evidence[name] = digest(path)
+        if isinstance(evidence, dict):
+            verify_evidence("additional_provenance_evidence." + name, evidence)
+            dossier_evidence[name] = evidence["digest"]
+        else:
+            path = pathlib.Path(evidence)
+            if not path.is_file():
+                raise ValueError(f"missing additional provenance evidence: {name}")
+            dossier_evidence[name] = digest(path)
     if provenance_evidence != dossier_evidence:
         raise ValueError("provenance security-evidence mismatch")
 

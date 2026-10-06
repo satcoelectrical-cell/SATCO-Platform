@@ -435,6 +435,19 @@ class DossierTests(unittest.TestCase):
             )
         )
 
+    def test_cli_pairs_additional_provenance_descriptor_passes(self):
+        additional = self._additional_provenance_fixture()
+        descriptors = M.pairs(
+            [f"{name}={path}" for name, path in additional.items()]
+        )
+        self.assertTrue(
+            M.validate(
+                self.dossier,
+                NOW,
+                additional_provenance_evidence=descriptors,
+            )
+        )
+
     def test_missing_additional_provenance_evidence_blocks(self):
         additional = self._additional_provenance_fixture()
         del additional["pre-decision-run"]
