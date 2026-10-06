@@ -17,3 +17,15 @@ ce46ca6173c792324d4b121a0c668d551187a61d:ops/security/patch058-high-exceptions.j
 ce46ca6173c792324d4b121a0c668d551187a61d:ops/security/patch058-high-exceptions.json:generic-api-key:96
 ce46ca6173c792324d4b121a0c668d551187a61d:ops/security/patch058-high-exceptions.json:generic-api-key:113
 ce46ca6173c792324d4b121a0c668d551187a61d:ops/security/patch058-high-exceptions.json:generic-api-key:130
+
+# Exact reviewed false positives: candidate-bound PATCH-059 Human Security Decision records.
+# Same eight non-secret governance identifiers/digests after Human decision rebinding.
+# Fingerprint-bound only; no path/rule allowlist.
+d66d0a9b6198491fbfe024a319bbd3ffff5174c6:ops/security/patch058-high-exceptions.json:generic-api-key:11
+d66d0a9b6198491fbfe024a319bbd3ffff5174c6:ops/security/patch058-high-exceptions.json:generic-api-key:28
+d66d0a9b6198491fbfe024a319bbd3ffff5174c6:ops/security/patch058-high-exceptions.json:generic-api-key:45
+d66d0a9b6198491fbfe024a319bbd3ffff5174c6:ops/security/patch058-high-exceptions.json:generic-api-key:62
+d66d0a9b6198491fbfe024a319bbd3ffff5174c6:ops/security/patch058-high-exceptions.json:generic-api-key:79
+d66d0a9b6198491fbfe024a319bbd3ffff5174c6:ops/security/patch058-high-exceptions.json:generic-api-key:96
+d66d0a9b6198491fbfe024a319bbd3ffff5174c6:ops/security/patch058-high-exceptions.json:generic-api-key:113
+d66d0a9b6198491fbfe024a319bbd3ffff5174c6:ops/security/patch058-high-exceptions.json:generic-api-key:130
