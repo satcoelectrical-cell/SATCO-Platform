@@ -188,13 +188,26 @@ def _environment(stage: str) -> tuple[dict[str, object], dict[str, object]]:
 
 def _approval(environment: str, comment: str, _submitted_at: str) -> list[dict[str, object]]:
     # Real GitHub Environment review history has no Human submitted_at field.
+    human_approval = {
+        "state": "approved",
+        "comment": comment,
+        "user": deepcopy(HUMAN),
+        "environments": [{"name": environment}],
+    }
+    if environment != "patch059-final-release-approval":
+        return [human_approval]
     return [
         {
             "state": "approved",
-            "comment": comment,
-            "user": deepcopy(HUMAN),
+            "comment": "15 minute wait timer",
+            "user": {
+                "login": "github-actions[bot]",
+                "id": 41898282,
+                "type": "Bot",
+            },
             "environments": [{"name": environment}],
-        }
+        },
+        human_approval,
     ]
 
 

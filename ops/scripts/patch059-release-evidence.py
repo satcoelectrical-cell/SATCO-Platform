@@ -25,6 +25,11 @@ APPROVAL_SCHEMA = "satco.patch059-human-release-approval/v3"
 FINALIZATION_SCHEMA = "satco.patch059-release-finalization/v2"
 OPERATING_MODE = "single-human-authority"
 HUMAN_AUTHORITY = {"login": "samiphone651-sys", "id": 301386823, "type": "User"}
+GITHUB_ACTIONS_BOT = {
+    "login": "github-actions[bot]",
+    "id": 41898282,
+    "type": "Bot",
+}
 SIGNING_ENVIRONMENT = "patch058-protected-release"
 FINAL_APPROVAL_ENVIRONMENT = "patch059-final-release-approval"
 CANDIDATE_SCHEMA = "satco.patch059-candidate-evidence/v2"
@@ -251,8 +256,7 @@ def validate_authority_policy(
         or document.get("repository") != repository
         or document.get("repository_id") != 1311705732
         or document.get("decision_workflow_path") != ".github/workflows/patch059-human-decision.yml"
-        or document.get("marker_actor")
-        != {"login": "github-actions[bot]", "id": 41898282, "type": "Bot"}
+        or document.get("marker_actor") != GITHUB_ACTIONS_BOT
         or document.get("human_ssh_signing_key") != {
             "github_key_id": 1219405,
             "algorithm": "ssh-ed25519",
@@ -481,11 +485,32 @@ def _approval_event(
             for env in environments
         ):
             events.append(item)
-    if len(events) != 1 or events[0].get("state") != "approved":
-        raise ReleaseVerificationError("one distinct approved Environment event required")
-    event = events[0]
+    human_events = []
+    timer_events = []
+    timer_comment = f"{policy['final_environment']['wait_timer_minutes']} minute wait timer"  # type: ignore[index]
+    for event in events:
+        if event.get("state") != "approved":
+            raise ReleaseVerificationError("non-approved Environment event")
+        reviewer = _api_actor(event.get("user"))
+        if reviewer == HUMAN_AUTHORITY:
+            human_events.append(event)
+        elif stage == "final" and reviewer == GITHUB_ACTIONS_BOT:
+            if event.get("comment") != timer_comment:
+                raise ReleaseVerificationError("invalid GitHub wait-timer approval event")
+            timer_events.append(event)
+        else:
+            raise ReleaseVerificationError("unexpected Environment approval actor")
+    if len(human_events) != 1:
+        raise ReleaseVerificationError(
+            "one distinct Human approved Environment event required"
+        )
+    if stage == "final" and len(timer_events) != 1:
+        raise ReleaseVerificationError(
+            "one distinct GitHub wait-timer approval event required"
+        )
+    event = human_events[0]
     reviewer = _api_actor(event.get("user"))
-    if reviewer != HUMAN_AUTHORITY or event.get("comment") != expected_comment:
+    if event.get("comment") != expected_comment:
         raise ReleaseVerificationError("approval evidence mismatch")
     # GitHub Environment review history authenticates the Human decision but
     # does not expose a Human review timestamp. Never fabricate one here.

@@ -28,6 +28,88 @@ BOT = {
     "app_id": 7654,
     "installation_id": 8765,
 }
+RUN12_FINALIZE_COMMENT = (
+    "FINALIZE PATCH-059 "
+    "release_id=patch059-predecision-0a3988f-20261006 release_sequence=1 "
+    "source_sha=0a3988f661371f4e23d0309b80c7c19d18b7981d "
+    "final_decision_comment_id=6023137899 "
+    "final_decision_sha256=sha256:2eff69a8d8a56f8c0a7f0a6047e37722968f138b502620a84151cd75f52e01b8 "
+    "final_decision_body_sha256=sha256:c9643ca6faf386cc27bf02e32079d449cbb2fa79cdad053f291405b70faa1796"
+)
+
+
+def _run12_approval_history() -> list[dict[str, object]]:
+    """Exact field shape returned by Run #12's approvals endpoint."""
+    environment = {
+        "id": 23459487664,
+        "node_id": "EN_kwDOTi8KhM8AAAAFdktfsA",
+        "name": "patch059-final-release-approval",
+        "url": (
+            "https://api.github.com/repos/satcoelectrical-cell/SATCO-Platform/"
+            "environments/patch059-final-release-approval"
+        ),
+        "html_url": (
+            "https://github.com/satcoelectrical-cell/SATCO-Platform/deployments/"
+            "activity_log?environments_filter=patch059-final-release-approval"
+        ),
+        "created_at": "2026-10-05T05:38:35Z",
+        "updated_at": "2026-10-05T05:38:35Z",
+        "can_admins_bypass": False,
+    }
+    return [
+        {
+            "user": {
+                "login": "github-actions[bot]",
+                "id": 41898282,
+                "node_id": "MDM6Qm90NDE4OTgyODI=",
+                "avatar_url": "https://avatars.githubusercontent.com/in/15368?v=4",
+                "gravatar_id": "",
+                "url": "https://api.github.com/users/github-actions%5Bbot%5D",
+                "html_url": "https://github.com/apps/github-actions",
+                "followers_url": "https://api.github.com/users/github-actions%5Bbot%5D/followers",
+                "following_url": "https://api.github.com/users/github-actions%5Bbot%5D/following{/other_user}",
+                "gists_url": "https://api.github.com/users/github-actions%5Bbot%5D/gists{/gist_id}",
+                "starred_url": "https://api.github.com/users/github-actions%5Bbot%5D/starred{/owner}{/repo}",
+                "subscriptions_url": "https://api.github.com/users/github-actions%5Bbot%5D/subscriptions",
+                "organizations_url": "https://api.github.com/users/github-actions%5Bbot%5D/orgs",
+                "repos_url": "https://api.github.com/users/github-actions%5Bbot%5D/repos",
+                "events_url": "https://api.github.com/users/github-actions%5Bbot%5D/events{/privacy}",
+                "received_events_url": "https://api.github.com/users/github-actions%5Bbot%5D/received_events",
+                "type": "Bot",
+                "user_view_type": "public",
+                "site_admin": False,
+            },
+            "state": "approved",
+            "comment": "15 minute wait timer",
+            "environments": [deepcopy(environment)],
+        },
+        {
+            "user": {
+                "login": "samiphone651-sys",
+                "id": 301386823,
+                "node_id": "U_kgDOEfbMRw",
+                "avatar_url": "https://avatars.githubusercontent.com/u/301386823?v=4",
+                "gravatar_id": "",
+                "url": "https://api.github.com/users/samiphone651-sys",
+                "html_url": "https://github.com/samiphone651-sys",
+                "followers_url": "https://api.github.com/users/samiphone651-sys/followers",
+                "following_url": "https://api.github.com/users/samiphone651-sys/following{/other_user}",
+                "gists_url": "https://api.github.com/users/samiphone651-sys/gists{/gist_id}",
+                "starred_url": "https://api.github.com/users/samiphone651-sys/starred{/owner}{/repo}",
+                "subscriptions_url": "https://api.github.com/users/samiphone651-sys/subscriptions",
+                "organizations_url": "https://api.github.com/users/samiphone651-sys/orgs",
+                "repos_url": "https://api.github.com/users/samiphone651-sys/repos",
+                "events_url": "https://api.github.com/users/samiphone651-sys/events{/privacy}",
+                "received_events_url": "https://api.github.com/users/samiphone651-sys/received_events",
+                "type": "User",
+                "user_view_type": "public",
+                "site_admin": False,
+            },
+            "state": "approved",
+            "comment": RUN12_FINALIZE_COMMENT,
+            "environments": [deepcopy(environment)],
+        },
+    ]
 
 
 def _example_policy() -> dict[str, object]:
@@ -219,6 +301,119 @@ def test_approval_event_is_exactly_attributable_and_purpose_bound():
     with pytest.raises(authority.ReleaseVerificationError):
         authority._approval_event(
             _policy(), history, stage="signing", expected_comment=comment
+        )
+
+
+def test_run12_human_approval_and_github_wait_timer_are_accepted():
+    event = authority._approval_event(
+        _policy(),
+        _run12_approval_history(),
+        stage="final",
+        expected_comment=RUN12_FINALIZE_COMMENT,
+    )
+    assert event["reviewer"] == authority.HUMAN_AUTHORITY
+    assert event["comment"] == RUN12_FINALIZE_COMMENT
+    assert event["environment"] == "patch059-final-release-approval"
+
+
+def test_run12_shape_without_human_approval_is_rejected():
+    history = _run12_approval_history()[:1]
+    with pytest.raises(
+        authority.ReleaseVerificationError,
+        match="one distinct Human approved Environment event required",
+    ):
+        authority._approval_event(
+            _policy(), history, stage="final", expected_comment=RUN12_FINALIZE_COMMENT
+        )
+
+
+def test_run12_shape_without_github_wait_timer_is_rejected():
+    history = _run12_approval_history()[1:]
+    with pytest.raises(
+        authority.ReleaseVerificationError,
+        match="one distinct GitHub wait-timer approval event required",
+    ):
+        authority._approval_event(
+            _policy(), history, stage="final", expected_comment=RUN12_FINALIZE_COMMENT
+        )
+
+
+def test_run12_shape_with_duplicate_github_wait_timer_is_rejected():
+    history = _run12_approval_history()
+    history.append(deepcopy(history[0]))
+    with pytest.raises(
+        authority.ReleaseVerificationError,
+        match="one distinct GitHub wait-timer approval event required",
+    ):
+        authority._approval_event(
+            _policy(), history, stage="final", expected_comment=RUN12_FINALIZE_COMMENT
+        )
+
+
+def test_run12_shape_with_unauthorized_user_approval_is_rejected():
+    history = _run12_approval_history()
+    history[1]["user"] = {"login": "attacker", "id": 1, "type": "User"}
+    with pytest.raises(
+        authority.ReleaseVerificationError, match="unexpected Environment approval actor"
+    ):
+        authority._approval_event(
+            _policy(), history, stage="final", expected_comment=RUN12_FINALIZE_COMMENT
+        )
+
+
+def test_run12_shape_with_multiple_human_approvals_is_rejected():
+    history = _run12_approval_history()
+    duplicate = deepcopy(history[1])
+    duplicate["comment"] = "second Human approval event"
+    history.append(duplicate)
+    with pytest.raises(
+        authority.ReleaseVerificationError,
+        match="one distinct Human approved Environment event required",
+    ):
+        authority._approval_event(
+            _policy(), history, stage="final", expected_comment=RUN12_FINALIZE_COMMENT
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("comment", "14 minute wait timer", "invalid GitHub wait-timer approval event"),
+        ("state", "pending", "non-approved Environment event"),
+        ("user", {"login": "github-actions[bot]", "id": 1, "type": "Bot"},
+         "unexpected Environment approval actor"),
+    ],
+)
+def test_run12_shape_with_malformed_or_spoofed_timer_is_rejected(
+    field, value, message
+):
+    history = _run12_approval_history()
+    history[0][field] = value
+    with pytest.raises(authority.ReleaseVerificationError, match=message):
+        authority._approval_event(
+            _policy(), history, stage="final", expected_comment=RUN12_FINALIZE_COMMENT
+        )
+
+
+def test_run12_shape_with_wrong_human_environment_is_rejected():
+    history = _run12_approval_history()
+    history[1]["environments"][0]["name"] = "production"
+    with pytest.raises(
+        authority.ReleaseVerificationError,
+        match="one distinct Human approved Environment event required",
+    ):
+        authority._approval_event(
+            _policy(), history, stage="final", expected_comment=RUN12_FINALIZE_COMMENT
+        )
+
+
+@pytest.mark.parametrize("comment", [None, "FINALIZE PATCH-059 wrong"])
+def test_run12_shape_with_missing_or_wrong_finalize_comment_is_rejected(comment):
+    history = _run12_approval_history()
+    history[1]["comment"] = comment
+    with pytest.raises(authority.ReleaseVerificationError, match="approval evidence mismatch"):
+        authority._approval_event(
+            _policy(), history, stage="final", expected_comment=RUN12_FINALIZE_COMMENT
         )
 
 
