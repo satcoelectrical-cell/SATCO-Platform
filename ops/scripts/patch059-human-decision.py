@@ -555,7 +555,10 @@ def verify_decision(
                 markers += 1
         elif body.startswith(APPROVAL_HEADER + "\n"):
             candidate, _signature = _parse_approval_body(body)
-            if candidate.get("release_id") == marker["release_id"] or candidate.get("nonce") == marker["nonce"]:
+            if (
+                _actor(item.get("user")) == HUMAN_AUTHORITY
+                and (candidate.get("release_id") == marker["release_id"] or candidate.get("nonce") == marker["nonce"])
+            ):
                 approvals += 1
         elif body.startswith(CONSUMPTION_HEADER + "\n") and marker["nonce"] in body:
             consumptions += 1

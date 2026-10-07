@@ -127,6 +127,26 @@ def test_duplicate_nonce_fails(tmp_path, monkeypatch):
         _verify(tmp_path, monkeypatch, mutate=bad)
 
 
+def test_unauthorized_matching_approval_does_not_shadow_human_authority(tmp_path, monkeypatch):
+    def add_unauthorized(_marker, approval, _event, comments):
+        shadow = copy.deepcopy(approval)
+        shadow["id"] = 12
+        shadow["node_id"] = "IC_kwDO_test_12"
+        shadow["user"] = {"login": "satcoelectrical-cell", "id": 308997418, "type": "User"}
+        comments.insert(1, shadow)
+    assert _verify(tmp_path, monkeypatch, mutate=add_unauthorized)["approval"]["id"] == 11
+
+
+def test_duplicate_human_authority_approval_still_fails(tmp_path, monkeypatch):
+    def add_duplicate(_marker, approval, _event, comments):
+        duplicate = copy.deepcopy(approval)
+        duplicate["id"] = 12
+        duplicate["node_id"] = "IC_kwDO_test_12"
+        comments.append(duplicate)
+    with pytest.raises(m.HumanDecisionError, match="duplicate"):
+        _verify(tmp_path, monkeypatch, mutate=add_duplicate)
+
+
 def test_consumed_nonce_fails(tmp_path, monkeypatch):
     def bad(_m, _a, _e, comments):
         comments.append({"body": m.CONSUMPTION_HEADER + "\n" + ("b" * 64)})
