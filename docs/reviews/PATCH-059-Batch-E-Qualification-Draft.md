@@ -978,3 +978,35 @@ must make a new candidate-specific exception decision before a post-decision
 run may be dispatched. SEC-E-MAJ-05 remains **PARTIALLY REMEDIATED**; protected
 signing, final release approval, deployment and Human Acceptance remain
 separate and unauthorized.
+
+
+## Protected release-chain closure reconciliation — 2026-10-07
+
+This section records fresh exact-source operational evidence after the earlier review sections. Historical FAIL/OPEN/PARTIAL dispositions above remain preserved as chronology. This section supersedes the remaining operational disposition for SEC-E-MAJ-05 only. It does not grant Human Checkpoint E/PATCH acceptance or authorize PATCH-060.
+
+### Exact governed custody chain
+
+- Governed source: `af9b3704edcee0a8c0831508fd97a5a4e5e70f6e`.
+- Human Security Decision: `9bfe6af2ce4fd0c012cb6913006e6e6591fbf06a`.
+- Pre-decision: run `37582653424`, attempt `1`, artifact `11465656478`, digest `sha256:ce188028d9a296d1150e7d47d7cf3cbb67092999d93ae79fb66e41787600180c`.
+- Post-decision candidate: run `37584815792`, attempt `1`, artifact `11465619588`, digest `sha256:5a461b191dd67d3529649af13ef1699aab181f57d55d1b17ad633a58991e3534`.
+- Protected signing: run `37585349660`, attempt `1`, artifact `11465824006`, digest `sha256:c08f0ff65bbc38ad449f7619213365005f76749cf15bb77e137d26394d6aed14`.
+- Human `FINAL_APPROVAL`: Issue #1 comment `6033396409`; decision run `37589221337`, attempt `1`, artifact `11466839591`, digest `sha256:9e237ed848c883c3680760d394e94264f038ff83cfb06f3b75725593da3e747b`.
+- Protected finalization: run `37589807929`, attempt `1`, SUCCESS. Live Human decision and final Environment approval were revalidated; real Sigstore/Cosign OIDC bundles were created; the pinned offline verifier emitted `PATCH059_VERIFY_VERIFIED`.
+- Release-ready artifact: `11469375241`, `patch059-release-ready-af9b3704edcee0a8c0831508fd97a5a4e5e70f6e`, digest `sha256:32698be8120d8c59ac7df359556d09219dc86bff91ec37ba95d68dad0c57b3d6`.
+
+### Final finding reconciliation
+
+| Finding | Current disposition | Closure basis |
+|---|---|---|
+| SEC-E-MAJ-05 | **REMEDIATED / OPERATIONALLY VERIFIED** | Exact-source clean-runner evidence, provenance binding, protected signing approval, real OIDC/Cosign evidence, distinct attributable Human final approval, protected finalization and pinned offline verification all completed successfully. |
+| SEC-E-MIN-01 | **REMEDIATED / QUALIFIED** | Human Architecture Acceptance and bounded implementation authorization were recorded on 2026-10-04; the shared evaluator was implemented and qualified, and the subsequent independent re-review found no remaining locally reproducible code blocker. |
+| SEC-E-RR-MIN-01 | **REMEDIATED / INDEPENDENTLY QUALIFIED** | Explicit fail-closed object-inventory validation and optimized-interpreter negatives were independently re-reviewed with no remaining code blocker. |
+
+No Critical or Major finding remains open in the recorded Batch E finding set. Protected-chain success does not imply deployment authorization or Human Checkpoint E/PATCH acceptance.
+
+### Closure gate
+
+**READY FOR EXPLICIT HUMAN CHECKPOINT E / PATCH-059 ACCEPTANCE.**
+
+This is evidence reconciliation, not acceptance. Until Human Authority separately accepts Checkpoint E and PATCH-059 closure, PATCH-059 remains OPEN, no deployment authority is inferred, and PATCH-060 remains NOT STARTED / NOT AUTHORIZED.

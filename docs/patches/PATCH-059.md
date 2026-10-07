@@ -1,6 +1,6 @@
 # PATCH-059 — Commercial Package Configuration, Seats & Signed Entitlements
 
-Status: REGISTERED / OPEN — DISCOVERY AUTHORIZED
+Status: DONE / CLOSED — HUMAN ACCEPTED 2026-10-07
 
 Date registered: 2026-09-30
 
@@ -77,15 +77,15 @@ questions. They are not invented by this registration.
 
 Human authority remains controlling. AI is advisory and non-authoritative.
 
-## Governance state
+## Final governance state
 
 - PATCH-058: DONE / CLOSED.
-- PATCH-059: REGISTERED / OPEN — DISCOVERY AUTHORIZED.
-- PATCH-059 Architecture authority: NOT GRANTED.
-- PATCH-059 ADR authority: NOT GRANTED.
-- PATCH-059 EDS authority: NOT GRANTED.
-- PATCH-059 IDS authority: NOT GRANTED.
-- PATCH-059 implementation authority: NOT GRANTED.
+- PATCH-059 Checkpoint E: PASS / HUMAN ACCEPTED / COMPLETE on 2026-10-07.
+- PATCH-059 protected finalization: SUCCESS — run `37589807929`, attempt `1`.
+- PATCH-059 release-ready artifact: `11469375241`, digest `sha256:32698be8120d8c59ac7df359556d09219dc86bff91ec37ba95d68dad0c57b3d6`.
+- PATCH-059 Human Acceptance record: `docs/reviews/PATCH-059-Human-Acceptance.md`.
+- PATCH-059: DONE / CLOSED.
+- Production deployment: NOT AUTHORIZED BY THIS CLOSURE.
 - PATCH-060: NOT STARTED / NOT AUTHORIZED.
 
-**PATCH-059: REGISTERED / OPEN — DISCOVERY AUTHORIZED.**
+**PATCH-059: DONE / CLOSED — HUMAN ACCEPTED / COMPLETE.**
