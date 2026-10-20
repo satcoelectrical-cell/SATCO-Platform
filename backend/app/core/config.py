@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     STANDARDS_INTELLIGENCE_PROCESSOR_POLICY_ID: str = "local"
 
     # Local semantic analysis is opt-in, server-owned, and loopback-only.
+    DOCUMENT_SEMANTIC_PROVIDER_ENABLED: bool = False
+    DOCUMENT_SEMANTIC_PROVIDER_ENDPOINT: str = "http://127.0.0.1:11434/api/chat"
+    DOCUMENT_SEMANTIC_PROVIDER_MODEL: str = "qwen3:4b"
+    DOCUMENT_SEMANTIC_PROVIDER_TIMEOUT_SECONDS: float = 120.0
+    DOCUMENT_SEMANTIC_PROVIDER_MAX_INPUT_CHARACTERS: int = 24_000
 
     @field_validator("STANDARDS_PLATFORM_CATALOG_ADMIN_USER_IDS")
     @classmethod

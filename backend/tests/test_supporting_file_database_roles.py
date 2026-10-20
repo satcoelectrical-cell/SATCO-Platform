@@ -17,6 +17,27 @@ def _runtime_engine():
     ))
 
 
+def test_runtime_has_only_required_idempotency_and_outbox_mutation_grants():
+    with owner_engine.connect() as owner:
+        privileges = owner.execute(text("""
+            SELECT
+              has_table_privilege('satco_runtime', 'supporting_file_idempotency', 'SELECT'),
+              has_column_privilege('satco_runtime', 'supporting_file_idempotency', 'id', 'INSERT'),
+              has_column_privilege('satco_runtime', 'supporting_file_idempotency', 'status', 'UPDATE'),
+              has_column_privilege('satco_runtime', 'supporting_file_idempotency', 'request_fingerprint', 'UPDATE'),
+              has_table_privilege('satco_runtime', 'supporting_file_idempotency', 'DELETE'),
+              has_table_privilege('satco_runtime', 'supporting_file_outbox', 'SELECT'),
+              has_column_privilege('satco_runtime', 'supporting_file_outbox', 'id', 'INSERT'),
+              has_column_privilege('satco_runtime', 'supporting_file_outbox', 'published_at', 'UPDATE'),
+              has_column_privilege('satco_runtime', 'supporting_file_outbox', 'payload', 'UPDATE'),
+              has_table_privilege('satco_runtime', 'supporting_file_outbox', 'DELETE')
+        """)).one()
+    assert privileges == (
+        True, True, True, False, False,
+        True, True, True, False, False,
+    )
+
+
 def test_migration_owns_all_guard_functions_and_runtime_cannot_change_them():
     with owner_engine.connect() as owner:
         rows = owner.execute(text("""

@@ -72,6 +72,19 @@ from .project_foundation import (
     ProjectReadinessState,
     ProjectScopeKind,
 )
+from .document_intelligence import (
+    CandidateAssertionMode,
+    CandidateKind,
+    CandidateReviewAction,
+    CandidateReviewState,
+    DocumentAnalysisState,
+    DocumentFamily,
+    ExtractionStatus,
+    FindingKind,
+    FindingState,
+    SemanticProviderStatus,
+    SourceLocatorKind,
+)
 
 # Backward-compatible Core alias. New domain code must use a qualified export.
 RelationshipLifecycle = EngineeringContextRelationshipLifecycle

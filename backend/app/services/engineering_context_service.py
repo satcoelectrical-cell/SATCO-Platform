@@ -31,7 +31,7 @@ from app.models.user import User
 from app.repositories.engineering_context_repository import (
     EngineeringContextRepository,
 )
-from app.services.audit_service import create_audit_log
+from app.services.audit_service import create_audit_log, stage_audit_log
 
 
 FACT_FIELDS = {"statement", "uncertainty"}
@@ -76,6 +76,7 @@ class EngineeringContextService:
         sources: list[dict] | None = None,
         purpose: str | None = None,
         context_key: str | None = None,
+        commit: bool = True,
     ) -> dict:
         kind = self._enum(ContextKind, kind, "Context kind")
         authority = self._enum(
@@ -157,22 +158,34 @@ class EngineeringContextService:
                 subject_values=subject_values,
                 source_values=source_values,
             )
-            self._audit_and_commit(
-                current_user=current_user,
-                action="engineering_context_created",
-                context_id=context.id,
-                details={
-                    "project_id": project.id,
-                    "workspace_id": values["workspace_id"],
-                    "context_key": values["context_key"],
-                    "kind": kind.value,
-                    "owner_id": owner.id,
-                    "steward_id": steward.id,
-                    "authority": authority.value,
-                    "lifecycle": ContextLifecycle.CURRENT.value,
-                    "version": 1,
-                },
-            )
+            audit_details = {
+                "project_id": project.id,
+                "workspace_id": values["workspace_id"],
+                "context_key": values["context_key"],
+                "kind": kind.value,
+                "owner_id": owner.id,
+                "steward_id": steward.id,
+                "authority": authority.value,
+                "lifecycle": ContextLifecycle.CURRENT.value,
+                "version": 1,
+            }
+            if commit:
+                self._audit_and_commit(
+                    current_user=current_user,
+                    action="engineering_context_created",
+                    context_id=context.id,
+                    details=audit_details,
+                )
+            else:
+                stage_audit_log(
+                    db=self.db,
+                    user_id=current_user.id,
+                    action="engineering_context_created",
+                    entity="ENGINEERING_CONTEXT",
+                    entity_id=context.id,
+                    details=self._serialized(audit_details),
+                )
+                self.db.flush()
         except IntegrityError as exc:
             self.db.rollback()
             raise InvalidContext(

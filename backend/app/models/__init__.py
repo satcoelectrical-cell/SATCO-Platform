@@ -36,6 +36,20 @@ from .technical_report import TechnicalReportRecord
 from .technical_report_command import TechnicalReportIdempotencyRecord
 from .technical_report_command import TechnicalReportOutboxRecord
 from .supporting_file import EvidenceAvailabilitySnapshotItem, EvidenceSupportingFileLink, SupportingFileAsset, SupportingFileUploadReservation, SupportingFileAvailabilityObservation, SupportingFileAvailabilitySnapshot
+from .document_intelligence import (
+    CandidateSourceLocatorLink,
+    DocumentAnalysisPageRecord,
+    DocumentAnalysisRun,
+    DocumentCandidateReview,
+    DocumentCorrelation,
+    DocumentEngineeringCandidate,
+    DocumentFindingRecord,
+    DocumentIntelligenceIdempotency,
+    DocumentIntelligenceOutbox,
+    DocumentPromotionReceipt,
+    EvidenceSourceLocatorLink,
+    SourceLocatorRecord,
+)
 from .project_foundation import (
     ProjectCompletionCriterion,
     ProjectFoundation,
