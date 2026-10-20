@@ -54,6 +54,15 @@ def test_production_readiness_requires_database_and_non_content_health(tmp_path,
     object_access_key.write_text("test-access-key", encoding="utf-8")
     object_secret_key = tmp_path / "object-secret-key"
     object_secret_key.write_text("o" * 40, encoding="utf-8")
+    import base64
+    totp_key = tmp_path / "totp-key"
+    totp_key.write_text(base64.urlsafe_b64encode(b"t" * 32).decode("ascii"), encoding="utf-8")
+    recovery_key = tmp_path / "recovery-key"
+    recovery_key.write_text("r" * 40, encoding="utf-8")
+    throttle_key = tmp_path / "throttle-key"
+    throttle_key.write_text("h" * 40, encoding="utf-8")
+    commercial_trust_store = tmp_path / "commercial-trust-store.json"
+    commercial_trust_store.write_text("{}", encoding="utf-8")
     subprocess.run(
         ["sh", str(ROOT / "ops/scripts/set-ops-mode.sh"), "normal"],
         check=True,
@@ -64,7 +73,11 @@ def test_production_readiness_requires_database_and_non_content_health(tmp_path,
         },
     )
     settings = Settings(
-        SATCO_ENVIRONMENT="production", SECRET_KEY="a" * 40,
+        SATCO_ENVIRONMENT="production",
+        SATCO_DEPLOYMENT_ID="test-production-deployment",
+        SATCO_COMMERCIAL_ENTITLEMENT_ENABLED=True,
+        SATCO_COMMERCIAL_ENTITLEMENT_TRUST_STORE_FILE=str(commercial_trust_store),
+        SECRET_KEY="a" * 40,
         SATCO_RELEASE_MANIFEST_PATH=str(manifest), SATCO_PUBLIC_URL="https://satco.example",
         SATCO_TRUSTED_HOSTS="satco.example", SATCO_ALLOWED_ORIGINS="https://satco.example",
         SATCO_EXPECTED_ALEMBIC_HEAD="e04600000001", SATCO_PERSISTENCE_GUARD_VERSION="v1",
@@ -81,6 +94,12 @@ def test_production_readiness_requires_database_and_non_content_health(tmp_path,
         SATCO_MONITORING_TOKEN="m" * 40,
         SATCO_OPS_MODE_FILE=str(mode),
         SATCO_OPS_MODE_HMAC_KEY_FILE=str(mode_key),
+        REFRESH_VERIFIER_KEY="v" * 40,
+        TOTP_ENCRYPTION_KEY_FILE=str(totp_key),
+        TOTP_ENCRYPTION_KEY_ID="production-v1",
+        TOTP_ENCRYPTION_KEY_VERSION=1,
+        RECOVERY_CODE_VERIFIER_KEY_FILE=str(recovery_key),
+        AUTH_THROTTLE_KEY_FILE=str(throttle_key),
     )
     monkeypatch.setattr(operations, "_database_ready", lambda _settings: True)
     monkeypatch.setattr(operations, "_object_health_ready", lambda _settings: True)

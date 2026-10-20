@@ -1,15 +1,53 @@
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.core.config import settings
 from app.core.security import create_access_token
+from app.models.auth_security import AuthRefreshFamily, AuthRefreshSession, AuthSecurityEvent
+from app.models.organization import UserOrganizationMembership
 
 
-def bearer(user):
-    return {"Authorization": f"Bearer {create_access_token(user.id, user.auth_version)}"}
+def bearer(user, db_session):
+    family = AuthRefreshFamily(user_id=user.id)
+    db_session.add(family)
+    db_session.flush()
+    session = AuthRefreshSession(
+        family_id=family.id,
+        user_id=user.id,
+        selector=uuid4().hex,
+        secret_verifier="0" * 64,
+        auth_version=user.auth_version,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add(session)
+    if user.role == "admin":
+        organization_id = (
+            db_session.query(UserOrganizationMembership.organization_id)
+            .filter_by(user_id=user.id, is_enabled=True, is_selected=True)
+            .scalar()
+        )
+        db_session.add(
+            AuthSecurityEvent(
+                event_type="mfa_login_challenge_consumed",
+                user_id=user.id,
+                actor_user_id=user.id,
+                organization_id=organization_id,
+                session_id=session.id,
+                outcome="success",
+                reason_code="test_harness_assurance",
+            )
+        )
+    db_session.commit()
+    return {"Authorization": f"Bearer {create_access_token(user.id, user.auth_version, session.id)}"}
 
 
-def test_platform_bootstrap_requires_configured_secret(client, monkeypatch):
+def test_platform_bootstrap_requires_configured_secret(client, monkeypatch, tmp_path):
+    throttle = tmp_path / "bootstrap-throttle-key"
+    throttle.write_text("h" * 40, encoding="utf-8")
+    monkeypatch.setattr(settings, "AUTH_THROTTLE_KEY_FILE", str(throttle))
     monkeypatch.setattr(settings, "PLATFORM_BOOTSTRAP_KEY", "x" * 40)
+    monkeypatch.setattr(settings, "SATCO_BOOTSTRAP_ENABLED", True)
+    monkeypatch.setattr(settings, "SATCO_BOOTSTRAP_WINDOW_END", "2099-01-01T00:00:00+00:00")
     payload = {
         "organization_name": "First Customer",
         "organization_slug": "first-customer",
@@ -33,14 +71,14 @@ def test_platform_bootstrap_requires_configured_secret(client, monkeypatch):
     assert len(success.json()["one_time_token"]) >= 40
 
 
-def test_engineer_cannot_use_organization_admin(client, engineer_user):
-    response = client.get("/organization-admin/members", headers=bearer(engineer_user))
+def test_engineer_cannot_use_organization_admin(client, engineer_user, db_session):
+    response = client.get("/organization-admin/members", headers=bearer(engineer_user, db_session))
     assert response.status_code == 404
     assert response.json() == {"detail": "Protected resource not found"}
 
 
-def test_admin_can_list_current_organization_members(client, admin_user):
-    response = client.get("/organization-admin/members", headers=bearer(admin_user))
+def test_admin_can_list_current_organization_members(client, admin_user, db_session):
+    response = client.get("/organization-admin/members", headers=bearer(admin_user, db_session))
     assert response.status_code == 200
     assert response.json()["outcome"] == "success"
     assert any(item["user_id"] == admin_user.id for item in response.json()["items"])

@@ -8,13 +8,18 @@ from hashlib import sha256
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.config import settings
 from app.core.database import DisciplinePackageGuardMode
+from app.enums.discipline_package import EntitlementDecision, EntitlementOperation
+from app.models.commercial_entitlement import CommercialPackageConfigurationProof
 from app.models.discipline_package import (OrganizationPackageConfigurationHead, OrganizationPackageSelection, PackageConfigurationAuditEvent, PackageDescriptor, ProjectPackageConfigurationHead, ProjectPackageConfigurationRevision, ProjectPackageConfigurationSelection, RegistryMembership, RegistryRelease)
 from app.models.engineering_workspace import EngineeringWorkspace
 from app.models.project import Project
+from app.ports.discipline_package import EntitlementRequest
 from app.repositories.discipline_package_unit_of_work import DisciplinePackageUnitOfWork
 from app.repositories.project_repository import ProjectRepository
 from app.services.discipline_package_service import (
@@ -24,6 +29,8 @@ from app.services.discipline_package_service import (
     is_retryable_database_error,
 )
 
+
+from app.services.electrical_package_service import PackageProtectedNotFound, PackageUnavailable
 
 @dataclass(frozen=True, slots=True)
 class GuardedRequestIdentity:
@@ -62,8 +69,9 @@ class ProjectConfigurationRequest:
 class DisciplinePackageConfigurationService:
     """Only these outer methods complete guarded configuration transactions."""
 
-    def __init__(self, factory: sessionmaker):
+    def __init__(self, factory: sessionmaker, *, entitlement_port=None):
         self._factory = factory
+        self._entitlement_port = entitlement_port
 
     def replace_organization_configuration(self, identity: GuardedRequestIdentity, request: OrganizationConfigurationRequest) -> int:
         self._validate_organization_request(request.expected_configuration_version, request.selections, request.rationale)
@@ -87,6 +95,78 @@ class DisciplinePackageConfigurationService:
                     raise ValueError("concurrent package configuration update") from exc
         raise AssertionError("unreachable")
 
+    def _require_configure_entitlement(
+        self,
+        *,
+        organization_id,
+        package_keys: set[str],
+        expanding: bool,
+    ) -> None:
+        port = getattr(self, "_entitlement_port", None)
+        if port is None:
+            return
+
+        evaluator = getattr(port, "evaluate_continuity_configuration", None)
+
+        for package_key in sorted(package_keys):
+            request = EntitlementRequest(
+                trusted_organization_id=organization_id,
+                trusted_deployment_id=settings.SATCO_DEPLOYMENT_ID,
+                package_key=package_key,
+                entitlement_key=package_key,
+                operation=EntitlementOperation.CONFIGURE,
+            )
+
+            if evaluator is not None:
+                decision = evaluator(request, expanding=expanding)
+            else:
+                decision = port.evaluate(request)
+
+            if decision in (
+                EntitlementDecision.PERMITTED,
+                EntitlementDecision.NOT_REQUIRED,
+            ):
+                continue
+
+            if decision is EntitlementDecision.UNAVAILABLE:
+                raise PackageUnavailable()
+
+            raise PackageProtectedNotFound()
+
+    def _record_commercial_configuration_proofs(
+        self,
+        session,
+        *,
+        organization_id,
+        newly_enabled_package_keys: set[str],
+        configured_at: datetime,
+    ) -> None:
+        deployment_id = settings.SATCO_DEPLOYMENT_ID.strip()
+        if not deployment_id:
+            return
+
+        for package_key in sorted(newly_enabled_package_keys):
+            statement = postgresql_insert(
+                CommercialPackageConfigurationProof
+            ).values(
+                organization_id=organization_id,
+                deployment_id=deployment_id,
+                package_key=package_key,
+                configured_before=configured_at,
+                recorded_at=configured_at,
+            ).on_conflict_do_update(
+                index_elements=[
+                    "organization_id",
+                    "deployment_id",
+                    "package_key",
+                ],
+                set_={
+                    "configured_before": configured_at,
+                    "recorded_at": configured_at,
+                },
+            )
+            session.execute(statement)
+
     def _replace_organization_once(self, identity: GuardedRequestIdentity, request: OrganizationConfigurationRequest) -> int:
         with DisciplinePackageUnitOfWork(self._factory) as uow:
             assert uow.session is not None
@@ -106,6 +186,15 @@ class DisciplinePackageConfigurationService:
             self._validate_descriptors(session, registry.registry_digest, request.selections)
             version = head.configuration_version + 1
             desired = {(item.package_key, item.package_version) for item in request.selections}
+            current_enabled = {
+                key for key, row in existing.items() if row.state == "enabled"
+            }
+            expanding = not desired.issubset(current_enabled)
+            self._require_configure_entitlement(
+                organization_id=identity.organization_id,
+                package_keys={key for key, _version in desired | current_enabled},
+                expanding=expanding,
+            )
             for item in request.selections:
                 row = existing.get((item.package_key, item.package_version))
                 if row is None:
@@ -116,9 +205,26 @@ class DisciplinePackageConfigurationService:
                 if key not in desired and row.state == "enabled":
                     row.state, row.configuration_version = "disabled", version
             head.configuration_version = version
+            configuration_occurred_at = datetime.now(timezone.utc)
+            current_enabled_package_keys = {
+                package_key
+                for package_key, _package_version in current_enabled
+            }
+            desired_package_keys = {
+                item.package_key for item in request.selections
+            }
+            newly_enabled_package_keys = (
+                desired_package_keys - current_enabled_package_keys
+            )
+            self._record_commercial_configuration_proofs(
+                session,
+                organization_id=identity.organization_id,
+                newly_enabled_package_keys=newly_enabled_package_keys,
+                configured_at=configuration_occurred_at,
+            )
             self._audit(
                 session, identity, "ORG_CONFIGURATION", "replace",
-                occurred_at=datetime.now(timezone.utc), rationale=request.rationale,
+                occurred_at=configuration_occurred_at, rationale=request.rationale,
             )
             uow.commit()
             return version
@@ -146,6 +252,31 @@ class DisciplinePackageConfigurationService:
             if (0 if head is None else head.configuration_version) != request.expected_configuration_version:
                 raise ValueError("configuration version conflict")
             self._validate_descriptors(session, registry.registry_digest, request.selections)
+            current_project_selections: set[tuple[str, str]] = set()
+            if head is not None:
+                current_project_selections = {
+                    (row.package_key, row.package_version)
+                    for row in session.scalars(
+                        select(ProjectPackageConfigurationSelection)
+                        .where(
+                            ProjectPackageConfigurationSelection.project_id == project_id,
+                            ProjectPackageConfigurationSelection.configuration_revision
+                            == head.current_revision,
+                        )
+                        .order_by(ProjectPackageConfigurationSelection.package_key)
+                        .with_for_update(read=True)
+                    )
+                }
+
+            expanding = not requested.issubset(current_project_selections)
+            self._require_configure_entitlement(
+                organization_id=identity.organization_id,
+                package_keys={
+                    key
+                    for key, _version in requested | current_project_selections
+                },
+                expanding=expanding,
+            )
             self._validate_profile_and_combination(
                 session,
                 registry,
@@ -212,6 +343,24 @@ class DisciplinePackageConfigurationService:
             ))
             if bound:
                 raise ValueError("cannot remove Project configuration with bound Workspaces")
+            current_rows = list(
+                session.scalars(
+                    select(ProjectPackageConfigurationSelection)
+                    .where(
+                        ProjectPackageConfigurationSelection.project_id == project_id,
+                        ProjectPackageConfigurationSelection.configuration_revision
+                        == head.current_revision,
+                    )
+                    .order_by(ProjectPackageConfigurationSelection.package_key)
+                    .with_for_update(read=True)
+                )
+            )
+            self._require_configure_entitlement(
+                organization_id=identity.organization_id,
+                package_keys={row.package_key for row in current_rows},
+                expanding=False,
+            )
+
             session.delete(head)
             self._audit(
                 session, identity, "PROJECT_CONFIGURATION", "remove",

@@ -10,15 +10,29 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.adapters.runtime_entitlement import runtime_entitlement_adapter
+from app.dependencies.auth import AuthenticatedOrganizationContext, get_current_user_organization_context
 from app.services.discipline_package_configuration_service import DisciplinePackageConfigurationService
 
 
-def get_discipline_package_configuration_service() -> DisciplinePackageConfigurationService:
-    return DisciplinePackageConfigurationService(SessionLocal)
+def get_discipline_package_configuration_service(
+    context: AuthenticatedOrganizationContext = Depends(
+        get_current_user_organization_context
+    ),
+) -> DisciplinePackageConfigurationService:
+    entitlement_port = runtime_entitlement_adapter(
+        configured_settings=settings,
+        session_factory=SessionLocal,
+        user_id=context.user.id,
+    )
+    return DisciplinePackageConfigurationService(
+        SessionLocal,
+        entitlement_port=entitlement_port,
+    )
 
 
 def encode_discipline_package_cursor(*, scope: dict[str, object], position: list[str]) -> str:

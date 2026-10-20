@@ -14,10 +14,53 @@ from app.services.patch_052_mutation_guard import (
     Patch052MutationUnavailable,
     lock_package_context,
 )
+from app.core.config import settings
+from app.enums.discipline_package import EntitlementDecision, EntitlementOperation
+from app.ports.discipline_package import EntitlementRequest
 
 
 class EngineeringDeliverableService:
-    def __init__(self, *, uow_factory, authorization, supporting_files=None, clock=None, package_uow_factory=None): self.uow_factory=uow_factory; self.authorization=authorization; self.supporting_files=supporting_files; self.clock=clock or (lambda: datetime.now(timezone.utc)); self.package_uow_factory=package_uow_factory
+    def __init__(
+        self,
+        *,
+        uow_factory,
+        authorization,
+        supporting_files=None,
+        clock=None,
+        package_uow_factory=None,
+        entitlement_port=None,
+    ):
+        self.uow_factory = uow_factory
+        self.authorization = authorization
+        self.supporting_files = supporting_files
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.package_uow_factory = package_uow_factory
+        self.entitlement_port = entitlement_port
+
+    def _require_execute_entitlement(self, *, organization_id, package_key):
+        if self.entitlement_port is None:
+            return None
+
+        decision = self.entitlement_port.evaluate(
+            EntitlementRequest(
+                trusted_organization_id=organization_id,
+                trusted_deployment_id=settings.SATCO_DEPLOYMENT_ID,
+                package_key=package_key,
+                entitlement_key=package_key,
+                operation=EntitlementOperation.EXECUTE,
+            )
+        )
+
+        if decision in {
+            EntitlementDecision.PERMITTED,
+            EntitlementDecision.NOT_REQUIRED,
+        }:
+            return None
+
+        if decision is EntitlementDecision.UNAVAILABLE:
+            return DeliverableUnavailableResult()
+
+        return DeliverableProtectedResult()
     def list(self, *, project_id, actor):
         try:
             with self.uow_factory() as uow:
@@ -298,6 +341,12 @@ class EngineeringDeliverableService:
             with self.package_uow_factory() as uow:
                 context=lock_package_context(uow,package_key=package_key,actor_id=actor.actor_id,organization_id=actor.organization_id,auth_version=actor.auth_version,project_id=project_id,workspace_id=data.workspace_id)
                 project=context.project;selection=context.selection;registry=context.registry
+                entitlement_result=self._require_execute_entitlement(
+                    organization_id=actor.organization_id,
+                    package_key=package_key,
+                )
+                if entitlement_result is not None:
+                    return entitlement_result
                 prior=uow.repository.get_idempotency(organization_id=actor.organization_id,actor_id=actor.actor_id,operation=operation,idempotency_key=idempotency_key)
                 if prior:
                     if prior.fingerprint!=fp:return DeliverableIdempotencyConflictResult()

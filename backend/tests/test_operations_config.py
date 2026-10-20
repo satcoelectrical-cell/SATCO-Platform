@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import json
 
 import pytest
@@ -11,12 +12,32 @@ def production_settings(manifest_path: str, **overrides) -> Settings:
     scanner_token = str(parent / "scanner-token")
     object_access = str(parent / "object-access")
     object_secret = str(parent / "object-secret")
+    totp_key = str(parent / "totp-key")
+    recovery_key = str(parent / "recovery-key")
+    throttle_key = str(parent / "throttle-key")
+    commercial_trust_store = str(parent / "commercial-trust-store.json")
     parent.joinpath("scanner-token").write_text("s" * 40, encoding="utf-8")
     parent.joinpath("object-access").write_text("access-key", encoding="utf-8")
     parent.joinpath("object-secret").write_text("o" * 40, encoding="utf-8")
+    import base64
+    parent.joinpath("totp-key").write_text(
+        base64.urlsafe_b64encode(b"t" * 32).decode("ascii"), encoding="utf-8"
+    )
+    parent.joinpath("recovery-key").write_text("c" * 40, encoding="utf-8")
+    parent.joinpath("throttle-key").write_text("h" * 40, encoding="utf-8")
+    parent.joinpath("commercial-trust-store.json").write_text("{}", encoding="utf-8")
     values = {
         "SATCO_ENVIRONMENT": "production",
+        "SATCO_DEPLOYMENT_ID": "test-production-deployment",
+        "SATCO_COMMERCIAL_ENTITLEMENT_ENABLED": True,
+        "SATCO_COMMERCIAL_ENTITLEMENT_TRUST_STORE_FILE": commercial_trust_store,
         "SECRET_KEY": "a" * 40,
+        "REFRESH_VERIFIER_KEY": "r" * 40,
+        "TOTP_ENCRYPTION_KEY_FILE": totp_key,
+        "TOTP_ENCRYPTION_KEY_ID": "production-v1",
+        "TOTP_ENCRYPTION_KEY_VERSION": 1,
+        "RECOVERY_CODE_VERIFIER_KEY_FILE": recovery_key,
+        "AUTH_THROTTLE_KEY_FILE": throttle_key,
         "SATCO_RELEASE_MANIFEST_PATH": manifest_path,
         "SATCO_PUBLIC_URL": "https://satco.example",
         "SATCO_TRUSTED_HOSTS": "satco.example",
@@ -63,6 +84,10 @@ def test_production_configuration_accepts_complete_safe_values(tmp_path):
 
 @pytest.mark.parametrize("override", [
     {"SECRET_KEY": "CHANGE_THIS_SECRET_KEY"},
+    {"REFRESH_VERIFIER_KEY": "satco-development-refresh-verifier-key-change-me"},
+    {"TOTP_ENCRYPTION_KEY_FILE": ""},
+    {"RECOVERY_CODE_VERIFIER_KEY_FILE": ""},
+    {"AUTH_THROTTLE_KEY_FILE": ""},
     {"SATCO_TRUSTED_HOSTS": "*"},
     {"SATCO_ALLOWED_ORIGINS": "*"},
     {"SATCO_OBJECT_HEALTH_URL": "http://unsafe"},
@@ -88,14 +113,44 @@ def test_bootstrap_requires_secret_and_window(tmp_path):
         ))
 
 
+
+@pytest.mark.parametrize("window_end", ["not-a-time", "2020-01-01T00:00:00+00:00", "2099-01-01T00:00:00"])
+def test_bootstrap_rejects_malformed_expired_or_naive_window(tmp_path, window_end):
+    path = tmp_path / "manifest.json"
+    manifest(path)
+    with pytest.raises(ProductionConfigurationError):
+        validate_production_settings(production_settings(
+            str(path),
+            SATCO_BOOTSTRAP_ENABLED=True,
+            PLATFORM_BOOTSTRAP_KEY="a" * 40,
+            SATCO_BOOTSTRAP_WINDOW_END=window_end,
+        ))
+
+
+def test_bootstrap_accepts_future_timezone_aware_window(tmp_path):
+    path = tmp_path / "manifest.json"
+    manifest(path)
+    future = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    configured = production_settings(
+        str(path),
+        SATCO_BOOTSTRAP_ENABLED=True,
+        PLATFORM_BOOTSTRAP_KEY="a" * 40,
+        SATCO_BOOTSTRAP_WINDOW_END=future,
+    )
+    assert "bootstrap" not in configured.production_validation_errors()
+
 def test_application_secret_files_are_the_values_consumed_by_runtime(tmp_path):
     signing = tmp_path / "signing"
     bootstrap = tmp_path / "bootstrap"
+    refresh_verifier = tmp_path / "refresh-verifier"
     signing.write_text("s" * 40, encoding="utf-8")
     bootstrap.write_text("b" * 40, encoding="utf-8")
+    refresh_verifier.write_text("r" * 40, encoding="utf-8")
     configured = Settings(
         SECRET_KEY_FILE=str(signing),
         PLATFORM_BOOTSTRAP_KEY_FILE=str(bootstrap),
+        REFRESH_VERIFIER_KEY_FILE=str(refresh_verifier),
     )
     assert configured.SECRET_KEY == "s" * 40
     assert configured.PLATFORM_BOOTSTRAP_KEY == "b" * 40
+    assert configured.REFRESH_VERIFIER_KEY == "r" * 40

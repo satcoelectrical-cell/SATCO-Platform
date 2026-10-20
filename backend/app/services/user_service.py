@@ -10,6 +10,12 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserRegistration
 
 
+# Unknown identities must perform the same password-hash work as known users.
+# This value is process-local, never persisted, and is not an authentication
+# credential for any account.
+_UNKNOWN_USER_PASSWORD_HASH = hash_password("satco-unknown-user-dummy-password")
+
+
 class UserService:
 
     def __init__(self):
@@ -67,6 +73,10 @@ class UserService:
 
 
         if not user:
+            verify_password(
+                password,
+                _UNKNOWN_USER_PASSWORD_HASH,
+            )
             return None
 
 

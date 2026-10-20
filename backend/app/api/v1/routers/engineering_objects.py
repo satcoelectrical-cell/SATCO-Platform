@@ -5,6 +5,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal, get_db
@@ -23,6 +24,7 @@ from app.models.engineering_object_command import (
     AuthenticatedActor,
     AuthorizationContext,
 )
+from app.models.engineering_identifier import EngineeringIdentifier
 from app.repositories.engineering_object_unit_of_work import (
     SqlAlchemyAuthorizationPolicy,
     SqlAlchemyEngineeringObjectUnitOfWork,
@@ -120,6 +122,60 @@ def read_engineering_object(
         application.actor,
         _context("ReadEngineeringObject", object_id=object_id),
     )
+
+
+@router.get(
+    "/projects/{project_id}/engineering-objects/selector-options",
+)
+def engineering_object_selector_options(
+    project_id: int,
+    workspace_id: int = Query(..., gt=0),
+    application: EngineeringObjectApplication = Depends(
+        get_engineering_object_application
+    ),
+    db: Session = Depends(get_db),
+):
+    """Bounded Human-readable options over the canonical authorized owner list."""
+    result = application.service.list(
+        project_id=project_id,
+        filters=EngineeringObjectFilter(workspace_id=workspace_id),
+        page=1,
+        size=100,
+        actor=application.actor,
+        context=_context(
+            "ListEngineeringObjects",
+            project_id=project_id,
+            workspace_id=workspace_id,
+        ),
+    )
+    object_ids = tuple(item.id for item in result.items)
+    labels = {}
+    if object_ids:
+        rows = db.execute(select(
+            EngineeringIdentifier.engineering_object_id,
+            EngineeringIdentifier.display_value,
+        ).where(
+            EngineeringIdentifier.organization_id == application.actor.organization_id,
+            EngineeringIdentifier.project_id == project_id,
+            EngineeringIdentifier.workspace_id == workspace_id,
+            EngineeringIdentifier.engineering_object_id.in_(object_ids),
+            EngineeringIdentifier.lifecycle == "current",
+            EngineeringIdentifier.primary_role == "primary",
+        ))
+        labels = {object_id: display_value for object_id, display_value in rows}
+    return {
+        "items": [
+            {
+                "handle": str(item.id),
+                "label": (
+                    f"{labels[item.id]} — {item.object_type.value.replace('_', ' ')}"
+                    if item.id in labels
+                    else f"{item.object_type.value.replace('_', ' ')} — authorized object {index + 1}"
+                ),
+            }
+            for index, item in enumerate(result.items)
+        ]
+    }
 
 
 @router.get(

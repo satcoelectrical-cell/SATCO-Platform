@@ -35,7 +35,8 @@ DATABASE_URL = runtime_database_url()
 
 
 engine = create_engine(
-    DATABASE_URL
+    DATABASE_URL,
+    pool_pre_ping=True,
 )
 
 

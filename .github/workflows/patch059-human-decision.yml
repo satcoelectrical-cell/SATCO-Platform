@@ -1,0 +1,103 @@
+name: PATCH-059 Human final decision evidence
+
+on:
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions: {}
+
+concurrency:
+  group: patch059-human-decision-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  reject-mutation:
+    if: github.event.action != 'created' && startsWith(github.event.comment.body, 'SATCO PATCH-059')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Fail closed on governed comment mutation
+        run: python3 ops/scripts/patch059-human-decision.py reject-mutation --event-json "$GITHUB_EVENT_PATH"
+
+  verify-final-decision:
+    if: github.event.action == 'created' && github.event.issue.pull_request == null && github.event.comment.user.id == 301386823 && startsWith(github.event.comment.body, 'SATCO PATCH-059 FINAL_APPROVAL v1')
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+    steps:
+      - name: Extract exact source SHA from canonical approval framing
+        id: identity
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          event=json.load(open(os.environ['GITHUB_EVENT_PATH'], encoding='utf-8'))
+          c=event.get('comment', {})
+          u=c.get('user', {})
+          if (u.get('login'),u.get('id'),u.get('type')) != ('samiphone651-sys',301386823,'User'): raise SystemExit('wrong Human Authority')
+          body=c.get('body','')
+          prefix='SATCO PATCH-059 FINAL_APPROVAL v1\n'
+          sig='-----BEGIN SSH SIGNATURE-----\n'
+          if not body.startswith(prefix) or sig not in body: raise SystemExit('not a canonical FINAL_APPROVAL')
+          raw=body[len(prefix):body.index(sig)]
+          payload=json.loads(raw)
+          sha=payload.get('source_sha','')
+          if not re.fullmatch(r'[0-9a-f]{40}',sha): raise SystemExit('invalid source SHA')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out: out.write(f'source_sha={sha}\n')
+          PY
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.identity.outputs.source_sha }}
+      - name: Authenticate live approval and resolve marker
+        id: evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_ID: ${{ github.event.comment.id }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -eu
+          cp "$GITHUB_EVENT_PATH" decision-event.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY" > repository.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" > governance-issue.json
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/comments/$APPROVAL_ID" > approval-live.json
+          python3 ops/scripts/patch059-human-decision.py approval-reference --policy ops/patch059-single-human-authority-policy.v1.json --repository-json repository.json --issue-json governance-issue.json --comment-json approval-live.json --output approval-reference.json
+          marker_id="$(python3 -c 'import json; print(json.load(open("approval-reference.json"))["marker_comment_id"])')"
+          curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/comments/$marker_id" > marker-live.json
+          python3 - <<'PY'
+          import json, os, urllib.request
+          token=os.environ["GH_TOKEN"]; base=os.environ["GITHUB_API_URL"]; repo=os.environ["GITHUB_REPOSITORY"]; issue=os.environ["ISSUE_NUMBER"]
+          items=[]; page=1
+          while True:
+              req=urllib.request.Request(f"{base}/repos/{repo}/issues/{issue}/comments?per_page=100&page={page}", headers={"Accept":"application/vnd.github+json","Authorization":f"Bearer {token}","X-GitHub-Api-Version":"2022-11-28"})
+              with urllib.request.urlopen(req) as r: batch=json.load(r)
+              if not isinstance(batch,list): raise SystemExit("invalid comments response")
+              items.extend(batch)
+              if len(batch)<100: break
+              page += 1
+              if page>100: raise SystemExit("comment pagination limit exceeded")
+          with open("comments-live.json","w") as f: json.dump(items,f,separators=(",",":"))
+          PY
+          python3 ops/scripts/patch059-human-decision.py validate-marker --policy ops/patch059-single-human-authority-policy.v1.json --repository-json repository.json --issue-json governance-issue.json --comment-json marker-live.json --output marker-evidence.json
+          signing_run_id="$(python3 -c 'import json; print(json.load(open("marker-evidence.json"))["payload"]["signing_workflow_run_id"])')"
+          printf 'signing_run_id=%s\n' "$signing_run_id" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: patch059-signed-candidate-${{ steps.identity.outputs.source_sha }}
+          path: bundle
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.evidence.outputs.signing_run_id }}
+      - name: Verify 905-second Human decision and immutable bindings
+        run: |
+          set -eu
+          python3 ops/scripts/patch059-human-decision.py verify-decision --policy ops/patch059-single-human-authority-policy.v1.json --repository-json repository.json --issue-json governance-issue.json --event-json decision-event.json --marker-json marker-live.json --approval-json approval-live.json --comments-json comments-live.json --bundle bundle --output final-decision-evidence.json
+          mkdir -p decision-artifact
+          cp final-decision-evidence.json decision-event.json marker-live.json approval-live.json repository.json governance-issue.json decision-artifact/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: patch059-final-decision-${{ steps.identity.outputs.source_sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: decision-artifact

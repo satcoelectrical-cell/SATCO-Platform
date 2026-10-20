@@ -1,18 +1,22 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError
+from jwt import InvalidTokenError as JWTError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.models.user import User
+from app.models.auth_security import AuthRefreshSession
 from app.models.organization import Organization
 from app.models.organization import UserOrganizationMembership
 from app.exceptions.organization_context import ActiveOrganizationContextRequired
 from app.permissions.roles import Role
+from app.services.mfa_service import MfaService
+from app.services.refresh_session_service import RefreshSessionService
 
 
 oauth2_scheme = OAuth2PasswordBearer(
@@ -26,6 +30,12 @@ class AuthenticatedOrganizationContext:
 
     user: User
     organization_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class AuthenticatedSessionContext:
+    user: User
+    session: AuthRefreshSession
 
 
 def get_current_user(
@@ -68,11 +78,91 @@ def get_current_user(
                 detail="Inactive user",
             )
 
-        if payload.get("av", 1) != user.auth_version:
+        auth_version = payload.get("av")
+        session_id = payload.get("sid")
+        if (
+            not isinstance(auth_version, int)
+            or auth_version < 1
+            or not isinstance(session_id, str)
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials",
             )
+
+        try:
+            session_uuid = UUID(session_id)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+            )
+
+        if auth_version != user.auth_version:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+            )
+
+        session = db.get(AuthRefreshSession, session_uuid)
+        now = datetime.now(timezone.utc)
+        if (
+            session is None
+            or session.user_id != user.id
+            or session.auth_version != user.auth_version
+            or session.revoked_at is not None
+            or session.expires_at <= now
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+            )
+
+        # Administrator MFA is principal-wide and mandatory regardless of
+        # Organization context. Enforce it before resolving membership so a
+        # missing/ambiguous context can never weaken administrator assurance.
+        if (
+            user.role == Role.ADMIN.value
+            and not RefreshSessionService(db).has_mfa_assurance(session)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+            )
+
+        memberships = (
+            db.query(UserOrganizationMembership)
+            .join(
+                Organization,
+                Organization.id == UserOrganizationMembership.organization_id,
+            )
+            .filter(
+                UserOrganizationMembership.user_id == user.id,
+                UserOrganizationMembership.is_selected.is_(True),
+                UserOrganizationMembership.is_enabled.is_(True),
+                Organization.is_active.is_(True),
+            )
+            .limit(2)
+            .all()
+        )
+        # Organization-context dependencies retain authority over missing,
+        # disabled, or ambiguous membership and return their governed 403.
+        # When one current context exists, however, an access token must meet
+        # that Organization's current MFA policy even if the policy tightened
+        # after the refresh family was created.
+        if len(memberships) == 1:
+            mfa_status = MfaService(db).status(
+                user,
+                memberships[0].organization_id,
+            )
+            if (
+                mfa_status.required
+                and not RefreshSessionService(db).has_mfa_assurance(session)
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication credentials",
+                )
 
         return user
 
@@ -81,6 +171,21 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
         )
+
+
+def get_current_session_context(
+    token: str = Depends(oauth2_scheme),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AuthenticatedSessionContext:
+    try:
+        session_id = UUID(str(decode_token(token).get("sid")))
+    except (JWTError, TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+    session = db.get(AuthRefreshSession, session_id)
+    if session is None or session.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+    return AuthenticatedSessionContext(user=current_user, session=session)
 
 
 def get_current_user_id(
@@ -139,5 +244,3 @@ def require_role(*roles: str | Role):
         return current_user
 
     return role_checker
-from dataclasses import dataclass
-from uuid import UUID

@@ -22,6 +22,7 @@ def test_exact_discipline_package_route_manifest_is_registered():
     paths = app.openapi()["paths"]
     expected = {
         "/discipline-packages/supported": {"get"},
+        "/discipline-packages/compatibility-profiles": {"get"},
         "/organizations/current/discipline-package-configuration": {"get", "put"},
         "/organizations/current/discipline-package-configuration/audit": {"get"},
         "/projects/{project_id}/discipline-package-configuration": {"get", "put", "delete"},
@@ -34,6 +35,7 @@ def test_exact_discipline_package_route_manifest_is_registered():
         "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/operations/deliverables": {"post"},
         "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/rule-evaluations": {"post"},
         "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/context-bindings": {"post"},
+        "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/context-binding-options": {"get"},
         "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/evidence-bindings": {"post"},
         "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/context-evaluation": {"get"},
         "/projects/{project_id}/discipline-packages/workspaces/{workspace_id}/deliverables/{deliverable_id}/revisions/{revision_id}/readiness": {"get"},
@@ -174,3 +176,13 @@ def test_package_route_security_is_protected_before_disclosure(
     assert organization is not None
     organization.is_active = False; db_session.flush()
     assert client.get("/discipline-packages/supported", headers=engineer_headers).status_code == 403
+
+
+def test_compatibility_profile_selector_requires_authenticated_organization_and_is_read_only(client, admin_headers, engineer_headers, db_session):
+    from test_discipline_package_service import _seed_configurable_registry
+    _seed_configurable_registry(db_session, ("electrical",), profile_packages=("electrical",), release_id=f"selector-{uuid4().hex[:16]}", profile_id="authorized-profile")
+    response = client.get("/discipline-packages/compatibility-profiles", headers=admin_headers)
+    assert response.status_code == 200
+    assert any(item["handle"] == "authorized-profile" and item["label"] == "Authorized Profile" for item in response.json()["items"])
+    app.dependency_overrides.pop(get_current_user_organization_context, None)
+    assert client.get("/discipline-packages/compatibility-profiles").status_code in {401, 403}

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from pydantic import field_validator, model_validator
@@ -11,8 +12,21 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "CHANGE_THIS_SECRET_KEY"
     ALGORITHM: str = "HS256"
 
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    ACCESS_TOKEN_ISSUER: str = "satco-platform"
+    ACCESS_TOKEN_AUDIENCE: str = "satco-web"
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    REFRESH_VERIFIER_KEY: str = "satco-development-refresh-verifier-key-change-me"
+    REFRESH_VERIFIER_KEY_FILE: str = ""
+    TOTP_ENCRYPTION_KEY_FILE: str = ""
+    TOTP_ENCRYPTION_KEY_ID: str = "development-v1"
+    TOTP_ENCRYPTION_KEY_VERSION: int = 1
+    TOTP_PREVIOUS_KEY_FILES: str = ""
+    RECOVERY_CODE_VERIFIER_KEY_FILE: str = ""
+    AUTH_THROTTLE_KEY_FILE: str = ""
+    AUTH_THROTTLE_FAILURE_THRESHOLD: int = 5
+    AUTH_THROTTLE_WINDOW_SECONDS: int = 300
+    AUTH_THROTTLE_MAX_BACKOFF_SECONDS: int = 900
     PLATFORM_BOOTSTRAP_KEY: str = ""
     ACCOUNT_ACTIVATION_EXPIRE_HOURS: int = 24
     ACCOUNT_RESET_EXPIRE_MINUTES: int = 30
@@ -52,6 +66,8 @@ class Settings(BaseSettings):
     STANDARDS_INTELLIGENCE_PROVIDER_MODEL: str = "local-safe-v1"
     STANDARDS_INTELLIGENCE_PROCESSOR_POLICY_ID: str = "local"
 
+    # Local semantic analysis is opt-in, server-owned, and loopback-only.
+
     @field_validator("STANDARDS_PLATFORM_CATALOG_ADMIN_USER_IDS")
     @classmethod
     def validate_standards_catalog_admins(cls, value: str) -> str:
@@ -65,6 +81,9 @@ class Settings(BaseSettings):
         return ",".join(values)
 
     SATCO_ENVIRONMENT: str = "development"
+    SATCO_DEPLOYMENT_ID: str = ""
+    SATCO_COMMERCIAL_ENTITLEMENT_ENABLED: bool = False
+    SATCO_COMMERCIAL_ENTITLEMENT_TRUST_STORE_FILE: str = ""
     SATCO_RELEASE_MANIFEST_PATH: str = ""
     SATCO_PUBLIC_URL: str = ""
     SATCO_TRUSTED_HOSTS: str = ""
@@ -105,6 +124,11 @@ class Settings(BaseSettings):
                 self.PLATFORM_BOOTSTRAP_KEY_FILE,
                 self.PLATFORM_BOOTSTRAP_KEY,
             )
+        if self.REFRESH_VERIFIER_KEY_FILE:
+            self.REFRESH_VERIFIER_KEY = self._secret_from_file(
+                self.REFRESH_VERIFIER_KEY_FILE,
+                self.REFRESH_VERIFIER_KEY,
+            )
         return self
 
     @staticmethod
@@ -116,6 +140,31 @@ class Settings(BaseSettings):
 
     def resolved_secret_key(self) -> str:
         return self._secret_from_file(self.SECRET_KEY_FILE, self.SECRET_KEY)
+
+    def resolved_refresh_verifier_key(self) -> str:
+        return self._secret_from_file(
+            self.REFRESH_VERIFIER_KEY_FILE, self.REFRESH_VERIFIER_KEY
+        )
+
+    def resolved_totp_encryption_key(self) -> str:
+        return self._secret_from_file(self.TOTP_ENCRYPTION_KEY_FILE, "")
+
+    def resolved_recovery_code_verifier_key(self) -> str:
+        return self._secret_from_file(self.RECOVERY_CODE_VERIFIER_KEY_FILE, "")
+
+    def resolved_totp_previous_keys(self) -> dict[str, str]:
+        result: dict[str, str] = {}
+        if not self.TOTP_PREVIOUS_KEY_FILES.strip():
+            return result
+        for item in self.TOTP_PREVIOUS_KEY_FILES.split(","):
+            key_id, separator, path = item.strip().partition("=")
+            if not separator or not key_id or not path or key_id in result:
+                raise ValueError("Invalid TOTP previous-key configuration")
+            result[key_id] = self._secret_from_file(path, "")
+        return result
+
+    def resolved_auth_throttle_key(self) -> str:
+        return self._secret_from_file(self.AUTH_THROTTLE_KEY_FILE, "")
 
     def resolved_bootstrap_key(self) -> str:
         return self._secret_from_file(
@@ -143,9 +192,56 @@ class Settings(BaseSettings):
         if self.SATCO_ENVIRONMENT != "production":
             return []
         errors: list[str] = []
+        if not self.SATCO_DEPLOYMENT_ID.strip():
+            errors.append("deployment_id")
+        if not self.SATCO_COMMERCIAL_ENTITLEMENT_ENABLED:
+            errors.append("commercial_entitlement")
+        if not self.SATCO_COMMERCIAL_ENTITLEMENT_TRUST_STORE_FILE.strip():
+            errors.append("commercial_trust_store")
         secret_key = self.resolved_secret_key()
         if len(secret_key) < 32 or secret_key == "CHANGE_THIS_SECRET_KEY":
             errors.append("signing_secret")
+        try:
+            refresh_verifier_key = self.resolved_refresh_verifier_key()
+        except OSError:
+            refresh_verifier_key = ""
+        if (
+            len(refresh_verifier_key) < 32
+            or refresh_verifier_key == "satco-development-refresh-verifier-key-change-me"
+        ):
+            errors.append("refresh_verifier_key")
+        try:
+            import base64
+            totp_key = base64.urlsafe_b64decode(self.resolved_totp_encryption_key().encode("ascii"))
+            recovery_key = self.resolved_recovery_code_verifier_key()
+            throttle_key = self.resolved_auth_throttle_key()
+            previous_keys = self.resolved_totp_previous_keys()
+        except (OSError, ValueError, UnicodeError):
+            totp_key = b""
+            recovery_key = ""
+            throttle_key = ""
+            previous_keys = {}
+        if len(totp_key) != 32 or not self.TOTP_ENCRYPTION_KEY_ID or self.TOTP_ENCRYPTION_KEY_VERSION < 1:
+            errors.append("totp_encryption_key")
+        if len(recovery_key) < 32:
+            errors.append("recovery_code_verifier_key")
+        if (
+            len(throttle_key) < 32
+            or self.AUTH_THROTTLE_FAILURE_THRESHOLD < 1
+            or self.AUTH_THROTTLE_WINDOW_SECONDS < 1
+            or self.AUTH_THROTTLE_MAX_BACKOFF_SECONDS < 1
+        ):
+            errors.append("auth_throttle")
+        try:
+            previous_key_material_valid = all(
+                key_id
+                and len(base64.urlsafe_b64decode(value.encode("ascii"))) == 32
+                for key_id, value in previous_keys.items()
+            )
+        except (ValueError, UnicodeError):
+            previous_key_material_valid = False
+        if not previous_key_material_valid:
+            errors.append("totp_previous_keys")
         if not self.SATCO_RELEASE_MANIFEST_PATH:
             errors.append("release_manifest")
         if not self.SATCO_PUBLIC_URL.startswith("https://"):
@@ -195,7 +291,18 @@ class Settings(BaseSettings):
             errors.append("supporting_file_object_store")
         if self.SATCO_BOOTSTRAP_ENABLED:
             bootstrap = self.resolved_bootstrap_key()
-            if len(bootstrap) < 32 or not self.SATCO_BOOTSTRAP_WINDOW_END:
+            bootstrap_window_valid = False
+            try:
+                window_end = datetime.fromisoformat(
+                    self.SATCO_BOOTSTRAP_WINDOW_END.strip().replace("Z", "+00:00")
+                )
+                bootstrap_window_valid = (
+                    window_end.tzinfo is not None
+                    and window_end.astimezone(timezone.utc) > datetime.now(timezone.utc)
+                )
+            except (AttributeError, TypeError, ValueError):
+                bootstrap_window_valid = False
+            if len(bootstrap) < 32 or not bootstrap_window_valid:
                 errors.append("bootstrap")
         if self.COPILOT_ENABLED and (
             not self.COPILOT_PROVIDER_ENDPOINT.startswith("https://")

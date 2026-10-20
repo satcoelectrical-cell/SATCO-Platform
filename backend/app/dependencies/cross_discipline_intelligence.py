@@ -73,6 +73,9 @@ def decode_cross_discipline_cursor(cursor: str | None, *, scope: dict):
     try:
         encoded = cursor.encode("ascii")
         combined = base64.urlsafe_b64decode(encoded + b"=" * (-len(encoded) % 4))
+        canonical = base64.urlsafe_b64encode(combined).decode("ascii").rstrip("=")
+        if not hmac.compare_digest(cursor, canonical):
+            raise ValueError
         if len(combined) < 33:
             raise ValueError
         raw, signature = combined[:-32], combined[-32:]

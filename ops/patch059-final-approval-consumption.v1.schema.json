@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SATCO PATCH-059 single-use final approval consumption v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema","purpose","repository_id","repository","governance_issue_number","release_id","source_sha","nonce","approval_comment_id","approval_body_sha256","decision_workflow_run_id","final_workflow_run_id","final_workflow_run_attempt"],
+  "properties": {
+    "schema": {"const": "satco.patch059-final-approval-consumption/v1"},
+    "purpose": {"const": "single-use-final-workflow-authorization"},
+    "repository_id": {"const": 1311705732},
+    "repository": {"const": "satcoelectrical-cell/SATCO-Platform"},
+    "governance_issue_number": {"type": "integer", "minimum": 1},
+    "release_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "source_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "nonce": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "approval_comment_id": {"type": "integer", "minimum": 1},
+    "approval_body_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "decision_workflow_run_id": {"type": "integer", "minimum": 1},
+    "final_workflow_run_id": {"type": "integer", "minimum": 1},
+    "final_workflow_run_attempt": {"const": 1}
+  }
+}

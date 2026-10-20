@@ -25,11 +25,13 @@ def search_customers(
     keyword: str,
     page: int,
     size: int,
+    organization_id: UUID,
 ):
 
     query = (
         db.query(Customer)
         .filter(
+            Customer.organization_id == organization_id,
             or_(
                 Customer.name.ilike(keyword),
                 Customer.company.ilike(keyword),
@@ -76,11 +78,14 @@ def search_contacts(
     keyword: str,
     page: int,
     size: int,
+    organization_id: UUID,
 ):
 
     query = (
         db.query(Contact)
+        .join(Customer, Customer.id == Contact.customer_id)
         .filter(
+            Customer.organization_id == organization_id,
             or_(
                 Contact.first_name.ilike(keyword),
                 Contact.last_name.ilike(keyword),
@@ -185,11 +190,14 @@ def search_all(
 
 
     if search_type in ("all", "customer"):
+        if organization_id is None:
+            raise ValueError("Organization context is required for Customer search")
         result["customers"], totals["customers"] = search_customers(
             db,
             keyword,
             page,
             size,
+            organization_id,
         )
 
 
@@ -206,11 +214,14 @@ def search_all(
 
 
     if search_type in ("all", "contact"):
+        if organization_id is None:
+            raise ValueError("Organization context is required for Contact search")
         result["contacts"], totals["contacts"] = search_contacts(
             db,
             keyword,
             page,
             size,
+            organization_id,
         )
 
     if search_type in ("all", "workspace") and current_user is not None:

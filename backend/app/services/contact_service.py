@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy.orm import Session
 
 from app.repositories.contact_repository import ContactRepository
@@ -19,20 +21,26 @@ class ContactService:
         page: int = 1,
         size: int = 20,
         customer_id: int | None = None,
+        *,
+        organization_id: UUID,
     ):
         return self.repository.get_all(
             page,
             size,
             customer_id,
+            organization_id=organization_id,
         )
 
 
     def get_by_id(
         self,
-        contact_id: int
+        contact_id: int,
+        *,
+        organization_id: UUID,
     ):
         return self.repository.get_by_id(
-            contact_id
+            contact_id,
+            organization_id=organization_id,
         )
 
 
@@ -40,9 +48,12 @@ class ContactService:
         self,
         contact: ContactCreate,
         user_id: int,
+        *,
+        organization_id: UUID,
     ):
-        customer = self.customer_repository.get_by_id(
-            contact.customer_id
+        customer = self.customer_repository.get_scoped(
+            contact.customer_id,
+            organization_id=organization_id,
         )
 
         if customer is None:
@@ -71,10 +82,13 @@ class ContactService:
         contact_id: int,
         contact_data: ContactUpdate,
         user_id: int,
+        *,
+        organization_id: UUID,
     ):
 
         contact = self.repository.get_by_id(
-            contact_id
+            contact_id,
+            organization_id=organization_id,
         )
 
         if not contact:
@@ -106,10 +120,13 @@ class ContactService:
         self,
         contact_id: int,
         user_id: int,
+        *,
+        organization_id: UUID,
     ):
 
         contact = self.repository.get_by_id(
-            contact_id
+            contact_id,
+            organization_id=organization_id,
         )
 
         if not contact:

@@ -1,0 +1,344 @@
+name: PATCH-058 protected signing
+
+on:
+  workflow_dispatch:
+    inputs:
+      security_run_id:
+        description: Successful PATCH-058 security-evidence workflow run ID
+        required: true
+        type: string
+      security_run_attempt:
+        description: Security workflow run attempt
+        required: true
+        default: "1"
+        type: string
+      quality_run_id:
+        description: Successful PATCH-058 deterministic qualification workflow run ID
+        required: true
+        type: string
+      quality_run_attempt:
+        description: Qualification workflow run attempt
+        required: true
+        default: "1"
+        type: string
+      expected_source_sha:
+        description: Exact 40-character patch-058 source revision
+        required: true
+        type: string
+      backend_artifact_digest:
+        description: Exact sha256 digest from the security evidence
+        required: true
+        type: string
+      security_decision_commit:
+        description: Exact post-build Human security-decision commit
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  sign:
+    runs-on: ubuntu-24.04
+    environment: patch058-protected-release
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected_source_sha }}
+      - name: Enforce protected branch and exact source revision
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+        run: |
+          test "$GITHUB_REF" = "refs/heads/patch-058"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          printf '%s' "$EXPECTED_SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+
+      - name: Fail closed unless the signing Environment requires Human review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/patch058-protected-release" \
+            > signing-environment.json
+          python3 - <<'PY'
+          import json
+          policy = json.load(open("signing-environment.json"))
+          rules = policy.get("protection_rules", [])
+          reviewers = [rule for rule in rules if rule.get("type") == "required_reviewers"]
+          assert len(reviewers) == 1
+          assert reviewers[0].get("prevent_self_review") is True
+          assert reviewers[0].get("reviewers")
+          PY
+
+      - name: Download exact security evidence from the authorized run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: patch058-security-evidence-${{ inputs.expected_source_sha }}
+          path: evidence
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.security_run_id }}
+
+      - name: Download exact deterministic qualification evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: patch058-quality-evidence-${{ inputs.expected_source_sha }}
+          path: evidence
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.quality_run_id }}
+
+      - name: Re-verify candidate, SBOM, provenance and vulnerability gate
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          EXPECTED_BACKEND_DIGEST: ${{ inputs.backend_artifact_digest }}
+          EXPECTED_SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
+          SECURITY_RUN_ID: ${{ inputs.security_run_id }}
+          SECURITY_RUN_ATTEMPT: ${{ inputs.security_run_attempt }}
+          QUALITY_RUN_ID: ${{ inputs.quality_run_id }}
+          QUALITY_RUN_ATTEMPT: ${{ inputs.quality_run_attempt }}
+        run: |
+          . ops/security/toolchain.env
+          . evidence/artifact-digests.env
+          test "$(cat evidence/source-revision.txt)" = "$EXPECTED_SOURCE_SHA"
+          test "$BACKEND_ARTIFACT_DIGEST" = "$EXPECTED_BACKEND_DIGEST"
+          actual_digest="sha256:$(sha256sum evidence/backend-image.oci.tar | awk '{print $1}')"
+          test "$actual_digest" = "$EXPECTED_BACKEND_DIGEST"
+          printf '%s' "$EXPECTED_SECURITY_DECISION_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+          git fetch --no-tags origin \
+            "+refs/heads/patch-058-security-decisions:refs/remotes/origin/patch-058-security-decisions"
+          test "$(git rev-parse "$EXPECTED_SECURITY_DECISION_COMMIT^{commit}")" = \
+            "$EXPECTED_SECURITY_DECISION_COMMIT"
+          git merge-base --is-ancestor "$EXPECTED_SECURITY_DECISION_COMMIT" \
+            refs/remotes/origin/patch-058-security-decisions
+          test "$(git show "$EXPECTED_SECURITY_DECISION_COMMIT:ops/security/patch058-high-exceptions.json" | sha256sum | awk '{print "sha256:"$1}')" = \
+            "$(sha256sum evidence/resolved-high-exceptions.json | awk '{print "sha256:"$1}')"
+          SATCO_HIGH_EXCEPTION_FILE=evidence/resolved-high-exceptions.json \
+          SATCO_ARTIFACT_DIGEST="$EXPECTED_BACKEND_DIGEST" \
+          SATCO_SOURCE_REVISION="$EXPECTED_SOURCE_SHA" \
+            sh ops/scripts/validate-high-exceptions.sh
+          python3 - <<'PY'
+          import json, os
+          decision = json.load(open("evidence/security-decision.json"))
+          gate = json.load(open("evidence/vulnerability-gate.json"))
+          assert decision["candidateRevision"] == os.environ["EXPECTED_SOURCE_SHA"]
+          assert decision["artifactDigest"] == os.environ["EXPECTED_BACKEND_DIGEST"]
+          assert decision["decisionCommit"] == os.environ["EXPECTED_SECURITY_DECISION_COMMIT"]
+          assert decision["mode"] == "post-build-human-decision"
+          assert gate["result"] == "PASS" and not gate["blockingFindings"]
+          assert gate["sourceRevision"] == os.environ["EXPECTED_SOURCE_SHA"]
+          assert gate["artifactDigest"] == os.environ["EXPECTED_BACKEND_DIGEST"]
+          assert gate["securityDecision"] == decision
+          PY
+          python3 ops/scripts/patch058-sbom.py verify \
+            --sbom evidence/backend-sbom.cdx.json \
+            --artifact evidence/backend-image.oci.tar \
+            --artifact-name backend-image --revision "$EXPECTED_SOURCE_SHA" \
+            --syft-version "$SYFT_VERSION"
+          python3 ops/scripts/patch058-sbom.py verify \
+            --sbom evidence/frontend-sbom.cdx.json \
+            --artifact evidence/frontend-dist.tar \
+            --artifact-name frontend-dist --revision "$EXPECTED_SOURCE_SHA" \
+            --syft-version "$SYFT_VERSION"
+          workflow_identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/patch058-security.yml@refs/heads/patch-058"
+          release_id="patch058-$SECURITY_RUN_ID-$SECURITY_RUN_ATTEMPT"
+          python3 ops/scripts/patch058-provenance.py verify \
+            --repository "$GITHUB_REPOSITORY" --revision "$EXPECTED_SOURCE_SHA" \
+            --workflow "$workflow_identity" --release-id "$release_id" \
+            --artifact backend=evidence/backend-image.oci.tar \
+            --artifact frontend=evidence/frontend-dist.tar \
+            --artifact migrations=evidence/migration-set.tar \
+            --sbom backend=evidence/backend-sbom.cdx.json \
+            --sbom frontend=evidence/frontend-sbom.cdx.json \
+            --input backend-production-lock=backend/requirements.production.lock \
+            --input backend-uv-lock=backend/uv.lock \
+            --input frontend-package-lock=frontend/package-lock.json \
+            --input migration-set=evidence/migration-set.sha256 \
+            --evidence pip-audit=evidence/pip-audit.json \
+            --evidence npm-audit=evidence/npm-audit.json \
+            --evidence semgrep=evidence/semgrep.json \
+            --evidence gitleaks=evidence/gitleaks.json \
+            --evidence trivy=evidence/trivy-backend.json \
+            --evidence vulnerability-gate=evidence/vulnerability-gate.json \
+            --evidence high-exceptions=evidence/resolved-high-exceptions.json \
+            --evidence security-decision=evidence/security-decision.json \
+            --statement evidence/provenance.intoto.json
+          python3 - <<'PY'
+          import json, os
+          for name in ("backend", "frontend", "migration"):
+              with open(f"evidence/{name}-qualification.json") as source:
+                  evidence = json.load(source)
+              assert evidence["result"] == "PASS"
+              assert evidence["source_commit"] == os.environ["EXPECTED_SOURCE_SHA"]
+              assert evidence["run_id"] == os.environ["QUALITY_RUN_ID"]
+              assert evidence["run_attempt"] == os.environ["QUALITY_RUN_ATTEMPT"]
+          PY
+
+      - name: Install pinned cosign after Human-protected job authorization
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with:
+          cosign-release: v2.6.0
+
+      - name: Keyless sign and attest every designated release artifact
+        working-directory: evidence
+        run: |
+          for entry in \
+            backend=backend-image.oci.tar \
+            frontend=frontend-dist.tar \
+            migrations=migration-set.tar
+          do
+            name="${entry%%=*}"
+            artifact="${entry#*=}"
+            cosign sign-blob --yes --bundle "$name-signature.bundle.json" "$artifact"
+            cosign attest-blob --yes --type slsaprovenance1 \
+              --statement provenance.intoto.json \
+              --bundle "$name-provenance-attestation.bundle.json" \
+              "$artifact"
+          done
+
+      - name: Verify every digest, signer, repository, workflow and OIDC trust
+        working-directory: evidence
+        run: |
+          identity="^https://github\\.com/${GITHUB_REPOSITORY}/\\.github/workflows/patch058-sign-release\\.yml@refs/heads/patch-058$"
+          issuer="https://token.actions.githubusercontent.com"
+          for entry in \
+            backend=backend-image.oci.tar \
+            frontend=frontend-dist.tar \
+            migrations=migration-set.tar
+          do
+            name="${entry%%=*}"
+            artifact="${entry#*=}"
+            cosign verify-blob \
+              --bundle "$name-signature.bundle.json" \
+              --certificate-identity-regexp "$identity" \
+              --certificate-oidc-issuer "$issuer" \
+              --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
+              --certificate-github-workflow-sha "$GITHUB_SHA" \
+              "$artifact" > "$name-signature-verification.json"
+            cosign verify-blob-attestation \
+              --bundle "$name-provenance-attestation.bundle.json" \
+              --type slsaprovenance1 \
+              --certificate-identity-regexp "$identity" \
+              --certificate-oidc-issuer "$issuer" \
+              --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
+              --certificate-github-workflow-sha "$GITHUB_SHA" \
+              "$artifact" > "$name-attestation-verification.json"
+          done
+
+      - name: Record exact trust verification and protected signing authorization
+        working-directory: evidence
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          SECURITY_RUN_ID: ${{ inputs.security_run_id }}
+          SECURITY_RUN_ATTEMPT: ${{ inputs.security_run_attempt }}
+          EXPECTED_SECURITY_DECISION_COMMIT: ${{ inputs.security_decision_commit }}
+        run: |
+          . artifact-digests.env
+          export BACKEND_ARTIFACT_DIGEST FRONTEND_ARTIFACT_DIGEST MIGRATION_ARTIFACT_DIGEST
+          export SIGNER_IDENTITY="https://github.com/$GITHUB_REPOSITORY/.github/workflows/patch058-sign-release.yml@refs/heads/patch-058"
+          export OIDC_ISSUER="https://token.actions.githubusercontent.com"
+          export RELEASE_ID="patch058-$SECURITY_RUN_ID-$SECURITY_RUN_ATTEMPT"
+          export EVIDENCE_REFERENCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          export DECIDED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          python3 - <<'PY'
+          import json, os
+          digests = {
+              "backend": os.environ["BACKEND_ARTIFACT_DIGEST"],
+              "frontend": os.environ["FRONTEND_ARTIFACT_DIGEST"],
+              "migrations": os.environ["MIGRATION_ARTIFACT_DIGEST"],
+          }
+          common = {
+              "source_commit": os.environ["EXPECTED_SOURCE_SHA"],
+              "artifact_digests": digests,
+              "security_decision_commit": os.environ["EXPECTED_SECURITY_DECISION_COMMIT"],
+          }
+          verification = {
+              "source_commit": common["source_commit"],
+              "security_decision_commit": common["security_decision_commit"],
+              "artifacts": [
+                  {
+                      "name": name,
+                      "artifact_digest": digest,
+                      "verified": True,
+                      "signer_identity": os.environ["SIGNER_IDENTITY"],
+                      "oidc_issuer": os.environ["OIDC_ISSUER"],
+                  }
+                  for name, digest in digests.items()
+              ],
+          }
+          authorization = {
+              "decision": "approved",
+              "release_id": os.environ["RELEASE_ID"],
+              **common,
+              "decided_at": os.environ["DECIDED_AT"],
+              "authority": "GitHub protected Environment: patch058-protected-release",
+              "evidence_reference": os.environ["EVIDENCE_REFERENCE"],
+          }
+          with open("signature-verification-summary.json", "w") as output:
+              json.dump(verification, output, indent=2, sort_keys=True)
+              output.write("\n")
+          with open("human-signing-authorization.json", "w") as output:
+              json.dump(authorization, output, indent=2, sort_keys=True)
+              output.write("\n")
+          PY
+
+      - name: Assemble and validate draft dossier without inventing release approval
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+          SECURITY_RUN_ID: ${{ inputs.security_run_id }}
+          SECURITY_RUN_ATTEMPT: ${{ inputs.security_run_attempt }}
+        run: |
+          created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          release_id="patch058-$SECURITY_RUN_ID-$SECURITY_RUN_ATTEMPT"
+          python3 ops/scripts/patch058-release-dossier.py generate \
+            --release-id "$release_id" \
+            --source-commit "$EXPECTED_SOURCE_SHA" \
+            --created-at "$created_at" \
+            --artifact backend=evidence/backend-image.oci.tar \
+            --artifact frontend=evidence/frontend-dist.tar \
+            --artifact migrations=evidence/migration-set.tar \
+            --build-input backend-production-lock=backend/requirements.production.lock \
+            --build-input backend-uv-lock=backend/uv.lock \
+            --build-input frontend-package-lock=frontend/package-lock.json \
+            --build-input migration-set=evidence/migration-set.sha256 \
+            --qualification-evidence backend=evidence/backend-qualification.json \
+            --qualification-evidence frontend=evidence/frontend-qualification.json \
+            --qualification-evidence migration=evidence/migration-qualification.json \
+            --security-evidence pip-audit=evidence/pip-audit.json \
+            --security-evidence npm-audit=evidence/npm-audit.json \
+            --security-evidence semgrep=evidence/semgrep.json \
+            --security-evidence gitleaks=evidence/gitleaks.json \
+            --security-evidence trivy=evidence/trivy-backend.json \
+            --security-evidence vulnerability_gate=evidence/vulnerability-gate.json \
+            --exception high_findings=evidence/resolved-high-exceptions.json \
+            --exception security_decision=evidence/security-decision.json \
+            --sbom backend=evidence/backend-sbom.cdx.json \
+            --sbom frontend=evidence/frontend-sbom.cdx.json \
+            --provenance evidence/provenance.intoto.json \
+            --signature-verification evidence/signature-verification-summary.json \
+            --human-signing-authorization approved=evidence/human-signing-authorization.json \
+            --human-release-approval pending=patch058-release-approval \
+            --output evidence/release-dossier.pending.v1.json
+          python3 ops/scripts/patch058-release-dossier.py verify \
+            --dossier evidence/release-dossier.pending.v1.json \
+            --now "$created_at" --allow-pending-approvals
+
+      - name: Retain signed evidence (not Human release approval)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: patch058-signed-evidence-${{ inputs.expected_source_sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            evidence/*-signature.bundle.json
+            evidence/*-provenance-attestation.bundle.json
+            evidence/*-signature-verification.json
+            evidence/*-attestation-verification.json
+            evidence/signature-verification-summary.json
+            evidence/human-signing-authorization.json
+            evidence/release-dossier.pending.v1.json

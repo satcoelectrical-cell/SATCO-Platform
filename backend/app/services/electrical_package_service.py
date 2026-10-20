@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.core.config import settings
+
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -38,6 +40,8 @@ from app.models.engineering_experience_capture_command import (
     EngineeringExperienceCaptureOutbox,
 )
 from app.repositories.patch_052_operation_unit_of_work import Patch052OperationUnitOfWork
+from app.enums.discipline_package import EntitlementDecision, EntitlementOperation
+from app.ports.discipline_package import EntitlementRequest
 from app.services.patch_052_mutation_guard import (
     Patch052MutationProtected,
     Patch052MutationUnavailable,
@@ -107,8 +111,30 @@ class ElectricalPackageService:
     OBJECT_DECLARATIONS = ELECTRICAL_OBJECT_DECLARATIONS
     RELATIONSHIP_DECLARATIONS = ELECTRICAL_RELATIONSHIP_DECLARATIONS
 
-    def __init__(self, session_factory):
+    def __init__(self, session_factory, *, entitlement_port=None):
         self._session_factory = session_factory
+        self._entitlement_port = entitlement_port
+
+    def _require_execute_entitlement(self, *, organization_id: UUID) -> None:
+        if self._entitlement_port is None:
+            return
+        decision = self._entitlement_port.evaluate(
+            EntitlementRequest(
+                trusted_organization_id=organization_id,
+                trusted_deployment_id=settings.SATCO_DEPLOYMENT_ID,
+                package_key=self.PACKAGE_KEY,
+                entitlement_key=self.PACKAGE_KEY,
+                operation=EntitlementOperation.EXECUTE,
+            )
+        )
+        if decision in {
+            EntitlementDecision.PERMITTED,
+            EntitlementDecision.NOT_REQUIRED,
+        }:
+            return
+        if decision is EntitlementDecision.UNAVAILABLE:
+            raise PackageUnavailable()
+        raise PackageProtectedNotFound()
 
     def _context(self, uow, *, actor_id: int, organization_id: UUID, auth_version: int,
                  project_id: int, workspace_id: int):
@@ -161,6 +187,9 @@ class ElectricalPackageService:
                 uow, actor_id=actor_id, organization_id=organization_id,
                 auth_version=auth_version,
                 project_id=project_id, workspace_id=workspace_id,
+            )
+            self._require_execute_entitlement(
+                organization_id=organization_id,
             )
             session = uow.session
             project, workspace = context.project, context.workspace
@@ -292,6 +321,9 @@ class ElectricalPackageService:
                 auth_version=auth_version, project_id=project_id,
                 workspace_id=workspace_id,
             )
+            self._require_execute_entitlement(
+                organization_id=organization_id,
+            )
             session = uow.session
             workspace = context.workspace
             selection, registry = context.selection, context.registry
@@ -397,6 +429,9 @@ class ElectricalPackageService:
                 auth_version=auth_version,
                 project_id=project_id, workspace_id=workspace_id,
             )
+            self._require_execute_entitlement(
+                organization_id=organization_id,
+            )
             session = uow.session
             selection, registry = context.selection, context.registry
             descriptor = next(item for item in DESCRIPTORS_V1 if item.package_key == self.PACKAGE_KEY)
@@ -487,6 +522,9 @@ class ElectricalPackageService:
                 uow, actor_id=actor_id, organization_id=organization_id,
                 auth_version=auth_version, project_id=project_id,
                 workspace_id=workspace_id,
+            )
+            self._require_execute_entitlement(
+                organization_id=organization_id,
             )
             selection, registry = context.selection, context.registry
             result = execute_package_rule(package_key=self.PACKAGE_KEY, hook_id=data.hook_id, hook_version=data.hook_version, envelope=data.envelope)

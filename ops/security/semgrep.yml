@@ -1,0 +1,34 @@
+rules:
+  - id: satco-python-dynamic-code-execution
+    languages: [python]
+    severity: ERROR
+    message: Dynamic code execution is forbidden in SATCO application code.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+
+  - id: satco-python-shell-true
+    languages: [python]
+    severity: ERROR
+    message: shell=True crosses an unsafe command-execution boundary.
+    pattern-either:
+      - pattern: subprocess.$FUNC(..., shell=True, ...)
+      - pattern: subprocess.$FUNC(..., shell = True, ...)
+
+  - id: satco-frontend-dangerous-html
+    languages: [typescript]
+    severity: ERROR
+    message: React dangerous HTML injection requires dedicated security review.
+    pattern: <$ELEMENT dangerouslySetInnerHTML={...} />
+
+  - id: satco-browser-auth-storage
+    languages: [typescript]
+    severity: ERROR
+    message: Authentication credentials must not be persisted in browser storage.
+    patterns:
+      - pattern-either:
+          - pattern: localStorage.setItem($KEY, $VALUE)
+          - pattern: sessionStorage.setItem($KEY, $VALUE)
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: '(?i).*(access|refresh|token|credential|csrf|mfa|recovery).*'

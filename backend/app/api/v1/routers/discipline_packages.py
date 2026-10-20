@@ -33,6 +33,10 @@ from app.services.discipline_package_configuration_service import (
     DisciplinePackageConfigurationService, ExactPackageSelection,
     GuardedRequestIdentity, OrganizationConfigurationRequest, ProjectConfigurationRequest,
 )
+from app.services.electrical_package_service import (
+    PackageProtectedNotFound,
+    PackageUnavailable,
+)
 from app.services.discipline_package_service import evaluate_persisted_exact_compatibility
 from app.services.engineering_workspace_service import EngineeringWorkspaceService
 
@@ -170,6 +174,28 @@ def supported_packages(
     ], "next_cursor": next_cursor}
 
 
+@router.get("/discipline-packages/compatibility-profiles")
+def compatibility_profiles(
+    context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context),
+    db: Session = Depends(get_db),
+):
+    """Authorized read-only profile options for Human selectors."""
+    registry = _current_registry(db)
+    rows = list(db.execute(
+        select(RegistryProfileMembership.profile_id, RegistryProfileMembership.profile_digest)
+        .where(RegistryProfileMembership.registry_digest == registry.registry_digest)
+        .order_by(RegistryProfileMembership.profile_id, RegistryProfileMembership.profile_digest)
+        .limit(50)
+    ))
+    return {
+        "registry_digest": registry.registry_digest,
+        "items": [
+            {"handle": profile_id, "label": profile_id.replace(".", " ").replace("_", " ").replace("-", " ").strip().title(), "profile_digest": profile_digest}
+            for profile_id, profile_digest in rows
+        ],
+    }
+
+
 @router.get("/organizations/current/discipline-package-configuration")
 def organization_configuration(context: AuthenticatedOrganizationContext = Depends(get_current_user_organization_context), db: Session = Depends(get_db)):
     _admin(context); registry = _current_registry(db)
@@ -188,6 +214,10 @@ def replace_organization_configuration(data: OrganizationConfigurationReplaceInp
         version = service.replace_organization_configuration(_identity(context, correlation_id), OrganizationConfigurationRequest(data.expected_configuration_version, _exact_selections(db, registry, data.enabled_selections), data.rationale))
     except HTTPException:
         raise
+    except PackageProtectedNotFound as exc:
+        raise HTTPException(status_code=404, detail="PROTECTED_NOT_FOUND") from exc
+    except PackageUnavailable as exc:
+        raise HTTPException(status_code=503, detail="PACKAGE_UNAVAILABLE") from exc
     except PermissionError:
         raise HTTPException(status_code=403, detail="CONFIGURATION_ADMIN_REQUIRED")
     except ValueError as exc:
@@ -302,6 +332,10 @@ def replace_project_configuration(project_id: int, data: ProjectConfigurationRep
         version = service.replace_project_configuration(_identity(context, correlation_id), project_id, ProjectConfigurationRequest(data.expected_configuration_version, data.profile_id, _profile_digest(db, registry, data.profile_id), _exact_selections(db, registry, data.selections), data.rationale))
     except HTTPException:
         raise
+    except PackageProtectedNotFound as exc:
+        raise HTTPException(status_code=404, detail="PROTECTED_NOT_FOUND") from exc
+    except PackageUnavailable as exc:
+        raise HTTPException(status_code=503, detail="PACKAGE_UNAVAILABLE") from exc
     except PermissionError:
         raise HTTPException(status_code=404, detail="PROJECT_NOT_FOUND")
     except ValueError as exc:
@@ -314,6 +348,10 @@ def remove_project_configuration(project_id: int, data: ProjectConfigurationRemo
     _project(db, project_id, context, mutate=True)
     try:
         service.remove_project_configuration(_identity(context, correlation_id), project_id, expected_configuration_version=data.expected_configuration_version, rationale=data.rationale)
+    except PackageProtectedNotFound as exc:
+        raise HTTPException(status_code=404, detail="PROTECTED_NOT_FOUND") from exc
+    except PackageUnavailable as exc:
+        raise HTTPException(status_code=503, detail="PACKAGE_UNAVAILABLE") from exc
     except PermissionError:
         raise HTTPException(status_code=404, detail="PROJECT_NOT_FOUND")
     except ValueError as exc:

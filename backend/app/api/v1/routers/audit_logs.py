@@ -1,10 +1,4 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-
-from app.core.database import get_db
-from app.schemas.audit import AuditLogListResponse
-from app.services.audit_service import get_audit_logs
-from app.dependencies.auth import require_role
+from fastapi import APIRouter
 
 
 router = APIRouter(
@@ -15,17 +9,9 @@ router = APIRouter(
 
 @router.get(
     "/",
-    response_model=AuditLogListResponse,
+    status_code=404,
 )
-def list_audit_logs(
-    page: int = 1,
-    size: int = 20,
-    db: Session = Depends(get_db),
-    current_user=Depends(require_role("admin")),
-):
+def list_audit_logs():
+    """Fail closed until canonical Organization ownership is available."""
 
-    return get_audit_logs(
-        db,
-        page,
-        size,
-    )
+    return {"outcome": "protected_not_found"}

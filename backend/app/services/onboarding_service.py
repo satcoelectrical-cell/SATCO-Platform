@@ -142,17 +142,39 @@ class OnboardingService:
         self.repo.audit(actor_id=user.id, action=f"ONBOARDING_{purpose.upper()}_COMPLETED", entity="USER", entity_id=user.id, details={"auth_version": user.auth_version})
         self._commit()
 
-    def change_password(self, user: User, current_password: str, new_password: str):
+    def change_password(
+        self,
+        user: User,
+        current_password: str,
+        new_password: str,
+        *,
+        commit: bool = True,
+    ):
         locked = self.db.query(User).filter(User.id == user.id).with_for_update().one()
         if not verify_password(current_password, locked.hashed_password): raise ProtectedOnboarding()
         locked.hashed_password = hash_password(new_password); locked.auth_version += 1; locked.version += 1
         self.repo.audit(actor_id=user.id, action="ONBOARDING_PASSWORD_CHANGED", entity="USER", entity_id=user.id, details={"auth_version": locked.auth_version})
-        self._commit()
+        if commit:
+            self._commit()
+        else:
+            self.db.flush()
 
     def list_members(self, organization_id: UUID):
         return [self.member_summary(user, membership) for user, membership in self.repo.members(organization_id)]
 
     def mutate_member(self, organization_id: UUID, actor: User, target_id: int, data, idempotency_key: UUID):
+        # PATCH-058 Checkpoint B: security administration authority is enforced
+        # at the service boundary as well as the route dependency. Caller-supplied
+        # role identity alone is never sufficient Organization authority.
+        actor_membership = self.repo.membership(organization_id, actor.id, lock=True)
+        if (
+            actor.role != "admin"
+            or not actor.is_active
+            or actor.activation_pending
+            or not actor_membership
+            or not actor_membership.is_enabled
+        ):
+            raise ProtectedOnboarding()
         operation = f"member_change:{target_id}"
         fingerprint = _fingerprint(data.model_dump())
         replay = self._replay(str(organization_id), operation, idempotency_key, fingerprint)

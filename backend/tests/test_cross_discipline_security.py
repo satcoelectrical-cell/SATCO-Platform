@@ -1,5 +1,7 @@
+import base64
 from types import SimpleNamespace
 from uuid import uuid4
+
 import pytest
 from fastapi import HTTPException
 
@@ -15,6 +17,34 @@ from app.dependencies.cross_discipline_intelligence import (
 )
 from app.ports.cross_discipline_intelligence import ProtectedResourceError
 from app.services.cross_discipline_service import CrossDisciplineService
+
+
+_BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+
+def _decode_cursor_bytes(cursor: str) -> bytes:
+    encoded = cursor.encode("ascii")
+    return base64.urlsafe_b64decode(encoded + b"=" * (-len(encoded) % 4))
+
+
+def _encode_cursor_bytes(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+
+
+def _equivalent_noncanonical_cursor(cursor: str) -> str | None:
+    decoded = _decode_cursor_bytes(cursor)
+    for replacement in _BASE64URL_ALPHABET:
+        candidate = cursor[:-1] + replacement
+        if candidate != cursor and _decode_cursor_bytes(candidate) == decoded:
+            return candidate
+    return None
+
+
+def _assert_invalid_cursor(cursor: str, *, scope: dict) -> None:
+    with pytest.raises(HTTPException) as invalid:
+        decode_cross_discipline_cursor(cursor, scope=scope)
+    assert invalid.value.status_code == 422
+    assert invalid.value.detail == "INVALID_CROSS_DISCIPLINE_CURSOR"
 
 
 class DeniedDatabase:
@@ -130,7 +160,7 @@ def test_batch_four_selector_is_closed_before_electrical_or_control_source_looku
         validate_batch_four_selectors(authorized=scope, selectors=(f"xdi.sel.v1/electrical/engineering_object/{electrical}/power_*",))
 
 
-def test_cursor_is_bound_to_exact_tenant_project_query_and_tamper_collapses():
+def test_cursor_accepts_canonical_encoding_and_is_bound_to_exact_scope():
     scope = {
         "kind": "assessments", "organization_id": str(uuid4()),
         "project_id": 7, "limit": 50,
@@ -139,8 +169,62 @@ def test_cursor_is_bound_to_exact_tenant_project_query_and_tamper_collapses():
         scope=scope, position=["2026-09-10T00:00:00+00:00", str(uuid4())],
     )
     assert decode_cross_discipline_cursor(cursor, scope=scope)[0].startswith("2026-")
-    with pytest.raises(HTTPException) as wrong_scope:
-        decode_cross_discipline_cursor(cursor, scope={**scope, "project_id": 8})
-    assert wrong_scope.value.status_code == 422
-    with pytest.raises(HTTPException):
-        decode_cross_discipline_cursor(cursor[:-1] + ("A" if cursor[-1] != "A" else "B"), scope=scope)
+
+    _assert_invalid_cursor(cursor, scope={**scope, "organization_id": str(uuid4())})
+    _assert_invalid_cursor(cursor, scope={**scope, "project_id": 8})
+    _assert_invalid_cursor(cursor, scope={**scope, "limit": 51})
+
+
+def test_cursor_rejects_noncanonical_base64url_that_decodes_to_same_signed_bytes():
+    organization_id = str(uuid4())
+    position = ["2026-09-10T00:00:00+00:00", str(uuid4())]
+    equivalent = None
+
+    for limit in (9, 10, 100):
+        scope = {
+            "kind": "assessments", "organization_id": organization_id,
+            "project_id": 7, "limit": limit,
+        }
+        cursor = encode_cross_discipline_cursor(scope=scope, position=position)
+        equivalent = _equivalent_noncanonical_cursor(cursor)
+        if equivalent is not None:
+            break
+
+    assert equivalent is not None
+    assert equivalent != cursor
+    assert _decode_cursor_bytes(equivalent) == _decode_cursor_bytes(cursor)
+    _assert_invalid_cursor(equivalent, scope=scope)
+
+    padded = cursor + "=" * (-len(cursor) % 4)
+    assert padded != cursor
+    assert _decode_cursor_bytes(padded) == _decode_cursor_bytes(cursor)
+    _assert_invalid_cursor(padded, scope=scope)
+
+
+def test_cursor_rejects_payload_byte_and_signature_tampering():
+    scope = {
+        "kind": "assessments", "organization_id": str(uuid4()),
+        "project_id": 7, "limit": 50,
+    }
+    cursor = encode_cross_discipline_cursor(
+        scope=scope, position=["2026-09-10T00:00:00+00:00", str(uuid4())],
+    )
+    combined = _decode_cursor_bytes(cursor)
+    payload, signature = combined[:-32], combined[-32:]
+
+    marker = b'"project_id":7'
+    assert marker in payload
+    tampered_payload = payload.replace(marker, b'"project_id":8', 1)
+    _assert_invalid_cursor(_encode_cursor_bytes(tampered_payload + signature), scope=scope)
+
+    tampered_signature = signature[:-1] + bytes([signature[-1] ^ 1])
+    _assert_invalid_cursor(_encode_cursor_bytes(payload + tampered_signature), scope=scope)
+
+
+@pytest.mark.parametrize("cursor", ("", "%", "A", "not-a-valid-cursor"))
+def test_malformed_cursor_collapses_to_fail_closed_http_contract(cursor):
+    scope = {
+        "kind": "assessments", "organization_id": str(uuid4()),
+        "project_id": 7, "limit": 50,
+    }
+    _assert_invalid_cursor(cursor, scope=scope)

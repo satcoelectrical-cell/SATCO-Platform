@@ -264,6 +264,102 @@ def test_persisted_source_reuses_batch1_evaluator(db_session):
     )
 
 
+
+def test_patch059_organization_enablement_epoch_proof_tracks_current_enablement(
+    db_session,
+    admin_user,
+    monkeypatch,
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "SATCO_DEPLOYMENT_ID", "patch059-c1-test")
+    from app.models.commercial_entitlement import CommercialPackageConfigurationProof
+
+    descriptor_digest, _ = _seed_configurable_registry(db_session)
+    project = _project(db_session, admin_user)
+    factory = _factory(db_session)
+
+    organization_id = project.organization_id
+    identity = GuardedRequestIdentity(
+        admin_user.id,
+        organization_id,
+        admin_user.auth_version,
+        uuid4(),
+    )
+    selection = ExactPackageSelection(
+        "electrical",
+        "1.0.0",
+        descriptor_digest,
+    )
+    configuration = DisciplinePackageConfigurationService(factory)
+
+    deployment_id = settings.SATCO_DEPLOYMENT_ID
+    assert deployment_id == "patch059-c1-test"
+
+    def proof():
+        db_session.expire_all()
+        return db_session.get(
+            CommercialPackageConfigurationProof,
+            (organization_id, deployment_id, "electrical"),
+        )
+
+    assert configuration.replace_organization_configuration(
+        identity,
+        OrganizationConfigurationRequest(
+            0,
+            (selection,),
+            "PATCH-059 initial enablement epoch",
+        ),
+    ) == 1
+
+    first = proof()
+    assert first is not None
+    first_epoch = first.configured_before
+    assert first.recorded_at == first_epoch
+
+    assert configuration.replace_organization_configuration(
+        identity,
+        OrganizationConfigurationRequest(
+            1,
+            (selection,),
+            "PATCH-059 continuously enabled configuration",
+        ),
+    ) == 2
+
+    continuous = proof()
+    assert continuous is not None
+    assert continuous.configured_before == first_epoch
+    assert continuous.recorded_at == first_epoch
+
+    assert configuration.replace_organization_configuration(
+        identity,
+        OrganizationConfigurationRequest(
+            2,
+            (),
+            "PATCH-059 disable package",
+        ),
+    ) == 3
+
+    disabled = proof()
+    assert disabled is not None
+    assert disabled.configured_before == first_epoch
+    assert disabled.recorded_at == first_epoch
+
+    assert configuration.replace_organization_configuration(
+        identity,
+        OrganizationConfigurationRequest(
+            3,
+            (selection,),
+            "PATCH-059 re-enable package",
+        ),
+    ) == 4
+
+    reenabled = proof()
+    assert reenabled is not None
+    assert reenabled.configured_before >= first_epoch
+    assert reenabled.recorded_at == reenabled.configured_before
+    assert reenabled.configured_before != first_epoch
+
 def test_guarded_configuration_workspace_binding_and_atomic_rebind(db_session, engineer_user, admin_user):
     descriptor_digest, profile_digest = _seed_configurable_registry(db_session)
     project = _project(db_session, engineer_user)

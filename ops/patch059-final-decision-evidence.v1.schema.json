@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SATCO PATCH-059 verified Human decision evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "purpose", "repository_id", "repository", "governance_issue_number", "release_id", "release_sequence", "source_sha", "candidate_run_id", "candidate_run_attempt", "manifest_sha256", "signing_authorization_sha256", "signed_handoff_sha256", "signing_workflow_run_id", "signing_workflow_run_attempt", "nonce", "marker", "approval", "elapsed_seconds", "minimum_recorded_delay_seconds", "ssh_principal", "ssh_namespace", "ssh_key_fingerprint", "ssh_github_key_id"],
+  "properties": {
+    "schema": {"const": "satco.patch059-final-decision-evidence/v1"},
+    "purpose": {"const": "verified-final-release-human-decision"},
+    "repository_id": {"const": 1311705732},
+    "repository": {"const": "satcoelectrical-cell/SATCO-Platform"},
+    "governance_issue_number": {"type": "integer", "minimum": 1},
+    "release_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "release_sequence": {"type": "integer", "minimum": 1},
+    "source_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "candidate_run_id": {"type": "integer", "minimum": 1},
+    "candidate_run_attempt": {"type": "integer", "minimum": 1},
+    "manifest_sha256": {"$ref": "#/$defs/digest"},
+    "signing_authorization_sha256": {"$ref": "#/$defs/digest"},
+    "signed_handoff_sha256": {"$ref": "#/$defs/digest"},
+    "signing_workflow_run_id": {"type": "integer", "minimum": 1},
+    "signing_workflow_run_attempt": {"const": 1},
+    "nonce": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "marker": {"$ref": "#/$defs/comment"},
+    "approval": {"allOf": [{"$ref": "#/$defs/comment"}, {"type": "object", "required": ["ssh_signature_sha256"], "properties": {"ssh_signature_sha256": {"$ref": "#/$defs/digest"}}}]},
+    "elapsed_seconds": {"type": "integer", "minimum": 905},
+    "minimum_recorded_delay_seconds": {"const": 905},
+    "ssh_principal": {"const": "samiphone651-sys"},
+    "ssh_namespace": {"const": "satco-patch059-final-approval-v1"},
+    "ssh_key_fingerprint": {"const": "SHA256:0QRoi7nAjRewgACw6V18QJzePt7MdhPr01zpaTJbojw"},
+    "ssh_github_key_id": {"const": 1219405}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "actor": {"type": "object", "additionalProperties": false, "required": ["login", "id", "type"], "properties": {"login": {"type": "string"}, "id": {"type": "integer", "minimum": 1}, "type": {"enum": ["User", "Bot"]}}},
+    "comment": {"type": "object", "additionalProperties": false, "required": ["id", "node_id", "created_at", "updated_at", "body_sha256", "user"], "properties": {"id": {"type": "integer", "minimum": 1}, "node_id": {"type": "string"}, "created_at": {"type": "string", "format": "date-time"}, "updated_at": {"type": "string", "format": "date-time"}, "body_sha256": {"$ref": "#/$defs/digest"}, "user": {"$ref": "#/$defs/actor"}, "ssh_signature_sha256": {"$ref": "#/$defs/digest"}}}
+  }
+}

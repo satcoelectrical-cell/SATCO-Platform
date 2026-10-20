@@ -1,0 +1,85 @@
+from datetime import datetime
+from pydantic import BaseModel, Field
+
+
+class MfaStatusResponse(BaseModel):
+    required: bool
+    enrolled: bool
+    active: bool
+
+
+class MfaLoginChallengeResponse(BaseModel):
+    outcome: str = "mfa_required"
+    challenge: str
+    enrollment_required: bool
+
+
+class MfaLoginVerifyRequest(BaseModel):
+    challenge: str = Field(min_length=40, max_length=4096)
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class MfaLoginEnrollmentStartRequest(BaseModel):
+    challenge: str = Field(min_length=40, max_length=4096)
+
+
+class MfaLoginEnrollmentStartResponse(BaseModel):
+    outcome: str = "mfa_enrollment_required"
+    challenge: str
+    secret: str
+    provisioning_uri: str
+
+
+class MfaLoginEnrollmentVerifyResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    recovery_codes: list[str]
+
+
+
+
+class TotpEnrollmentStartResponse(BaseModel):
+    secret: str
+    provisioning_uri: str
+
+
+class TotpEnrollmentVerifyRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class TotpEnrollmentVerifyResponse(BaseModel):
+    outcome: str = "success"
+    recovery_codes: list[str]
+
+
+class RecoveryCodeRequest(BaseModel):
+    code: str = Field(min_length=16, max_length=128)
+
+
+class RecoveryCodesResponse(BaseModel):
+    outcome: str = "success"
+    recovery_codes: list[str]
+
+
+class StepUpRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=512)
+    totp_code: str | None = Field(default=None, min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class RecoveryIssueRequest(BaseModel):
+    purpose: str = Field(pattern=r"^(account_recovery|mfa_recovery)$")
+
+
+class RecoveryIssueResponse(BaseModel):
+    outcome: str = "success"
+    recovery_credential: str
+    expires_at: datetime
+
+
+class AccountRecoveryCompleteRequest(BaseModel):
+    recovery_credential: str = Field(min_length=55, max_length=256)
+    new_password: str = Field(min_length=12, max_length=512)
+
+
+class MfaRecoveryCompleteRequest(BaseModel):
+    recovery_credential: str = Field(min_length=55, max_length=256)

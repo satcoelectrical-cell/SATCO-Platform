@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SATCO PATCH-059 GitHub handoff marker v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "purpose", "repository_id", "repository", "governance_issue_number", "release_id", "release_sequence", "source_sha", "candidate_run_id", "candidate_run_attempt", "manifest_sha256", "signing_authorization_sha256", "signed_handoff_sha256", "signing_workflow_run_id", "signing_workflow_run_attempt", "nonce"],
+  "properties": {
+    "schema": {"const": "satco.patch059-handoff-marker/v1"},
+    "purpose": {"const": "signed-handoff-temporal-baseline"},
+    "repository_id": {"const": 1311705732},
+    "repository": {"const": "satcoelectrical-cell/SATCO-Platform"},
+    "governance_issue_number": {"type": "integer", "minimum": 1},
+    "release_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "release_sequence": {"type": "integer", "minimum": 1},
+    "source_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "candidate_run_id": {"type": "integer", "minimum": 1},
+    "candidate_run_attempt": {"type": "integer", "minimum": 1},
+    "manifest_sha256": {"$ref": "#/$defs/digest"},
+    "signing_authorization_sha256": {"$ref": "#/$defs/digest"},
+    "signed_handoff_sha256": {"$ref": "#/$defs/digest"},
+    "signing_workflow_run_id": {"type": "integer", "minimum": 1},
+    "signing_workflow_run_attempt": {"const": 1},
+    "nonce": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "$defs": {"digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}
+}
