@@ -74,11 +74,11 @@ it("renders the exact Control & Automation workflow only for server operational 
   expect(screen.getAllByText("cause effect matrix")).toHaveLength(2);
   expect(screen.getByText("io logic connectivity")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Create atomic Object + Identifier" })).toBeEnabled();
-  expect(screen.getByRole("button", { name: "Create governed Relationship" })).toBeEnabled();
-  expect(screen.getByRole("button", { name: "Bind Context declaration" })).toBeEnabled();
-  expect(screen.getByRole("button", { name: "Bind Evidence declaration" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Create governed Relationship" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Bind Context declaration" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Bind Evidence declaration" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Create package Deliverable" })).toBeEnabled();
-  expect(screen.getByRole("button", { name: "Evaluate exact readiness" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Evaluate exact readiness" })).toBeDisabled();
 
   rerender(Component ? <Component state="HISTORICAL_READ_ONLY" projectId={101} workspaceId={202} /> : null);
   expect(screen.getByRole("status")).toHaveTextContent("read-only");

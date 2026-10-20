@@ -8,5 +8,11 @@ export default defineConfig({
     strictPort: true,
     proxy: { "/api": "http://localhost:8000", "/auth": "http://localhost:8000", "/projects": "http://localhost:8000", "/engineering": "http://localhost:8000", "/technical": "http://localhost:8000", "/organizational-memory": "http://localhost:8000" },
   },
-  test: { environment: "jsdom", setupFiles: "./src/test/setup.ts", css: true, globals: true },
+  test: {
+    environment: "jsdom",
+    setupFiles: "./src/test/setup.ts",
+    css: true,
+    globals: true,
+    exclude: ["e2e/**", "e2e-live/**", "node_modules/**"],
+  },
 });

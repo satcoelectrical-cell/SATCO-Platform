@@ -5,19 +5,20 @@ import { StandardsStatePresentation } from "./StandardsStatePresentation";
 
 export function StandardsIntelligencePanel({ projectId }: { projectId: number }) {
   const [purpose, setPurpose] = useState("");
-  const [snapshots, setSnapshots] = useState("");
-  const [assertions, setAssertions] = useState("");
+  const [snapshots, setSnapshots] = useState<string[]>([]);
+  const [assertions, setAssertions] = useState<string[]>([]);
+  const [options,setOptions]=useState<ApiResult<{snapshots:{handle:string;label:string;availability_status:string}[];assertions:{handle:string;snapshot_handle:string;label:string;verification_status:string}[]}>|null>(null);
   const [result, setResult] = useState<ApiResult<StandardsIntelligenceRun> | null>(null);
   const [busy, setBusy] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setResult(null); setPurpose(""); setSnapshots(""); setAssertions(""); }, [projectId]);
+  useEffect(() => { setResult(null); setPurpose(""); setSnapshots([]); setAssertions([]); setOptions(null); if(projectId>0)void api.standardsIntelligenceOptions(projectId).then(setOptions); }, [projectId]);
   useEffect(() => { if (result) resultRef.current?.focus(); }, [result]);
 
   async function run(event: FormEvent) {
     event.preventDefault();
-    const snapshotIds = snapshots.split(/\s*,\s*/).filter(Boolean);
-    const assertionIds = assertions.split(/\s*,\s*/).filter(Boolean);
+    const snapshotIds = snapshots;
+    const assertionIds = assertions;
     if (!purpose.trim() || !snapshotIds.length) return;
     setBusy(true); setResult(null);
     setResult(await api.standardsIntelligence(projectId, { purpose: purpose.trim(), snapshot_ids: snapshotIds, assertion_ids: assertionIds }));
@@ -29,8 +30,8 @@ export function StandardsIntelligencePanel({ projectId }: { projectId: number })
     <p>Human-requested and advisory only. AI cannot declare compliance, applicability, approval, acceptance, or change the deterministic result.</p>
     <form className="standards-governed-form" onSubmit={run}>
       <label>Human advisory purpose<textarea required maxLength={500} value={purpose} onChange={(event) => setPurpose(event.target.value)} /></label>
-      <label>Authorized snapshot IDs <span>(comma separated, maximum 8)</span><input required value={snapshots} onChange={(event) => setSnapshots(event.target.value)} dir="ltr" /></label>
-      <label>Human-verified assertion IDs <span>(optional, comma separated)</span><input value={assertions} onChange={(event) => setAssertions(event.target.value)} dir="ltr" /></label>
+      <fieldset><legend>Authorized source snapshots</legend>{options?.state==="success"?options.data.snapshots.map(item=><label key={item.handle}><input type="checkbox" checked={snapshots.includes(item.handle)} onChange={()=>{setSnapshots(current=>current.includes(item.handle)?current.filter(value=>value!==item.handle):current.length<8?[...current,item.handle]:current);if(snapshots.includes(item.handle))setAssertions(current=>current.filter(value=>options.data.assertions.find(option=>option.handle===value)?.snapshot_handle!==item.handle));}} />{item.label}</label>):<p>No authorized snapshots are available.</p>}</fieldset>
+      <fieldset><legend>Human-verified assertions (optional)</legend>{options?.state==="success"?options.data.assertions.filter(item=>snapshots.includes(item.snapshot_handle)).map(item=><label key={item.handle}><input type="checkbox" checked={assertions.includes(item.handle)} onChange={()=>setAssertions(current=>current.includes(item.handle)?current.filter(value=>value!==item.handle):[...current,item.handle])} />{item.label}</label>):null}</fieldset>
       <button className="button secondary" disabled={busy}>{busy ? "Running bounded advisory…" : "Run advisory check"}</button>
     </form>
     <div ref={resultRef} role="status" tabIndex={-1}>{result?.state === "success" ? <>

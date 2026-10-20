@@ -1,30 +1,120 @@
-import type { AdviceResponse, ApiResult, Capture, ChangeImpactMutation, ContextNode, ContextNodeKind, Customer, DeliverableMutation, DeliverableRegister, EngineeringGuidanceRequest, EngineeringGuidanceResult, EvidenceCandidatePage, EvidenceRecord, ExecutionActivityStanding, ExecutionMutation, ExecutionPlan, IssuedCredential, JournalWorkspace, MemberList, MemoryAdmissionResult, MemoryDetailResult, MemoryPage, OneHopSuccess, Paginated, Project, ProjectContextSectionKind, ProjectContextSuccess, ProjectControl, ProjectControlHistory, ProjectControlKind, ProjectControlList, ProjectControlMutation, ProjectFoundation, ProjectFoundationInput, ProjectFoundationSourcePage, ProjectStage, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, SupportingFile, SupportingFilePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, UserProfile, Workspace } from "./types";
+import type { AdviceResponse, ApiResult, Capture, ChangeImpactMutation, CommercialApiResult, ContextNode, ContextNodeKind, Customer, DeliverableMutation, DeliverableRegister, EngineeringGuidanceRequest, EngineeringGuidanceResult, EvidenceCandidatePage, EvidenceRecord, ExecutionActivityStanding, ExecutionMutation, ExecutionPlan, IssuedCredential, JournalWorkspace, MemberList, MemoryAdmissionResult, MemoryDetailResult, MemoryPage, OneHopSuccess, Paginated, Project, ProjectContextSectionKind, ProjectContextSuccess, ProjectControl, ProjectControlHistory, ProjectControlKind, ProjectControlList, ProjectControlMutation, ProjectFoundation, ProjectFoundationInput, ProjectFoundationSourcePage, ProjectStage, ReportContent, ReportProvenance, ReportQualification, ReportSourceCandidatePage, SupportingFile, SupportingFilePage, TechnicalReport, TechnicalReportAccepted, TechnicalReportDetail, TechnicalReportDraft, UserProfile, Workspace } from "./types";
 import type { EffectiveDisciplinePackages, OrganizationPackageConfiguration, PackageObjectCreateResult, PackageRuleResult, ProjectPackageConfiguration, SupportedPackages, WorkspacePackageApplicability, StandardApplicability, StandardAssertion, StandardCandidate, StandardIdentityView, StandardRightsView, StandardSourceSnapshot, StandardsIntelligenceRun, StandardsPage, StandardsRightsPage, TechnicalReportStandardCandidate, TechnicalReportStandardsBasisRevision } from "./types";
+import type { CommercialEntitlementStatus, CommercialEntitlementValidation, CommercialSeatList, CommercialSeatMutation, CommercialSeatRetention } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
-const TOKEN_KEY = "satco.auth.access.v1";
+let accessToken: string | null = null;
 
 export const authSession = {
-  get: () => sessionStorage.getItem(TOKEN_KEY),
-  set: (token: string) => sessionStorage.setItem(TOKEN_KEY, token),
-  clear: () => sessionStorage.removeItem(TOKEN_KEY),
+  get: () => accessToken,
+  set: (token: string) => { accessToken = token; },
+  clear: () => { accessToken = null; },
 };
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
+function csrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const prefix = "satco_csrf=";
+  const entry = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix));
+  return entry ? decodeURIComponent(entry.slice(prefix.length)) : null;
+}
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    const csrf = csrfToken();
+    if (!csrf) {
+      authSession.clear();
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "X-CSRF-Token": csrf },
+      });
+
+      if (!response.ok) {
+        authSession.clear();
+        return false;
+      }
+
+      const payload = await response.json() as { access_token?: unknown };
+      if (typeof payload.access_token !== "string" || !payload.access_token) {
+        authSession.clear();
+        return false;
+      }
+
+      authSession.set(payload.access_token);
+      return true;
+    } catch {
+      authSession.clear();
+      return false;
+    }
+  })();
+
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
+  }
+}
+
+function isSafeRefreshRetry(init: RequestInit): boolean {
+  const method = (init.method ?? "GET").toUpperCase();
+  return method === "GET" || method === "HEAD" || method === "OPTIONS";
+}
+
+type RequestBehavior = { sensitiveCommercial?: boolean };
+
+function request<T>(path: string, init: RequestInit, allowRefresh: boolean, behavior: { sensitiveCommercial: true }): Promise<CommercialApiResult<T>>;
+function request<T>(path: string, init?: RequestInit, allowRefresh?: boolean, behavior?: RequestBehavior): Promise<ApiResult<T>>;
+async function request<T>(path: string, init: RequestInit = {}, allowRefresh = true, behavior: RequestBehavior = {}): Promise<CommercialApiResult<T>> {
   const token = authSession.get();
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   if (init.body && !(init.body instanceof URLSearchParams) && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
+  if (behavior.sensitiveCommercial) {
+    const csrf = csrfToken();
+    if (csrf) headers.set("X-CSRF-Token", csrf);
+  }
+
   try {
-    const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
-    if (response.status === 401) { authSession.clear(); return { state: "protected" }; }
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      credentials: behavior.sensitiveCommercial ? "include" : init.credentials,
+      headers,
+    });
+
+    if (response.status === 401) {
+      if (allowRefresh && path !== "/auth/refresh" && isSafeRefreshRetry(init)) {
+        if (await refreshAccessToken()) {
+          return request<T>(path, init, false, behavior);
+        }
+      }
+      authSession.clear();
+      return { state: "protected" };
+    }
+
+    if (response.status === 403 && behavior.sensitiveCommercial) {
+      const payload = await response.clone().json().catch(() => null) as { detail?: unknown } | null;
+      if (payload?.detail === "Recent authentication required") return { state: "step_up_required" };
+    }
     if (response.status === 403 || response.status === 404) return { state: "protected" };
     if (response.status === 400 || response.status === 422) return { state: "invalid" };
     if (response.status === 409) return { state: "conflict" };
     if (response.status === 503) return { state: "unavailable" };
     if (!response.ok) return { state: "error" };
     return { state: "success", data: await response.json() as T };
-  } catch { return { state: "unavailable" }; }
+  } catch {
+    return { state: "unavailable" };
+  }
 }
 
 async function downloadRequest(path: string): Promise<ApiResult<Blob>> {
@@ -60,18 +150,157 @@ async function closedStatusResult<T extends { status: string }>(path:string):Pro
   return result;
 }
 
-export async function login(username: string, password: string): Promise<ApiResult<true>> {
+export type LoginOutcome =
+  | { outcome: "authenticated" }
+  | { outcome: "mfa_required"; challenge: string; enrollmentRequired: boolean };
+
+export type MfaEnrollment = {
+  challenge: string;
+  secret: string;
+  provisioningUri: string;
+};
+
+export async function login(username: string, password: string): Promise<ApiResult<LoginOutcome>> {
   const body = new URLSearchParams({ username, password });
-  const result = await request<{ access_token: string }>("/auth/login", { method: "POST", body });
+  const result = await request<{
+    access_token?: unknown;
+    outcome?: unknown;
+    challenge?: unknown;
+    enrollment_required?: unknown;
+  }>("/auth/login", { method: "POST", body, credentials: "include" }, false);
   if (result.state !== "success") return result;
+  if (typeof result.data.access_token === "string" && result.data.access_token) {
+    authSession.set(result.data.access_token);
+    return { state: "success", data: { outcome: "authenticated" } };
+  }
+  if (
+    result.data.outcome === "mfa_required"
+    && typeof result.data.challenge === "string"
+    && result.data.challenge
+    && typeof result.data.enrollment_required === "boolean"
+  ) {
+    authSession.clear();
+    return {
+      state: "success",
+      data: {
+        outcome: "mfa_required",
+        challenge: result.data.challenge,
+        enrollmentRequired: result.data.enrollment_required,
+      },
+    };
+  }
+  authSession.clear();
+  return { state: "error" };
+}
+
+export async function startMfaEnrollment(challenge: string): Promise<ApiResult<MfaEnrollment>> {
+  const result = await request<{
+    challenge?: unknown;
+    secret?: unknown;
+    provisioning_uri?: unknown;
+  }>("/auth/login/mfa/enrollment", {
+    method: "POST",
+    credentials: "include",
+    body: JSON.stringify({ challenge }),
+  }, false);
+  if (result.state !== "success") return result;
+  if (
+    typeof result.data.challenge !== "string"
+    || typeof result.data.secret !== "string"
+    || typeof result.data.provisioning_uri !== "string"
+  ) return { state: "error" };
+  return {
+    state: "success",
+    data: {
+      challenge: result.data.challenge,
+      secret: result.data.secret,
+      provisioningUri: result.data.provisioning_uri,
+    },
+  };
+}
+
+export async function verifyMfaLogin(
+  challenge: string,
+  code: string,
+): Promise<ApiResult<true>> {
+  const result = await request<{ access_token?: unknown }>("/auth/login/mfa/verify", {
+    method: "POST",
+    credentials: "include",
+    body: JSON.stringify({ challenge, code }),
+  }, false);
+  if (result.state !== "success") return result;
+  if (typeof result.data.access_token !== "string" || !result.data.access_token) {
+    authSession.clear();
+    return { state: "error" };
+  }
   authSession.set(result.data.access_token);
   return { state: "success", data: true };
+}
+
+export async function verifyMfaEnrollment(
+  challenge: string,
+  code: string,
+): Promise<ApiResult<string[]>> {
+  const result = await request<{
+    access_token?: unknown;
+    recovery_codes?: unknown;
+  }>("/auth/login/mfa/enrollment/verify", {
+    method: "POST",
+    credentials: "include",
+    body: JSON.stringify({ challenge, code }),
+  }, false);
+  if (result.state !== "success") return result;
+  if (
+    typeof result.data.access_token !== "string"
+    || !result.data.access_token
+    || !Array.isArray(result.data.recovery_codes)
+    || !result.data.recovery_codes.every((value) => typeof value === "string")
+  ) {
+    authSession.clear();
+    return { state: "error" };
+  }
+  authSession.set(result.data.access_token);
+  return { state: "success", data: result.data.recovery_codes };
+}
+
+
+function csrfCookieValue(): string | null {
+  const prefix = "satco_csrf=";
+  const item = document.cookie
+    .split(";")
+    .map((value) => value.trim())
+    .find((value) => value.startsWith(prefix));
+
+  return item ? decodeURIComponent(item.slice(prefix.length)) : null;
+}
+
+export async function logout(): Promise<void> {
+  const accessToken = authSession.get();
+  const csrfToken = csrfCookieValue();
+
+  try {
+    if (accessToken && csrfToken) {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "X-CSRF-Token": csrfToken,
+        },
+      });
+    }
+  } catch {
+    // Server authority remains controlling if logout communication fails.
+  } finally {
+    authSession.clear();
+  }
 }
 
 export const api = {
   standards: (q="") => request<StandardsPage>(`/standards${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   standard: (id:string) => request<StandardIdentityView>(`/standards/${encodeURIComponent(id)}`),
   standardRights: () => request<StandardsRightsPage>("/organizations/current/standard-rights"),
+  standardsSelectorOptions: (projectId:number) => request<{editions:{handle:string;label:string;current_revision:number}[];rights:{edition_handle:string;provider_handle:string;label:string;reference_allowed:boolean;material_support_allowed:boolean}[]}>(`/projects/${projectId}/standards/selector-options`),
   replaceStandardRights: (editionId:string,providerId:string,payload:Record<string,unknown>) => request<StandardRightsView>(`/organizations/current/standard-rights/${encodeURIComponent(editionId)}/${encodeURIComponent(providerId)}`,{method:"PUT",headers:{"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)}),
   revokeStandardRights: (bindingId:string,payload:{expected_version:number;reason:string}) => request<StandardRightsView>(`/organizations/current/standard-rights/${encodeURIComponent(bindingId)}/revocations`,{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)}),
   projectStandards: (projectId:number) => request<{items:StandardApplicability[];next_cursor:string|null}>(`/projects/${projectId}/standards/applicability`),
@@ -82,6 +311,7 @@ export const api = {
   displayStandardSource: (projectId:number,snapshotId:string,authorizedHandle:string) => request<Record<string,unknown>>(`/projects/${projectId}/standards/source-snapshots/${encodeURIComponent(snapshotId)}/display`,{headers:{"X-Standard-Source-Handle":authorizedHandle}}),
   createStandardAssertion: (projectId:number,payload:Record<string,unknown>) => request<StandardAssertion>(`/projects/${projectId}/standards/assertions`,{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)}),
   decideStandardAssertion: (projectId:number,assertionId:string,approved:boolean,payload:Record<string,unknown>,authorizedHandle:string) => request<StandardAssertion>(`/projects/${projectId}/standards/assertions/${encodeURIComponent(assertionId)}/${approved?"verifications":"rejections"}`,{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID(),"X-Standard-Assertion-Handle":authorizedHandle},body:JSON.stringify(payload)}),
+  standardsIntelligenceOptions: (projectId:number) => request<{snapshots:{handle:string;label:string;availability_status:string}[];assertions:{handle:string;snapshot_handle:string;label:string;verification_status:string}[]}>(`/projects/${projectId}/standards/intelligence-options`),
   standardsIntelligence: (projectId:number,payload:{purpose:string;snapshot_ids:string[];assertion_ids:string[]}) => request<StandardsIntelligenceRun>(`/projects/${projectId}/standards/intelligence-runs`,{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID(),"X-Correlation-ID":crypto.randomUUID()},body:JSON.stringify(payload)}),
   standardsIntelligenceRun: (projectId:number,runId:string) => request<StandardsIntelligenceRun>(`/projects/${projectId}/standards/intelligence-runs/${encodeURIComponent(runId)}`),
   reportStandardCandidates: (reportId:string) => request<{items:TechnicalReportStandardCandidate[]}>(`/technical-reports/${encodeURIComponent(reportId)}/standards/candidates`),
@@ -105,7 +335,15 @@ export const api = {
   crossDisciplineReportProjection:(projectId:number,assessmentId:string)=>request<import("./types").XDIReportProjection>(`/projects/${projectId}/cross-discipline/assessments/${encodeURIComponent(assessmentId)}/report-projection`),
   createCrossDisciplineAIExplanation:(projectId:number,assessmentId:string,payload:Record<string,unknown>)=>request<import("./types").XDIAIExplanation>(`/projects/${projectId}/cross-discipline/assessments/${encodeURIComponent(assessmentId)}/ai-explanation`,{method:"POST",body:JSON.stringify(payload)}),
   supportedPackages: () => request<SupportedPackages>("/discipline-packages/supported?limit=50"),
+  compatibilityProfiles: () => request<{registry_digest:string;items:{handle:string;label:string;profile_digest:string}[]}>("/discipline-packages/compatibility-profiles"),
   organizationPackageConfiguration: () => request<OrganizationPackageConfiguration>("/organizations/current/discipline-package-configuration"),
+  commercialEntitlement: () => request<CommercialEntitlementStatus>("/organizations/current/commercial-entitlement"),
+  validateCommercialEntitlement: (signedEnvelope:string) => request<CommercialEntitlementValidation>("/organizations/current/commercial-entitlement/validate",{method:"POST",body:signedEnvelope},true,{sensitiveCommercial:true}),
+  activateCommercialEntitlement: (signedEnvelope:string) => request<CommercialEntitlementValidation>("/organizations/current/commercial-entitlement/activate",{method:"POST",body:signedEnvelope},true,{sensitiveCommercial:true}),
+  commercialSeats: () => request<CommercialSeatList>("/organizations/current/commercial-seats"),
+  assignCommercialSeat: (userId:number) => request<CommercialSeatMutation>(`/organizations/current/commercial-seats/${encodeURIComponent(userId)}`,{method:"POST"},true,{sensitiveCommercial:true}),
+  releaseCommercialSeat: (userId:number) => request<CommercialSeatMutation>(`/organizations/current/commercial-seats/${encodeURIComponent(userId)}`,{method:"DELETE"},true,{sensitiveCommercial:true}),
+  retainCommercialSeats: (userIds:number[]) => request<CommercialSeatRetention>("/organizations/current/commercial-seats/retained",{method:"PUT",body:JSON.stringify({user_ids:userIds})},true,{sensitiveCommercial:true}),
   replaceOrganizationPackageConfiguration: (payload:{expected_configuration_version:number;enabled_selections:{package_key:string;package_version:string}[];rationale:string}) => request<{configuration_version:number;registry_digest:string}>("/organizations/current/discipline-package-configuration",{method:"PUT",headers:{"X-Correlation-ID":crypto.randomUUID()},body:JSON.stringify(payload)}),
   organizationPackageConfigurationAudit: (cursor?:string, category?:string) => request<{items:{event_id:string;project_id:number|null;workspace_id:number|null;category:string;action:string;occurred_at:string|null}[];next_cursor:string|null}>(`/organizations/current/discipline-package-configuration/audit?${new URLSearchParams([...(cursor ? [["cursor",cursor]] : []),...(category ? [["category",category]] : [])]).toString()}`),
   projectPackageConfiguration: (id:number) => request<ProjectPackageConfiguration>(`/projects/${id}/discipline-package-configuration`),
@@ -114,6 +352,8 @@ export const api = {
   preflightProjectPackageConfiguration: (id:number,payload:{profile_id:string;selections:{package_key:string;package_version:string}[]}) => request<{decision:string;reason_codes:string[]}>(`/projects/${id}/discipline-package-configuration/preflight`,{method:"POST",body:JSON.stringify(payload)}),
   effectiveDisciplinePackages: (id:number) => request<EffectiveDisciplinePackages>(`/projects/${id}/effective-discipline-packages`),
   workspacePackageApplicability: (id:number) => request<WorkspacePackageApplicability>(`/workspaces/${id}/package-applicability`),
+  engineeringObjectOptions: (projectId:number,workspaceId:number) => request<{items:{handle:string;label:string}[]}>(`/projects/${projectId}/engineering-objects/selector-options?workspace_id=${workspaceId}`),
+  packageContextBindingOptions: (projectId:number,workspaceId:number) => request<{items:{context_handle:number;subject_handle:number;context_version:number;label:string}[]}>(`/projects/${projectId}/discipline-packages/workspaces/${workspaceId}/context-binding-options`),
   createElectricalObject: (projectId:number, workspaceId:number, payload:{declaration_id:string;primary_identifier_display_value:string;primary_identifier_evidence_references:string[];steward_id:number|null;rationale:string}) => request<PackageObjectCreateResult>(`/projects/${projectId}/discipline-packages/workspaces/${workspaceId}/operations/objects`,{method:"POST",headers:{"X-Correlation-ID":crypto.randomUUID(),"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)}),
   evaluateElectricalRule: (projectId:number, workspaceId:number, payload:{hook_id:string;hook_version:"1.0.0";envelope:Record<string,unknown>}) => request<PackageRuleResult>(`/projects/${projectId}/discipline-packages/workspaces/${workspaceId}/rule-evaluations`,{method:"POST",headers:{"X-Correlation-ID":crypto.randomUUID()},body:JSON.stringify(payload)}),
   createInstrumentationObject: (projectId:number, workspaceId:number, payload:{declaration_id:string;primary_identifier_display_value:string;primary_identifier_evidence_references:string[];steward_id:number|null;rationale:string}) => request<PackageObjectCreateResult>(`/projects/${projectId}/discipline-packages/workspaces/${workspaceId}/operations/objects`,{method:"POST",headers:{"X-Correlation-ID":crypto.randomUUID(),"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)}),
@@ -130,6 +370,15 @@ export const api = {
   activateAccount: (token: string, newPassword: string) => closedResult<{ outcome: string }>("/auth/activate", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }),
   resetAccount: (token: string, newPassword: string) => closedResult<{ outcome: string }>("/auth/reset", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }),
   changePassword: (currentPassword: string, newPassword: string) => closedResult<{ outcome: string }>("/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }),
+  mfaStatus: () => request<{ required: boolean; enrolled: boolean; active: boolean }>("/auth/mfa/status"),
+  sessions: () => request<{ sessions: { id: string; current: boolean; created_at: string; expires_at: string; device_label: string | null }[] }>("/auth/sessions"),
+  stepUp: (password: string, totpCode?: string) => closedResult<{ outcome: string }>("/auth/step-up", { method: "POST", body: JSON.stringify({ password, totp_code: totpCode || null }) }),
+  logoutAll: () => closedResult<{ outcome: string }>("/auth/logout-all", { method: "POST" }),
+  regenerateRecoveryCodes: () => request<{ outcome: string; recovery_codes: string[] }>("/auth/mfa/recovery-codes/regenerate", { method: "POST" }),
+  revokeMemberSessions: (userId: number) => closedResult<{ outcome: string }>(`/auth/admin/users/${userId}/sessions/revoke`, { method: "POST" }),
+  issueSecurityRecovery: (userId: number, purpose: "account_recovery" | "mfa_recovery") => request<{ outcome: string; recovery_credential: string; expires_at: string }>(`/auth/admin/users/${userId}/recovery`, { method: "POST", body: JSON.stringify({ purpose }) }),
+  completeAccountRecovery: (credential: string, newPassword: string) => closedResult<{ outcome: string }>("/auth/recovery/account/complete", { method: "POST", body: JSON.stringify({ recovery_credential: credential, new_password: newPassword }) }),
+  completeMfaRecovery: (credential: string) => closedResult<{ outcome: string }>("/auth/recovery/mfa/complete", { method: "POST", body: JSON.stringify({ recovery_credential: credential }) }),
   members: () => closedResult<MemberList>("/organization-admin/members"),
   provisionMember: (payload: { username: string; email: string; full_name?: string; role: "admin" | "engineer" }) => closedResult<IssuedCredential>("/organization-admin/members", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
   mutateMember: (userId: number, payload: { expected_version: number; role?: "admin" | "engineer"; membership_enabled?: boolean; account_active?: boolean }) => closedResult<IssuedCredential>(`/organization-admin/members/${userId}`, { method: "PATCH", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) }),
@@ -187,6 +436,19 @@ export const api = {
   reportEvidenceSources: (projectId: number, workspaceId: number) => request<EvidenceCandidatePage>(`/technical-reports/evidence-source-candidates?project_id=${projectId}&workspace_id=${workspaceId}&page=1&size=20`),
   supportingFiles: (projectId: number, workspaceId: number, continuation?: string) => request<SupportingFilePage>(`/projects/${projectId}/supporting-files?workspace_id=${workspaceId}&limit=20${continuation ? `&continuation=${encodeURIComponent(continuation)}` : ""}`),
   uploadSupportingFile: (projectId: number, workspaceId: number, file: File, rationale: string) => { const body = new FormData(); body.set("project_id", String(projectId)); body.set("workspace_id", String(workspaceId)); body.set("rationale", rationale); body.set("file", file); return request<SupportingFile>("/supporting-files/uploads", { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body }); },
+  documentAnalyses: (projectId:number, workspaceId:number) => request<import("./types").DocumentAnalysisPage>(`/projects/${projectId}/document-analyses?workspace_id=${workspaceId}`),
+  createDocumentAnalysis: (projectId:number,payload:{workspace_id:number;supporting_file_asset_id:string;expected_asset_version:number;expected_content_digest:string;family_hint:import("./types").DocumentFamily|null;rationale:string}) => request<import("./types").DocumentAnalysisSummary>(`/projects/${projectId}/document-analyses`,{method:"POST",headers:{"X-Correlation-ID":crypto.randomUUID(),"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)}),
+  documentAnalysis: (projectId:number,runId:string) => request<import("./types").DocumentAnalysisSummary>(`/projects/${projectId}/document-analyses/${encodeURIComponent(runId)}`),
+  documentCandidates: (projectId:number,runId:string) => request<import("./types").EngineeringCandidatePage>(`/projects/${projectId}/document-analyses/${encodeURIComponent(runId)}/candidates`),
+  documentAnalysisSource: (projectId:number,runId:string) => downloadRequest(`/projects/${projectId}/document-analyses/${encodeURIComponent(runId)}/source`),
+  reviewDocumentCandidate: (projectId:number,runId:string,candidateId:string,payload:{expected_version:number;action:import("./types").CandidateReviewAction;rationale:string;correction?:Record<string,unknown>|null}) => request<import("./types").EngineeringCandidate>(`/projects/${projectId}/document-analyses/${encodeURIComponent(runId)}/candidates/${encodeURIComponent(candidateId)}/reviews`,{method:"POST",headers:{"X-Correlation-ID":crypto.randomUUID(),"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)}),
+  promoteDocumentCandidate: (projectId:number,runId:string,candidateId:string,payload:{expected_candidate_version:number;include_engineering_context:boolean;rationale:string}) => request<import("./types").DocumentPromotionResponse>(`/projects/${projectId}/document-analyses/${encodeURIComponent(runId)}/candidates/${encodeURIComponent(candidateId)}/promotions`,{method:"POST",headers:{"X-Correlation-ID":crypto.randomUUID(),"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)}),
+  correlateDocuments: (projectId:number,payload:{analysis_run_ids:string[];rule_pack_id:"satco.document-correlation.v2";rationale:string}) => request<import("./types").DocumentCorrelationEvaluation>(`/projects/${projectId}/document-correlations`,{method:"POST",headers:{"X-Correlation-ID":crypto.randomUUID(),"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)}),
+  documentCorrelations: (projectId:number,workspaceId:number) => request<import("./types").DocumentCorrelationPage>(`/projects/${projectId}/document-correlations?workspace_id=${workspaceId}`),
+  documentFindings: (projectId:number,workspaceId:number) => request<import("./types").DocumentFindingPage>(`/projects/${projectId}/document-findings?workspace_id=${workspaceId}`),
+  createDocumentReportDraft: (projectId:number,payload:{workspace_id:number;finding_ids:string[];purpose:"field_experience"|"troubleshooting"|"engineering_analysis"|"technical_recommendation";rationale:string}) => request<import("./types").DocumentReportDraftResponse>(`/projects/${projectId}/document-findings/report-drafts`,{method:"POST",headers:{"X-Correlation-ID":crypto.randomUUID(),"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)}),
+  retryDocumentAnalysis: (projectId:number,runId:string,expectedVersion:number) => request<import("./types").DocumentAnalysisSummary>(`/projects/${projectId}/document-analyses/${encodeURIComponent(runId)}/retries`,{method:"POST",headers:{"X-Correlation-ID":crypto.randomUUID(),"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({expected_version:expectedVersion})}),
+  engineeringObjects: (projectId:number,workspaceId:number) => request<{items:import("./types").PackageEngineeringObject[];total:number;page:number;size:number}>("/projects/"+projectId+"/engineering-objects?workspace_id="+workspaceId+"&page=1&size=100"),
   evidence: (projectId: number, workspaceId: number) => request<{ items: EvidenceRecord[]; total: number; page: number; size: number }>(`/projects/${projectId}/evidence?workspace_id=${workspaceId}&page=1&size=100`),
   linkSupportingFiles: (evidenceId: string, expectedVersion: number, assetIds: string[], rationale: string) => request<EvidenceRecord>(`/evidence/${encodeURIComponent(evidenceId)}/supporting-files`, { method: "POST", headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ expected_version: expectedVersion, asset_ids: [...assetIds].sort(), rationale }) }),
   downloadSupportingFile: (assetId: string, projectId: number, workspaceId: number) => downloadRequest(`/supporting-files/${encodeURIComponent(assetId)}/download?project_id=${projectId}&workspace_id=${workspaceId}`),

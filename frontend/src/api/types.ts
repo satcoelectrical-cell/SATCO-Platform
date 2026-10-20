@@ -1,5 +1,6 @@
 export type ResultState = "success" | "protected" | "invalid" | "conflict" | "unavailable" | "error";
 export type ApiResult<T> = { state: "success"; data: T } | { state: Exclude<ResultState, "success"> };
+export type CommercialApiResult<T> = ApiResult<T> | { state: "step_up_required" };
 export interface StandardIdentityView { standard_id:string; catalog_scope:"global_trusted"|"organization_private"; issuer:string; designation:string; title:string; language?:string|null; jurisdiction?:Record<string,unknown>; identity_digest:string; retired_from_new_selection:boolean; editions?:StandardEditionView[] }
 export interface StandardEditionView { edition_id:string; standard_id:string; edition_designation:string; edition_disambiguator:string; official_publication_identifier?:string|null; edition_digest:string; standing_history?:Array<{standing:"current"|"superseded"|"withdrawn"|"unknown";observed_effective_at:string;version:number}> }
 export interface StandardRightsCapabilities { metadata_visibility:boolean; content_storage:boolean; indexing:boolean; excerpt_display:boolean; source_retrieval:boolean; derived_retention:boolean; derived_current_use:boolean }
@@ -38,6 +39,24 @@ export interface Capture {
 }
 
 export interface PackageSelection { package_key:string; package_version:string; descriptor_digest?:string }
+export type CommercialPackageKey = "electrical" | "instrumentation" | "control_automation";
+export type CommercialEntitlementState = "active" | "grace" | "expired" | "invalid_or_unavailable" | "time_untrusted";
+export type CommercialReasonCode = "entitlement_missing" | "invalid_signature" | "untrusted_key" | "revoked_key" | "organization_mismatch" | "deployment_mismatch" | "not_yet_valid" | "grace" | "expired" | "rollback_detected" | "same_revision_conflict" | "time_untrusted" | "package_not_entitled" | "seat_required" | "seat_reserved" | "over_capacity" | "release_sequence_out_of_range";
+export interface CommercialEntitlementStatus {
+  available:boolean; effective_state:CommercialEntitlementState; entitlement_id:string|null; revision:number|null;
+  digest_prefix:string|null; package_keys:CommercialPackageKey[]; seat_capacity:number|null; valid_until:string|null;
+  grace_until:string|null; support_until:string|null; baseline_release_sequence:number|null; max_release_sequence:number|null;
+  reason_code:CommercialReasonCode|null;
+}
+export interface CommercialEntitlementValidation {
+  valid:boolean; effect:"initial"|"successor"|"idempotent"|"rejected"; entitlement_id:string|null;
+  revision:number|null; digest_prefix:string|null; reason_code:CommercialReasonCode|null;
+}
+export type CommercialSeatState = "ASSIGNED" | "RESERVED" | "RETAINED";
+export interface CommercialSeat { user_id:number; state:CommercialSeatState; executable:boolean; display_name:string|null }
+export interface CommercialSeatList { capacity:number; consuming_count:number; over_capacity:boolean; seats:CommercialSeat[] }
+export interface CommercialSeatMutation { user_id:number; state:CommercialSeatState|null; consuming_count:number; capacity:number }
+export interface CommercialSeatRetention { capacity:number; consuming_count:number; over_capacity:boolean; unresolved:boolean }
 export interface SupportedPackage { package_key:string; package_version:string; primary_discipline_id:string; standing:string; descriptor_digest:string }
 export interface SupportedPackages { registry_digest:string; items:SupportedPackage[]; next_cursor:string|null }
 export interface OrganizationPackageConfiguration { organization_id:string; configuration_version:number; enabled_selections:PackageSelection[]; disabled_selections:PackageSelection[]; registry_digest:string; updated_at:string|null }
@@ -102,6 +121,26 @@ export interface SupportingFile {
   predecessor_asset_id: string | null; allowed_actions: string[];
 }
 export interface SupportingFilePage { items: SupportingFile[]; visible_count: number; continuation: string | null }
+export type DocumentFamily = "narrative_engineering" | "tabular_engineering";
+export type DocumentAnalysisState = "queued" | "extracting" | "interpreting" | "requires_review" | "completed" | "completed_with_limitations" | "provider_unavailable" | "failed_retryable" | "failed_terminal" | "source_changed" | "superseded";
+export type CandidateReviewAction = "accept" | "correct" | "reject" | "defer";
+export type CandidateReviewState = "unreviewed" | "accepted" | "corrected" | "rejected" | "deferred";
+export interface DocumentAnalysisProgress { completed_units:number; total_units:number|null; customer_message:string }
+export interface DocumentAnalysisSummary { analysis_run_id:string; project_id:number; workspace_id:number|null; supporting_file_asset_id:string; source_asset_version:number; source_content_digest:string; safe_filename:string; state:DocumentAnalysisState; document_family:DocumentFamily|null; progress:DocumentAnalysisProgress; page_count:number|null; candidate_count:number; unreviewed_count:number; limitations:string[]; allowed_actions:string[]; version:number; created_at:string; updated_at:string }
+export interface DocumentAnalysisPage { items:DocumentAnalysisSummary[]; total:number }
+export interface SourceBoundingBox { coordinate_space:"normalized_page_v1";x0:number;y0:number;x1:number;y1:number }
+export interface SourceLocator { locator_id:string;schema_version:1;locator_kind:"document"|"page"|"text_span"|"table"|"table_row"|"table_cell";supporting_file_asset_id:string;asset_version_at_analysis:number;storage_object_version:string;digest_algorithm:"sha256";content_digest:string;media_type:string;page_index:number|null;page_label:string|null;section_path:string[];section_title:string|null;table_key:string|null;table_title:string|null;row_index:number|null;row_label:string|null;column_index:number|null;column_label:string|null;text_start:number|null;text_end:number|null;text_excerpt:string|null;text_excerpt_digest:string|null;bounding_box:SourceBoundingBox|null;source_revision_label:string|null;extraction_method:"deterministic"|"provider"|"hybrid";created_at:string }
+export interface DocumentEvidenceSource {analysis_run_id:string;candidate_id:string;locator:SourceLocator}
+export interface EngineeringCandidateValue {raw_value:string;normalized_value:string|null;numeric_value:string|null;unit:string|null;quantity_type:string|null;condition:string|null}
+export interface EngineeringCandidate { candidate_id:string;analysis_run_id:string;version:number;ordinal:number;kind:"document_identity"|"engineering_entity"|"engineering_fact"|"engineering_value"|"assumption"|"relationship"|"control_statement"|"missing_information"|"discrepancy";assertion_mode:"direct"|"derived"|"inferred";review_state:CandidateReviewState;subject_key:string|null;subject_label:string|null;value:EngineeringCandidateValue;confidence:string;confidence_rationale:string;uncertainty:string|null;assumptions:string[];proposed_canonical_target:"evidence"|"engineering_context_fact"|"engineering_context_value"|"engineering_context_assumption"|"none";locators:SourceLocator[];allowed_actions:CandidateReviewAction[];reviewed_by_id:number|null;reviewed_at:string|null;promotion_receipt_id:string|null;promoted_evidence_id:string|null;promoted_engineering_context_id:number|null;allowed_promotions:("evidence"|"evidence_and_context")[] }
+export interface EngineeringCandidatePage {items:EngineeringCandidate[];total:number;reviewed_count:number;unreviewed_count:number}
+export interface DocumentPromotionResponse {promotion_receipt_id:string;candidate_id:string;candidate_version:number;evidence_id:string;evidence_version:number;evidence_lifecycle:"proposed";engineering_context_id:number|null;source_locator_ids:string[];promoted_at:string;promoted_by_id:number}
+export interface DocumentFinding { finding_id:string;analysis_run_ids:string[];kind:"missing_information"|"discrepancy";state:"open"|"acknowledged"|"resolved"|"deferred";title:string;explanation:string;rule_id:string;rule_version:number;applicability:string;uncertainty:string|null;evidence_sources?:DocumentEvidenceSource[];evidence:SourceLocator[];advisory:true }
+export interface DocumentCorrelation {correlation_id:string;analysis_run_ids:string[];rule_id:string;rule_version:number;status:"consistent"|"discrepant"|"missing_information";summary:string;applicability:string;reason_codes:string[];uncertainty:string|null;evidence_sources?:DocumentEvidenceSource[];evidence:SourceLocator[];finding_id:string|null;advisory:true}
+export interface DocumentCorrelationEvaluation {rule_pack_id:"satco.document-correlation.v2";rule_pack_version:2;evaluated_run_ids:string[];correlations:DocumentCorrelation[];findings:DocumentFinding[]}
+export interface DocumentCorrelationPage {items:DocumentCorrelation[];total:number}
+export interface DocumentFindingPage {items:DocumentFinding[];total:number}
+export interface DocumentReportDraftResponse {report_id:string;version:number;draft_revision_id:string;lifecycle:"draft";preliminary:true;finding_ids:string[]}
 export interface EvidenceRecord {
   id: string; organization_id: string; project_id: number | null; workspace_id: number | null;
   lifecycle: "proposed" | "current" | "withdrawn" | "superseded"; source_kind: string;

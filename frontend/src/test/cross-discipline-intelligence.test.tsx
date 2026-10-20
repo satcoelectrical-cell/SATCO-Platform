@@ -1,5 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { CrossDisciplineIntelligencePanel } from "../components/CrossDisciplineIntelligencePanel";
 
 const { apiMock } = vi.hoisted(() => ({
@@ -7,6 +9,7 @@ const { apiMock } = vi.hoisted(() => ({
     crossDisciplineReadiness: vi.fn(),
     crossDisciplineAssessments: vi.fn(),
     crossDisciplineFindings: vi.fn(),
+    crossDisciplineFinding: vi.fn(),
   },
 }));
 vi.mock("../api/client", () => ({ api: apiMock }));
@@ -18,11 +21,14 @@ beforeEach(()=>{
   apiMock.crossDisciplineReadiness.mockReset().mockResolvedValue(ready);
   apiMock.crossDisciplineAssessments.mockReset().mockResolvedValue(empty);
   apiMock.crossDisciplineFindings.mockReset().mockResolvedValue({state:"success",data:{items:[],next_cursor:null}});
+  apiMock.crossDisciplineFinding.mockReset();
 });
+
+const renderPanel=(element:React.ReactElement)=>render(<MemoryRouter>{element}</MemoryRouter>);
 
 describe("PATCH-053 Batch-1 frontend foundation",()=>{
   it("renders an authorized empty state as advisory and never as an inferred PASS",async()=>{
-    render(<CrossDisciplineIntelligencePanel projectId={7} workspaceIds={[2,3]}/>);
+    renderPanel(<CrossDisciplineIntelligencePanel projectId={7} workspaceIds={[2,3]}/>);
     expect(screen.getByLabelText("Cross-discipline intelligence")).toHaveAttribute("aria-busy","true");
     expect(await screen.findByRole("status")).toHaveTextContent("empty");
     expect(screen.getByText(/Human disposition remains authoritative/i)).toBeVisible();
@@ -32,14 +38,14 @@ describe("PATCH-053 Batch-1 frontend foundation",()=>{
 
   it("labels indeterminate without green or empty semantics",async()=>{
     apiMock.crossDisciplineAssessments.mockResolvedValue({state:"success",data:{items:[{assessment_id:"00000000-0000-4000-8000-000000000001",aggregate_version:1,status:"indeterminate",reason_code:"source_incomplete",result_digest:"b".repeat(64),completed_at:"2026-09-10T00:00:00Z"}],next_cursor:null}});
-    render(<CrossDisciplineIntelligencePanel projectId={7}/>);
+    renderPanel(<CrossDisciplineIntelligencePanel projectId={7}/>);
     expect(await screen.findByText(/not a PASS or an empty result/i)).toBeVisible();
     expect(screen.getAllByRole("status").some((item)=>item.textContent==="indeterminate")).toBe(true);
   });
 
   it("renders ready history through all six advisory foundation surfaces",async()=>{
     apiMock.crossDisciplineAssessments.mockResolvedValue({state:"success",data:{items:[{assessment_id:"ready-assessment",aggregate_version:1,status:"completed_no_findings",reason_code:null,result_digest:"b".repeat(64),completed_at:"2026-09-10T00:00:00Z"}],next_cursor:null}});
-    render(<CrossDisciplineIntelligencePanel projectId={7} workspaceIds={[2,3]}/>);
+    renderPanel(<CrossDisciplineIntelligencePanel projectId={7} workspaceIds={[2,3]}/>);
     expect(await screen.findByText("ready-assessment")).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent("ready");
     for(const label of ["Cross-discipline overview","Cross-discipline finding queue","Cross-discipline finding detail","Cross-discipline provenance","Cross-discipline dispositions","Cross-discipline assessment history"]){
@@ -50,12 +56,23 @@ describe("PATCH-053 Batch-1 frontend foundation",()=>{
   it("renders only persisted E↔I finding summaries and never infers a pass or a path",async()=>{
     apiMock.crossDisciplineAssessments.mockResolvedValue({state:"success",data:{items:[{assessment_id:"ei-assessment",aggregate_version:1,status:"completed_with_findings",reason_code:null,result_digest:"b".repeat(64),completed_at:"2026-09-10T00:00:00Z"}],next_cursor:null}});
     apiMock.crossDisciplineFindings.mockResolvedValue({state:"success",data:{items:[{finding_id:"ei-finding",assessment_id:"ei-assessment",ordinal:1,category:"dependency",subcode:"ei.cable_jb_path",severity:"warning",fingerprint:"f".repeat(64),recurrence_key:"r".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true}],next_cursor:null}});
-    render(<CrossDisciplineIntelligencePanel projectId={7}/>);
+    renderPanel(<CrossDisciplineIntelligencePanel projectId={7}/>);
     expect(await screen.findByLabelText("Cross-discipline dependency")).toBeVisible();
     expect(await screen.findByText("ei.cable_jb_path")).toBeVisible();
     expect(screen.getByLabelText("Cross-discipline source comparison")).toHaveTextContent(/does not imply a PASS/i);
     expect(screen.getByLabelText("Cross-discipline commitment context")).toHaveTextContent(/does not establish fulfilment/i);
     expect(screen.queryByText(/inferred path/i)).not.toBeInTheDocument();
+  });
+
+  it("activates an actual Finding through its assessment parent and owner resolver",async()=>{
+    apiMock.crossDisciplineAssessments.mockResolvedValue({state:"success",data:{items:[{assessment_id:"owner-assessment",aggregate_version:1,status:"completed_with_findings",reason_code:null,result_digest:"b".repeat(64),completed_at:"2026-09-10T00:00:00Z"}],next_cursor:null}});
+    const finding={finding_id:"owner-finding",assessment_id:"owner-assessment",ordinal:1,category:"dependency",subcode:"ei.owner_route",severity:"warning",fingerprint:"f".repeat(64),recurrence_key:"r".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true};
+    apiMock.crossDisciplineFindings.mockResolvedValue({state:"success",data:{items:[finding],next_cursor:null}});
+    apiMock.crossDisciplineFinding.mockResolvedValue({state:"success",data:finding});
+    const user=userEvent.setup();renderPanel(<CrossDisciplineIntelligencePanel projectId={7}/>);
+    await user.click(await screen.findByRole("button",{name:"Open owner for ei.owner_route"}));
+    expect(apiMock.crossDisciplineFinding).toHaveBeenCalledWith(7,"owner-assessment","owner-finding");
+    expect(await screen.findByLabelText("Cross-discipline finding detail")).toHaveTextContent("ei.owner_route");
   });
 
   it("renders persisted I↔C findings without exposing operands, topology, or fulfilment inference",async()=>{
@@ -66,7 +83,7 @@ describe("PATCH-053 Batch-1 frontend foundation",()=>{
       {finding_id:"ic-path",assessment_id:"ic-assessment",ordinal:3,category:"dependency",subcode:"ic.valve_command_feedback",severity:"major",fingerprint:"h".repeat(64),recurrence_key:"t".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true},
       {finding_id:"ic-commitment",assessment_id:"ic-assessment",ordinal:4,category:"unfulfilled_commitment",subcode:"ic.commitment_fulfilment",severity:"major",fingerprint:"i".repeat(64),recurrence_key:"u".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true},
     ],next_cursor:null}});
-    render(<CrossDisciplineIntelligencePanel projectId={7}/>);
+    renderPanel(<CrossDisciplineIntelligencePanel projectId={7}/>);
     expect(await screen.findByText("ic.signal_type")).toBeVisible();
     expect(screen.getByText("ic.signal_range")).toBeVisible();
     expect(screen.getByText("ic.valve_command_feedback")).toBeVisible();
@@ -82,7 +99,7 @@ describe("PATCH-053 Batch-1 frontend foundation",()=>{
       {finding_id:"ec-fresh",assessment_id:"ec-assessment",ordinal:3,category:"stale",subcode:"ec.source_freshness",severity:"warning",fingerprint:"h".repeat(64),recurrence_key:"t".repeat(64),current_state:"open",allowed_actions:[],provenance:{},advisory:true},
       {finding_id:"ec-dispute",assessment_id:"ec-assessment",ordinal:4,category:"disputed",subcode:"ec.commitment_dispute",severity:"major",fingerprint:"i".repeat(64),recurrence_key:"u".repeat(64),current_state:"disputed",allowed_actions:[],provenance:{},advisory:true},
     ],next_cursor:null}});
-    render(<CrossDisciplineIntelligencePanel projectId={7}/>);
+    renderPanel(<CrossDisciplineIntelligencePanel projectId={7}/>);
     expect(await screen.findByText("ec.mcc_command_status")).toBeVisible();
     expect(screen.getByText("ec.cabinet_power_path")).toBeVisible();
     expect(screen.getByText("ec.source_freshness")).toBeVisible();
@@ -95,7 +112,7 @@ describe("PATCH-053 Batch-1 frontend foundation",()=>{
     ["conflict",{state:"conflict"}],
   ] as const)("renders the %s transport state without implying a result",async(state,result)=>{
     apiMock.crossDisciplineReadiness.mockResolvedValue(result);
-    render(<CrossDisciplineIntelligencePanel projectId={7}/>);
+    renderPanel(<CrossDisciplineIntelligencePanel projectId={7}/>);
     expect(await screen.findByRole("alert")).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent(state);
     expect(screen.queryByText(/PASS/i)).not.toBeInTheDocument();
@@ -103,17 +120,17 @@ describe("PATCH-053 Batch-1 frontend foundation",()=>{
 
   it("clears prior project identifiers when a switched project is protected",async()=>{
     apiMock.crossDisciplineAssessments.mockResolvedValue({state:"success",data:{items:[{assessment_id:"visible-assessment",aggregate_version:1,status:"completed_no_findings",reason_code:null,result_digest:"b".repeat(64),completed_at:"2026-09-10T00:00:00Z"}],next_cursor:null}});
-    const view=render(<CrossDisciplineIntelligencePanel projectId={7}/>);
+    const view=renderPanel(<CrossDisciplineIntelligencePanel projectId={7}/>);
     expect(await screen.findByText("visible-assessment")).toBeVisible();
     apiMock.crossDisciplineReadiness.mockResolvedValue({state:"protected"});
     apiMock.crossDisciplineAssessments.mockResolvedValue({state:"protected"});
-    view.rerender(<CrossDisciplineIntelligencePanel projectId={8}/>);
+    view.rerender(<MemoryRouter><CrossDisciplineIntelligencePanel projectId={8}/></MemoryRouter>);
     await waitFor(()=>expect(screen.queryByLabelText("Cross-discipline intelligence")).not.toBeInTheDocument());
     expect(screen.queryByText("visible-assessment")).not.toBeInTheDocument();
   });
 
   it("preserves machine identity direction under RTL",async()=>{
-    const view=render(<div dir="rtl"><CrossDisciplineIntelligencePanel projectId={7}/></div>);
+    const view=renderPanel(<div dir="rtl"><CrossDisciplineIntelligencePanel projectId={7}/></div>);
     const digest=await screen.findByText("a".repeat(64));
     expect(digest).toHaveClass("cross-discipline-machine-id");
     expect(view.container.querySelector("[dir='rtl']")).toBeTruthy();
