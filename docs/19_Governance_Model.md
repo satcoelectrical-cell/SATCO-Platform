@@ -1178,3 +1178,165 @@ pre-implementation snapshots for current state without rewriting them:
 `PATCH-056: DONE / CLOSED`
 
 `PATCH-057+: NOT STARTED / NOT AUTHORIZED`
+
+### Controlling PATCH-057 Discovery Acceptance and Registration — 2026-09-22
+
+The Human Authority accepts the remediated Capability Discovery for
+**PATCH-057 — Commercial Product Experience & Engineering Command Center
+Completion**. Its focused independent re-review passed with
+Critical/Major/Minor findings `0/0/0` and no Observation requiring disposition.
+
+Under explicit Human registration authority, PATCH-057 is now **REGISTERED /
+OPEN — DISCOVERY ACCEPTED**. The accepted Discovery preserves the Human-frozen
+Commercial V1 scope, the explicit mandatory PATCH-055 dependency, canonical
+source-owner boundaries, Organization isolation, Human engineering authority
+and AI non-authority.
+
+Registration authorizes subsequent Architecture/ADR work as the next
+separately reviewed governance stage only. It creates or accepts no
+Architecture, ADR, EDS, IDS or Implementation Plan and grants no implementation,
+migration, schema, API, frontend, canonical-semantic, deployment, release or
+PATCH-058 authority.
+
+The three exact restored Post-PATCH-050 Discovery/freeze records are committed
+with this bounded registration so the previously preserved Human-frozen roadmap
+evidence becomes part of the repository source of truth without changing its
+historical bytes or semantics.
+
+This append-only registration supersedes the preceding PATCH-057-not-started
+snapshot for current state without rewriting it:
+
+`PATCH-053: DONE / CLOSED — HISTORICAL RECONCILIATION COMPLETE`
+
+`PATCH-054: DONE / CLOSED`
+
+`PATCH-055: DONE / CLOSED`
+
+`PATCH-056: DONE / CLOSED`
+
+`PATCH-057: REGISTERED / OPEN — DISCOVERY ACCEPTED`
+
+`PATCH-057 ARCHITECTURE / ADR: NEXT AUTHORIZED GOVERNANCE STAGE / NOT STARTED`
+
+`PATCH-057 IMPLEMENTATION: NOT STARTED / NOT AUTHORIZED`
+
+`PATCH-058+: NOT STARTED / NOT AUTHORIZED`
+
+### Controlling PATCH-057 A-E Acceptance and Final Closure Qualification — 2026-09-23
+
+The Human Authority has accepted PATCH-057 Discovery, Architecture-057,
+ADR-030, EDS-057, IDS-057, Implementation Plan-057 and implementation
+Checkpoints A-E. The accepted whole-PATCH implementation evidence records
+Critical/Major/Minor findings `0/0/0`, no PATCH-057 migration, and sole
+Alembic source/database head `e05600000008`.
+
+PATCH-057 remains a composition/navigation boundary. Canonical source owners
+and Human Engineering Authority remain controlling; AI remains advisory and
+non-authoritative. No PATCH-057 canonical persistence was introduced.
+
+Final delivery inventory and independent closure qualification are prepared
+for Human review. This state is **not** final Human closure and grants no
+staging, commit, push, tag, merge, deployment, production/customer database
+access or PATCH-058 authority.
+
+This append-only qualification supersedes the preceding PATCH-057 registration
+snapshot for current state without rewriting its historical record:
+
+`PATCH-053: DONE / CLOSED — HISTORICAL RECONCILIATION COMPLETE`
+
+`PATCH-054: DONE / CLOSED`
+
+`PATCH-055: DONE / CLOSED`
+
+`PATCH-056: DONE / CLOSED`
+
+`PATCH-057: REGISTERED / OPEN — A-E HUMAN ACCEPTED / READY FOR FINAL HUMAN CLOSURE`
+
+`PATCH-057 FINAL HUMAN CLOSURE: PENDING EXPLICIT HUMAN AUTHORITY`
+
+`PATCH-058+: NOT STARTED / NOT AUTHORIZED`
+
+### Controlling PATCH-057 Final Human Closure — 2026-09-23
+
+Under explicit Final Human Closure authorization, **PATCH-057 — Commercial
+Product Experience & Engineering Command Center Completion is DONE / CLOSED**.
+Discovery, Architecture-057, ADR-030, EDS-057, IDS-057, Implementation
+Plan-057 and implementation Checkpoints A-E are Human accepted and complete.
+
+Final Qualification is PASS and the final independent review records
+Critical/Major/Minor findings `0/0/0`. Accepted qualification includes
+E-focused frontend `31/31` across 5 files, complete frontend `185/185` across
+34 files, backend regression `49/49` across 4 files, production frontend build
+PASS with 1,860 modules transformed, TypeScript PASS and Python compilation
+PASS. Accessibility, RTL, responsive behavior, security/anti-inference and
+raw-ID closure are PASS.
+
+Canonical source owners and Human Engineering Authority remain controlling;
+AI remains advisory and non-authoritative. No canonical PATCH-057 persistence
+or migration was introduced, and the sole Alembic head remains
+`e05600000008`. No deployment or production/customer database operation was
+performed.
+
+This append-only closure supersedes the preceding PATCH-057 qualification
+snapshot for current state without rewriting its historical record:
+
+`PATCH-053: DONE / CLOSED — HISTORICAL RECONCILIATION COMPLETE`
+
+`PATCH-054: DONE / CLOSED`
+
+`PATCH-055: DONE / CLOSED`
+
+`PATCH-056: DONE / CLOSED`
+
+`PATCH-057: DONE / CLOSED`
+
+`PATCH-058 / PATCH-059 / PATCH-060: SEPARATE / NOT STARTED BY THIS CLOSURE`
+
+### Controlling PATCH-058 Discovery Acceptance and Registration — 2026-09-23
+
+The Human Authority accepts the Post-PATCH-057 Capability Discovery for
+**PATCH-058 — Commercial Authentication, Application Security & Reproducible
+Release Foundation**. Its independent review records Critical/Major/Minor
+findings `0/0/0`.
+
+Under explicit Human registration authority, PATCH-058 is now **REGISTERED /
+OPEN — DISCOVERY ACCEPTED**.
+
+The accepted Discovery preserves the Human-frozen Commercial V1 roadmap,
+canonical identity, Organization, membership and engineering source-owner
+boundaries, Human Engineering Authority and AI non-authority.
+
+PATCH-058 owns the Commercial V1 authentication/session, application-security,
+tenant-isolation reconciliation and reproducible-release foundation boundary.
+
+PATCH-059 commercial entitlements/licensing and PATCH-060 representative
+deployment qualification/Commercial V1 Release Certification remain separate
+and unauthorized.
+
+Registration authorizes Architecture-058 and the next repository-consistent ADR
+as the next separately reviewed governance stage only. It creates or accepts no
+EDS, IDS, Implementation Plan, implementation or migration and grants no
+deployment, PATCH-059 or PATCH-060 authority.
+
+The sole Alembic head at registration remains `e05600000008`.
+
+This append-only registration supersedes the preceding PATCH-058-not-started
+snapshot for current state without rewriting its historical record:
+
+`PATCH-053: DONE / CLOSED — HISTORICAL RECONCILIATION COMPLETE`
+
+`PATCH-054: DONE / CLOSED`
+
+`PATCH-055: DONE / CLOSED`
+
+`PATCH-056: DONE / CLOSED`
+
+`PATCH-057: DONE / CLOSED`
+
+`PATCH-058: REGISTERED / OPEN — DISCOVERY ACCEPTED`
+
+`PATCH-058 ARCHITECTURE / ADR: NEXT AUTHORIZED GOVERNANCE STAGE / NOT STARTED`
+
+`PATCH-058 IMPLEMENTATION: NOT STARTED / NOT AUTHORIZED`
+
+`PATCH-059 / PATCH-060: NOT STARTED / NOT AUTHORIZED`
